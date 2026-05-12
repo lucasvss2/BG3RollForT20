@@ -11,6 +11,7 @@
 
 import { MODULE_ID, SYSTEM_ID } from "./constants";
 import { setupIntegration } from "./integration/index";
+import { setupDialogStyling } from "./dialogs/bg3-dialog";
 import { log, warn } from "./utils/logging";
 
 // ── Init: sanity checks ───────────────────────────────────────────────────────
@@ -28,11 +29,12 @@ Hooks.once("init", () => {
     }
 });
 
-// ── Setup: wire up the aeris-bg3-rolls integration ────────────────────────────
+// ── Setup: wire up roll integration and dialog styling ────────────────────────
 
 Hooks.once("setup", () => {
     if (game.system.id !== SYSTEM_ID) return;
     setupIntegration();
+    setupDialogStyling();
 });
 
 // ── Ready: confirm everything loaded ─────────────────────────────────────────
