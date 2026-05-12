@@ -1,0 +1,53 @@
+{
+    "id": "aeris-bg3-rolls-t20",
+    "title": "Aeris BG3 Rolls — Tormenta20",
+    "description": "Adds Tormenta20 (t20) system support to Aeris BG3 Rolls, enabling the BG3-inspired cinematic dice roll overlay for the Brazilian Tormenta20 RPG system. Compatible with all official Tormenta20 content modules.",
+    "version": "1.0.0",
+    "authors": [
+        {
+            "name": "aeris-bg3-rolls-t20 contributors"
+        }
+    ],
+    "esmodules": ["dist/main.bundle.js"],
+    "styles": [],
+    "socket": false,
+    "compatibility": {
+        "minimum": "13",
+        "verified": "13",
+        "maximum": "13"
+    },
+    "manifest": "",
+    "download": "",
+    "relationships": {
+        "requires": [
+            {
+                "id": "aeris-bg3-rolls",
+                "type": "module",
+                "compatibility": {
+                    "minimum": "1.0.0"
+                }
+            },
+            {
+                "id": "aeris-core",
+                "type": "module",
+                "compatibility": {
+                    "minimum": "1.0.0"
+                }
+            },
+            {
+                "id": "socketlib",
+                "type": "module"
+            }
+        ],
+        "systems": [
+            {
+                "id": "t20",
+                "type": "system",
+                "compatibility": {
+                    "minimum": "1.5.0"
+                }
+            }
+        ]
+    },
+    "flags": {}
+}
