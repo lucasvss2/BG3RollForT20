@@ -26,7 +26,16 @@ const DIALOG_STYLES = `
         0 0 40px rgba(0, 0, 0, 0.95),
         inset 0 0 60px rgba(0, 0, 0, 0.5) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", "Book Antiqua", serif !important;
-    min-width: 320px !important;
+    min-width: 480px !important;
+    width: auto !important;
+    height: auto !important;
+}
+
+/* Remove scroll — let the dialog grow to fit its content */
+.window-app.bg3-dialog .window-content {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
 }
 
 /* Corner decorations via pseudo-element overlay */
@@ -217,6 +226,15 @@ const DIALOG_STYLES = `
 
 .window-app.bg3-dialog.tormenta20 .window-content {
     padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+/* Ensure the inner form also doesn't create a nested scroll */
+.window-app.bg3-dialog form {
+    overflow: visible !important;
+    height: auto !important;
 }
 `;
 
