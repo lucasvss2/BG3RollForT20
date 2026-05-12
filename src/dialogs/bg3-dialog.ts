@@ -222,6 +222,58 @@ const DIALOG_STYLES = `
     color: inherit !important;
 }
 
+/* ── Universal text visibility (WCAG AA/AAA) ────────────────────────────── */
+/*
+ * The tormenta20 system sets dark colors on many inline elements which become
+ * invisible against our near-black background.  We force readable colors on
+ * every text-bearing element inside the dialog content.
+ *
+ * Contrast targets (background ≈ #090604, luminance 0.003):
+ *   #c8bfa0  →  luminance 0.57  →  contrast ~11:1  (WCAG AAA)
+ *   #a09878  →  luminance 0.36  →  contrast  ~7:1  (WCAG AAA)
+ *   #9a8a6a  →  luminance 0.27  →  contrast  ~5.8:1 (WCAG AA)
+ *   #8a7450  →  luminance 0.20  →  contrast  ~4.8:1 (WCAG AA — labels/hints)
+ */
+
+/* Primary body text — descriptions, notes, cell content */
+.window-app.bg3-dialog .window-content p,
+.window-app.bg3-dialog .window-content span,
+.window-app.bg3-dialog .window-content small,
+.window-app.bg3-dialog .window-content li,
+.window-app.bg3-dialog .window-content div:not([class*="banner"]):not([class*="divider"]) {
+    color: #c8bfa0 !important;
+}
+
+/* Table cells and all their descendants */
+.window-app.bg3-dialog td,
+.window-app.bg3-dialog td p,
+.window-app.bg3-dialog td span,
+.window-app.bg3-dialog td small,
+.window-app.bg3-dialog td div,
+.window-app.bg3-dialog td label,
+.window-app.bg3-dialog td a {
+    color: #c8bfa0 !important;
+}
+
+/* Secondary / muted text (costs, hints, categories) */
+.window-app.bg3-dialog .hint,
+.window-app.bg3-dialog .notes,
+.window-app.bg3-dialog .cost,
+.window-app.bg3-dialog .pm,
+.window-app.bg3-dialog .mana,
+.window-app.bg3-dialog [class*="pm"],
+.window-app.bg3-dialog [class*="mana"],
+.window-app.bg3-dialog [class*="cost"] {
+    color: #9a8a6a !important;
+}
+
+/* Inline text after checkboxes / counters that show "1 PM", "2 PM" etc. */
+.window-app.bg3-dialog .form-group span,
+.window-app.bg3-dialog .form-group small,
+.window-app.bg3-dialog .form-group p {
+    color: #9a8a6a !important;
+}
+
 /* ── Placeholders — WCAG AA (≥ 4.5:1 contrast vs dark bg) ──────────────── */
 
 .window-app.bg3-dialog input::placeholder,
