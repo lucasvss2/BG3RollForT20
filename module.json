@@ -1,6 +1,6 @@
 {
     "id": "aeris-bg3-rolls-t20",
-    "title": "Aeris BG3 Rolls — Tormenta20",
+    "title": "BG3RollForT20",
     "description": "Adiciona suporte ao sistema Tormenta20 (t20) no módulo Aeris BG3 Rolls, habilitando a sobreposição cinemática de dados inspirada em BG3 para perícias, resistências, ataques e iniciativa em português.",
     "version": "1.0.1",
     "authors": [
@@ -12,7 +12,7 @@
     "esmodules": ["dist/main.bundle.js"],
     "compatibility": {
         "minimum": "13",
-        "verified": "13"
+        "verified": "13.348"
     },
     "manifest": "https://raw.githubusercontent.com/lucasvss2/BG3RollForT20/master/module.json",
     "download": "https://github.com/lucasvss2/BG3RollForT20/releases/latest/download/aeris-bg3-rolls-t20.zip",

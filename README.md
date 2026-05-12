@@ -1,4 +1,4 @@
-# Aeris BG3 Rolls — Tormenta20
+# BG3RollForT20
 
 Módulo para [Foundry VTT](https://foundryvtt.com) que adiciona suporte ao sistema **Tormenta20** (`t20`) no [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls), habilitando a sobreposição cinemática de dados inspirada em *Baldur's Gate 3* para o RPG brasileiro.
 
