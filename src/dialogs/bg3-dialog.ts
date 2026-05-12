@@ -243,7 +243,11 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog .form-group > button:not([type="submit"]),
 .window-app.bg3-dialog .counter > a,
 .window-app.bg3-dialog .counter > button,
-/* Buttons / anchors inside table cells (t20 attack/magic enhancement lists) */
+/* t20 aprimoramento +/- buttons (class numCtrl inside .item-cost) */
+.window-app.bg3-dialog .numCtrl,
+.window-app.bg3-dialog .item-cost > button,
+.window-app.bg3-dialog li.item button,
+/* Buttons / anchors inside table cells */
 .window-app.bg3-dialog tbody td > button,
 .window-app.bg3-dialog tbody td > a {
     background: linear-gradient(to bottom, #5c3a10, #3a2208) !important;
@@ -279,6 +283,9 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog .form-group > button:not([type="submit"]):hover,
 .window-app.bg3-dialog .counter > a:hover,
 .window-app.bg3-dialog .counter > button:hover,
+.window-app.bg3-dialog .numCtrl:hover,
+.window-app.bg3-dialog .item-cost > button:hover,
+.window-app.bg3-dialog li.item button:hover,
 .window-app.bg3-dialog tbody td > button:hover,
 .window-app.bg3-dialog tbody td > a:hover {
     background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
@@ -472,7 +479,7 @@ function resolveAbilityName(app: AppLike, el: HTMLElement): string {
  */
 function forceTextVisibility(el: HTMLElement): void {
     el.querySelectorAll<HTMLElement>(
-        "td, td *, tr td *, p, span, small, li, label"
+        "td, td *, tr td *, p, span, small, li, h1, h2, h3, h4, h5, h6, label"
     ).forEach((node) => {
         if (node.matches(
             "input, select, button, " +
