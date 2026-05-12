@@ -1,49 +1,62 @@
-# aeris-bg3-rolls-t20
+# Aeris BG3 Rolls — Tormenta20
 
-Adds **Tormenta20** (`t20`) system support to
-[Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls), enabling
-the BG3-inspired cinematic dice roll overlay for the Brazilian Tormenta20 RPG.
+Módulo para [Foundry VTT](https://foundryvtt.com) que adiciona suporte ao sistema **Tormenta20** (`t20`) no [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls), habilitando a sobreposição cinemática de dados inspirada em *Baldur's Gate 3* para o RPG brasileiro.
 
 ---
 
-## What it does
+## Instalação
 
-[aeris-bg3-rolls](https://gitlab.com/aeris-fvtt/aeris-bg3-rolls) ships with
-parsers for D&D 5e and Pathfinder 2e only. This module bridges the gap by
-registering a Portuguese-language roll parser for the `t20` system, so the
-overlay correctly labels:
+### Via Foundry VTT (recomendado)
 
-| T20 roll type | Overlay label |
+1. Abra o Foundry VTT e vá em **Gerenciar Módulos → Instalar Módulo**.
+2. Cole o link abaixo no campo **URL do Manifesto** e clique em **Instalar**:
+
+```
+https://raw.githubusercontent.com/lucasvss2/BG3RollForT20/master/module.json
+```
+
+### Instalação manual
+
+1. Baixe o ZIP da [última release](https://github.com/lucasvss2/BG3RollForT20/releases/latest).
+2. Extraia na pasta `Data/modules/` do seu Foundry VTT.
+3. Ative o módulo em **Gerenciar Módulos**.
+
+---
+
+## Dependências obrigatórias
+
+Instale estes módulos antes de ativar este:
+
+| Módulo | Instalação |
+|---|---|
+| [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) | Gerenciador de pacotes do Foundry |
+| [Aeris Core](https://foundryvtt.com/packages/aeris-core) | Gerenciador de pacotes do Foundry |
+| [socketlib](https://foundryvtt.com/packages/socketlib) | Gerenciador de pacotes do Foundry |
+
+**Dependência opcional:** [lib-wrapper](https://foundryvtt.com/packages/lib-wrapper) — melhora a integração (estratégia 3 do patcher), mas não é obrigatória.
+
+---
+
+## O que o módulo faz
+
+O Aeris BG3 Rolls só vem com parsers para D&D 5e e Pathfinder 2e. Este módulo registra um parser em português para o sistema `t20`, fazendo a sobreposição reconhecer corretamente:
+
+| Tipo de rolagem T20 | Rótulo na sobreposição |
 |---|---|
 | Perícia (Acrobacia, Percepção…) | `Teste de <Perícia>` |
 | Resistência (Fortitude / Reflexo / Vontade) | `Resistência de <Resistência>` |
-| Ataque com arma / à distância | `Ataque` + weapon subcategory |
+| Ataque com arma / à distância | `Ataque` + nome da arma |
 | Ataque mágico | `Ataque Mágico` |
 | Iniciativa | `Iniciativa` |
 | Teste de atributo (Força, Destreza…) | `Teste de <Atributo>` |
 
-Damage rolls are intentionally **not** intercepted — they appear in the chat
-log as normal.
+Rolagens de **dano** não são interceptadas — aparecem normalmente no chat.
 
 ---
 
-## Required modules
+## Compatibilidade com módulos de conteúdo
 
-| Module | Where to get it |
-|---|---|
-| [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) | Foundry package manager |
-| [Aeris Core](https://foundryvtt.com/packages/aeris-core) | Foundry package manager |
-| [socketlib](https://foundryvtt.com/packages/socketlib) | Foundry package manager |
-
-The module activates only when the **Tormenta20** system (`t20`) is loaded.
-
----
-
-## Compatible content modules
-
-This module works transparently alongside all official Tormenta20 content
-packages — they add actors, items, spells, and rules content but do not change
-the system's roll mechanics:
+Totalmente compatível com todos os módulos oficiais de conteúdo para Tormenta20 (eles adicionam atores, itens e regras, mas não alteram a mecânica de rolagens):
 
 - [Suplementos de Arton](https://github.com/mobguilherme/Suplementos-de-Arton)
 - [Bestiário de Arton](https://github.com/mobguilherme/Bestiario-de-Arton)
@@ -54,92 +67,59 @@ the system's roll mechanics:
 
 ---
 
-## Installation
-
-### From manifest URL _(recommended once published)_
-
-```
-https://your-host/aeris-bg3-rolls-t20/module.json
-```
-
-### Manual installation
-
-1. Download or clone this repository.
-2. Install Node.js 20+ and run:
-   ```sh
-   npm install
-   npm run build
-   ```
-3. Copy the entire folder (including `dist/` and `module.json`) into your
-   Foundry `Data/modules/aeris-bg3-rolls-t20/` directory.
-4. Enable the module in Foundry → **Manage Modules**.
-
----
-
-## Development
+## Desenvolvimento
 
 ```sh
-npm install        # install build tools
-npm run dev        # build + watch for changes
-npm run build      # production build → dist/main.bundle.js
-npm run typecheck  # TypeScript type check without emitting
+npm install        # instala as dependências de build
+npm run dev        # build + watch (modo desenvolvimento)
+npm run build      # build de produção → dist/main.bundle.js
+npm run typecheck  # verifica tipos TypeScript sem emitir arquivos
 ```
 
-The source lives in `src/`:
+### Estrutura do projeto
 
 ```
 src/
-├── main.ts              Entry point — Foundry lifecycle hooks
-├── constants.ts         Module IDs and hook names
+├── main.ts              Ponto de entrada — hooks do ciclo de vida do Foundry
+├── constants.ts         IDs do módulo e nomes de hooks
 ├── parser/
-│   └── t20.ts           T20 roll flavor-text parser (Portuguese)
+│   └── t20.ts           Parser de flavor text em português (todas as rolagens T20)
 ├── integration/
-│   └── index.ts         Multi-strategy bridge to aeris-bg3-rolls
+│   └── index.ts         Bridge multi-estratégia para o aeris-bg3-rolls
 ├── utils/
-│   └── logging.ts       Prefixed console helpers
+│   └── logging.ts       Helpers de console com prefixo do módulo
 └── types/
-    └── global.d.ts      Ambient Foundry VTT / aeris-bg3-rolls types
+    └── global.d.ts      Tipos ambientes para Foundry VTT e aeris-bg3-rolls
 ```
 
-### Integration strategy chain
+### Cadeia de integração
 
-The module attempts to register the T20 parser with aeris-bg3-rolls using
-four strategies in priority order:
+O módulo tenta registrar o parser T20 no aeris-bg3-rolls usando quatro estratégias em ordem de prioridade:
 
-1. **Hook API** — listens for `aeris-bg3-rolls.ready` and calls
-   `api.registerParser("t20", parseT20)` if the hook carries that method.
-2. **Global API** — calls `game.bg3rolls.registerParser("t20", parseT20)` if
-   the function is exposed on the global game object.
-3. **libWrapper** — wraps `parseRollMeta` via libWrapper (optional module)
-   to inject T20 handling before the original function runs.
-4. **preCreateChatMessage fallback** — installs a Foundry hook that fires
-   the aeris-bg3-rolls orchestrator hook (`aeris-bg3-rolls.alertChatMessage`)
-   directly, bypassing the internal parser registry entirely.
+1. **Hook API** — escuta `aeris-bg3-rolls.ready` e chama `api.registerParser("t20", …)` se o método existir.
+2. **API global** — chama `game.bg3rolls.registerParser("t20", …)` se exposto no objeto global.
+3. **libWrapper** — envolve `parseRollMeta` via libWrapper para injetar o handler T20 antes da função original.
+4. **Fallback `preCreateChatMessage`** — sempre instalado; dispara o hook do orchestrator (`aeris-bg3-rolls.alertChatMessage`) diretamente para qualquer rolagem T20 reconhecida.
 
-Strategy 4 is always installed as a safety net. Strategies 1–3 short-circuit
-it once one of them succeeds, preventing double-processing.
+### Releases
 
----
+As releases são criadas automaticamente pelo GitHub Actions ao criar uma tag `vX.Y.Z`:
 
-## Customising the parser
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
 
-If Tormenta20 updates its roll flavor text or you use a fork of the system,
-edit `src/parser/t20.ts` and rebuild. The relevant sections are:
-
-- **`SKILLS`** — list of perícia names (Portuguese)
-- **`SAVES`** — list of resistência names
-- **`ABILITIES`** — list of atributo names
-- **Regular expressions** — regex patterns for each roll category
+O workflow builda o projeto, monta o ZIP com `module.json` + `dist/`, e publica a release no GitHub.
 
 ---
 
-## Troubleshooting
+## Solução de problemas
 
-| Symptom | Likely cause |
+| Sintoma | Causa provável |
 |---|---|
-| Overlay never appears | aeris-bg3-rolls or aeris-core is not enabled |
-| Rolls appear in chat instead of overlay | Flavor text format doesn't match any parser pattern — open an issue with the exact flavor text |
-| Double roll entries | A future aeris-bg3-rolls version added native T20 support — disable this module |
+| Sobreposição nunca aparece | aeris-bg3-rolls ou aeris-core não está ativo |
+| Rolagens aparecem no chat em vez da sobreposição | O flavor text não corresponde a nenhum padrão do parser — abra uma issue com o texto exato |
+| Entradas duplicadas de rolagem | Uma versão futura do aeris-bg3-rolls adicionou suporte nativo ao T20 — desative este módulo |
 
-Enable the browser console and look for `[aeris-bg3-rolls-t20]` log lines to
-trace which integration strategy was selected.
+Ative o console do navegador e procure por `[aeris-bg3-rolls-t20]` para ver qual estratégia de integração foi selecionada.
