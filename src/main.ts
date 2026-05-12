@@ -1,12 +1,12 @@
 /**
  * aeris-bg3-rolls-t20 — main entry point
  *
- * Adds Tormenta20 (system id "t20") support to the aeris-bg3-rolls module so
- * that the BG3-style cinematic dice overlay works for T20 roll types
- * (perícias, resistências, ataques, iniciativa).
+ * Standalone BG3-style cinematic dice overlay for the Tormenta20 system.
+ * Intercepts T20 roll messages (perícias, resistências, ataques, iniciativa)
+ * and displays a full-screen animated overlay with the roll result.
  *
- * Compatible content modules (Suplementos de Arton, Bestiário de Arton, etc.)
- * do not change roll mechanics and require no extra handling.
+ * aeris-bg3-rolls is recommended but NOT required — the module ships its own
+ * overlay and works in any Foundry world running the t20 system.
  */
 
 import { MODULE_ID, SYSTEM_ID } from "./constants";
@@ -39,7 +39,7 @@ Hooks.once("setup", () => {
 
 Hooks.once("ready", () => {
     if (game.system.id !== SYSTEM_ID) return;
-    log("Ready — Tormenta20 BG3 roll overlay active.");
+    log("Pronto — overlay cinemático de dados Tormenta20 ativo.");
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
