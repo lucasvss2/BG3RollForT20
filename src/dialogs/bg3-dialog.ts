@@ -444,6 +444,22 @@ function resolveAbilityName(app: AppLike, el: HTMLElement): string {
     const a = app as Record<string, unknown>;
     const opts = a.options as Record<string, unknown> | undefined;
 
+    // t20 AbilityUseDialog: item.id is the raw attribute key (e.g. "des", "for")
+    // item.parts is a dice parts array like ["1d20", "@des"] — join and parse the @key
+    const appItem = app.item;
+    if (appItem) {
+        const label = abilityKeyToLabel(appItem.id);
+        if (label) return label;
+
+        const rawParts = appItem.parts;
+        const parts = Array.isArray(rawParts) ? rawParts.join(",") : (rawParts ?? "");
+        const atMatch = parts.match(/@([a-z]+)/i);
+        if (atMatch) {
+            const fromParts = abilityKeyToLabel(atMatch[1]);
+            if (fromParts) return fromParts;
+        }
+    }
+
     // Direct properties and options
     for (const v of [
         a.ability, a.attribute, a.save, a.skill, a.type,
@@ -503,7 +519,7 @@ type AppLike = {
     options?: { title?: string };
     title?: string;
     object?: { name?: string; img?: string };
-    item?: { name?: string; img?: string };
+    item?: { name?: string; img?: string; id?: string; parts?: string | string[] };
 };
 
 /**
