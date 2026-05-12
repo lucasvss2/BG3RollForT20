@@ -79,6 +79,7 @@ declare class Roll {
     total: number | null;
     terms: RollTerm[];
     dice: DiceTerm[];
+    static fromData(data: Record<string, unknown>): Roll;
 }
 
 declare interface RollTerm {
