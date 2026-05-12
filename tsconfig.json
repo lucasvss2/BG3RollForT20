@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
         "target": "ES2022",
-        "module": "ES2022",
+        "module": "ESNext",
         "moduleResolution": "bundler",
         "lib": ["ES2022", "DOM"],
         "strict": true,
@@ -11,11 +11,9 @@
         "skipLibCheck": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
-        "baseUrl": ".",
         "paths": {
-            "@/*": ["src/*"]
-        },
-        "outDir": "dist"
+            "@/*": ["./src/*"]
+        }
     },
     "include": ["src/**/*"],
     "exclude": ["node_modules", "dist"]
