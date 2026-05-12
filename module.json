@@ -1,41 +1,31 @@
 {
     "id": "aeris-bg3-rolls-t20",
     "title": "Aeris BG3 Rolls — Tormenta20",
-    "description": "Adds Tormenta20 (t20) system support to Aeris BG3 Rolls, enabling the BG3-inspired cinematic dice roll overlay for the Brazilian Tormenta20 RPG system. Compatible with all official Tormenta20 content modules.",
+    "description": "Adiciona suporte ao sistema Tormenta20 (t20) no módulo Aeris BG3 Rolls, habilitando a sobreposição cinemática de dados inspirada em BG3 para perícias, resistências, ataques e iniciativa em português.",
     "version": "1.0.0",
     "authors": [
         {
-            "name": "aeris-bg3-rolls-t20 contributors"
+            "name": "lucasvss2",
+            "url": "https://github.com/lucasvss2"
         }
     ],
     "esmodules": ["dist/main.bundle.js"],
-    "styles": [],
-    "socket": false,
     "compatibility": {
         "minimum": "13",
-        "verified": "13",
-        "maximum": "13"
+        "verified": "13"
     },
-    "manifest": "",
-    "download": "",
+    "manifest": "https://raw.githubusercontent.com/lucasvss2/BG3RollForT20/master/module.json",
+    "download": "https://github.com/lucasvss2/BG3RollForT20/releases/latest/download/aeris-bg3-rolls-t20.zip",
     "relationships": {
         "requires": [
             {
                 "id": "aeris-bg3-rolls",
-                "type": "module",
-                "compatibility": {
-                    "minimum": "1.0.0"
-                }
-            },
+                "type": "module"
+            }
+        ],
+        "optional": [
             {
-                "id": "aeris-core",
-                "type": "module",
-                "compatibility": {
-                    "minimum": "1.0.0"
-                }
-            },
-            {
-                "id": "socketlib",
+                "id": "lib-wrapper",
                 "type": "module"
             }
         ],
@@ -48,6 +38,5 @@
                 }
             }
         ]
-    },
-    "flags": {}
+    }
 }
