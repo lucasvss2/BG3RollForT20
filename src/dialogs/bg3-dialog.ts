@@ -222,6 +222,141 @@ const DIALOG_STYLES = `
     color: inherit !important;
 }
 
+/* ── Placeholders — WCAG AA (≥ 4.5:1 contrast vs dark bg) ──────────────── */
+
+.window-app.bg3-dialog input::placeholder,
+.window-app.bg3-dialog textarea::placeholder {
+    color: #9a8a6a !important;   /* contrast ~5.8:1 vs #090604 bg */
+    opacity: 1 !important;
+}
+
+/* ── Checkboxes — dark theme ────────────────────────────────────────────── */
+
+.window-app.bg3-dialog input[type="checkbox"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background: rgba(0, 0, 0, 0.7) !important;
+    border: 1px solid #4a3a18 !important;
+    border-radius: 2px !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    height: 14px !important;
+    transition: all 0.15s !important;
+    vertical-align: middle !important;
+    width: 14px !important;
+}
+
+.window-app.bg3-dialog input[type="checkbox"]:checked {
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2 7l3.5 3.5L12 4' stroke='%23f0e0b0' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+        center / 80% no-repeat,
+        linear-gradient(to bottom, #6a4212, #3e2008) !important;
+    border-color: #c8a96e !important;
+}
+
+.window-app.bg3-dialog input[type="checkbox"]:hover {
+    border-color: #8b6914 !important;
+    box-shadow: 0 0 6px rgba(139, 105, 20, 0.35) !important;
+}
+
+/* ── Counter (+ / −) buttons inside form groups ─────────────────────────── */
+/* Targets all small action buttons within the form area excluding footer    */
+
+.window-app.bg3-dialog .window-content a,
+.window-app.bg3-dialog .window-content button:not([data-action]):not([type="submit"]) {
+    /* Base reset — let specific selectors below override */
+}
+
+/* t20 counter / step buttons (various class names the system may use) */
+.window-app.bg3-dialog .minus,
+.window-app.bg3-dialog .plus,
+.window-app.bg3-dialog .decrease,
+.window-app.bg3-dialog .increase,
+.window-app.bg3-dialog .counter-down,
+.window-app.bg3-dialog .counter-up,
+.window-app.bg3-dialog [data-action="decrease"],
+.window-app.bg3-dialog [data-action="increase"],
+.window-app.bg3-dialog .form-group > a,
+.window-app.bg3-dialog .form-group > button:not([type="submit"]),
+.window-app.bg3-dialog .counter > a,
+.window-app.bg3-dialog .counter > button {
+    background: linear-gradient(to bottom, #5c3a10, #3a2208) !important;
+    border: 1px solid #7a5818 !important;
+    border-radius: 3px !important;
+    box-shadow:
+        0 0 8px rgba(139, 105, 20, 0.25),
+        inset 0 1px rgba(255, 220, 150, 0.12) !important;
+    color: #f0e0b0 !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    min-height: 24px !important;
+    min-width: 24px !important;
+    padding: 3px 8px !important;
+    text-shadow: 0 0 8px rgba(255, 200, 100, 0.4) !important;
+    transition: all 0.15s !important;
+}
+
+.window-app.bg3-dialog .minus:hover,
+.window-app.bg3-dialog .plus:hover,
+.window-app.bg3-dialog .decrease:hover,
+.window-app.bg3-dialog .increase:hover,
+.window-app.bg3-dialog .counter-down:hover,
+.window-app.bg3-dialog .counter-up:hover,
+.window-app.bg3-dialog [data-action="decrease"]:hover,
+.window-app.bg3-dialog [data-action="increase"]:hover,
+.window-app.bg3-dialog .form-group > a:hover,
+.window-app.bg3-dialog .form-group > button:not([type="submit"]):hover,
+.window-app.bg3-dialog .counter > a:hover,
+.window-app.bg3-dialog .counter > button:hover {
+    background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
+    border-color: #c8a96e !important;
+    box-shadow:
+        0 0 14px rgba(200, 169, 110, 0.45),
+        inset 0 1px rgba(255, 220, 150, 0.2) !important;
+    color: #fff8e8 !important;
+}
+
+/* ── Bonus table (item list with checkboxes + counters) ─────────────────── */
+
+.window-app.bg3-dialog table {
+    background: transparent !important;
+    border-collapse: collapse !important;
+    color: #d0c4a8 !important;
+    width: 100% !important;
+}
+
+.window-app.bg3-dialog thead th {
+    border-bottom: 1px solid rgba(106, 78, 24, 0.4) !important;
+    color: #8a7450 !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.1em !important;
+    padding: 4px 8px !important;
+    text-transform: uppercase !important;
+}
+
+.window-app.bg3-dialog tbody tr {
+    border-bottom: 1px solid rgba(106, 78, 24, 0.1) !important;
+}
+
+.window-app.bg3-dialog tbody tr:last-child {
+    border-bottom: none !important;
+}
+
+.window-app.bg3-dialog tbody td {
+    color: #d0c4a8 !important;
+    font-size: 0.82rem !important;
+    padding: 4px 8px !important;
+    vertical-align: middle !important;
+}
+
 /* ── Tormenta20 themed overrides ────────────────────────────────────────── */
 
 .window-app.bg3-dialog.tormenta20 .window-content {

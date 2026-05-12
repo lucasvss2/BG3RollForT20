@@ -2,7 +2,7 @@
     "id": "aeris-bg3-rolls-t20",
     "title": "BG3RollForT20",
     "description": "Overlay cinemático de dados inspirado em BG3 para o sistema Tormenta20 (t20). Exibe perícias, resistências, ataques e iniciativa com animação dramática em tela cheia. Funciona de forma independente — aeris-bg3-rolls é recomendado mas não obrigatório.",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "authors": [
         {
             "name": "lucasvss2",
