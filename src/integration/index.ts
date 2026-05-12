@@ -2,23 +2,15 @@
  * Integration layer: connects the T20 parser to the BG3 cinematic overlay.
  *
  * The module ships its own overlay (BG3Overlay) and works fully standalone —
- * aeris-bg3-rolls is NOT required.  If aeris-bg3-rolls happens to be active
- * (e.g. the user forced it on), we additionally try to register our parser
- * with it so both overlays are aware of T20 rolls.
+ * aeris-bg3-rolls is NOT required.
  *
- * Strategy 1 — Hook API (aeris-bg3-rolls optional)
- *   If aeris-bg3-rolls fires "aeris-bg3-rolls.ready" or listens for
- *   "aeris-bg3-rolls.registerParser", we register there too.
+ * Roll interception flow:
+ *   1. createChatMessage  → parse roll, register as "pending"
+ *   2. diceSoNice:rollComplete → show overlay AFTER the 3D dice animation
+ *      (if Dice So Nice is not active, show immediately at step 1)
  *
- * Strategy 2 — Global API (aeris-bg3-rolls optional)
- *   Use game.bg3rolls.registerParser if available.
- *
- * Strategy 3 — libWrapper (aeris-bg3-rolls optional)
- *   MIXED-wrap parseRollMeta on the bg3 module API.
- *
- * Strategy 4 — preCreateChatMessage (primary / always active)
- *   Intercepts every T20 roll message, shows the BG3Overlay, and lets the
- *   chat message through normally so the roll is still recorded in chat.
+ * If aeris-bg3-rolls is somehow active, we additionally register the T20
+ * parser with it (strategies 1–3) so both overlays are aware of T20 rolls.
  */
 
 import { parseT20 } from "@/parser/t20";
@@ -36,20 +28,16 @@ import { BG3Overlay } from "@/overlay/BG3Overlay";
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function setupIntegration(): void {
-    // Always install the standalone overlay hook first
     installOverlayHook();
 
     const bg3 = game.modules.get(BG3_MODULE_ID);
     if (!bg3?.active) {
-        log(
-            `"${BG3_MODULE_ID}" não está ativo — usando overlay próprio (modo standalone).`,
-        );
+        log(`"${BG3_MODULE_ID}" não está ativo — modo standalone.`);
         return;
     }
 
     log("aeris-bg3-rolls detectado e ativo — registrando parser T20…");
 
-    // Strategy 1a: respond to the ready hook
     Hooks.on(BG3_READY_HOOK, (...args: unknown[]) => {
         const api = args[0] as AerisBG3RollsAPI | undefined;
         if (typeof api?.registerParser === "function") {
@@ -58,46 +46,101 @@ export function setupIntegration(): void {
         }
     });
 
-    // Strategy 1b: fire registration hook (catches early-init registrations)
     Hooks.callAll(BG3_REGISTER_HOOK, SYSTEM_ID, parseT20);
 
-    // Strategies 2 & 3 run after bg3 finishes its own setup
     Hooks.once("ready", () => {
         if (tryGlobalApiRegistration()) return;
         tryLibWrapperPatch();
     });
 }
 
-// ── Strategy 4: standalone overlay (always installed) ─────────────────────────
+// ── Core overlay hook ─────────────────────────────────────────────────────────
+
+/** Pending overlays waiting for the Dice So Nice animation to complete. */
+const pendingOverlays = new Map<string, { meta: RollMeta; roll: Roll }>();
 
 function installOverlayHook(): void {
-    Hooks.on("preCreateChatMessage", (...args: unknown[]): void => {
+    // Intercept after the ChatMessage has been persisted (all data available)
+    Hooks.on("createChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
 
         if (game.system.id !== SYSTEM_ID) return;
-        if (!message.isRoll || !message.rolls?.length) return;
 
-        const rollMeta = parseT20({ flavor: message.flavor });
-        if (!rollMeta) return;
+        // Accept any message that carries rolls — do not gate on message.isRoll
+        // because some systems set the message type differently
+        if (!message.rolls?.length) return;
+
+        const flavor = resolveFlavorText(message);
+        log(`Roll detectado — flavor: "${flavor}"`);
+
+        const rollMeta = parseT20({ flavor });
+        if (!rollMeta) {
+            log(`Tipo não reconhecido (${flavor || "sem flavor"}) — ignorado.`);
+            return;
+        }
 
         const roll = message.rolls[0];
         if (!roll) return;
 
-        // Show our cinematic overlay
-        BG3Overlay.show(rollMeta, roll);
-
-        // If aeris-bg3-rolls is somehow also active, fire its orchestrator hook
-        // so it can render its own overlay in parallel (user enabled it manually)
-        const bg3 = game.modules.get(BG3_MODULE_ID);
-        if (bg3?.active) {
-            const userId = args[3] as string;
-            Hooks.callAll(BG3_ALERT_HOOK, { message, rollMeta, roll, userId });
+        // If Dice So Nice is active, wait for its animation before showing
+        const dicesonice = game.modules.get("dice-so-nice");
+        if (dicesonice?.active) {
+            pendingOverlays.set(message.id, { meta: rollMeta, roll });
+            // Safety net: show after 8 s even if the completion hook never fires
+            setTimeout(() => showPending(message.id), 8000);
+        } else {
+            BG3Overlay.show(rollMeta, roll);
         }
 
-        // Chat message is NOT suppressed — rolls remain in the chat log
+        // If aeris-bg3-rolls is somehow active, fire its orchestrator hook too
+        const bg3 = game.modules.get(BG3_MODULE_ID);
+        if (bg3?.active) {
+            Hooks.callAll(BG3_ALERT_HOOK, {
+                message,
+                rollMeta,
+                roll,
+                userId: args[2] as string,
+            });
+        }
+    });
+
+    // Show overlay after the Dice So Nice 3D animation completes
+    Hooks.on("diceSoNice:rollComplete", (...args: unknown[]): void => {
+        const messageId = args[0] as string;
+        showPending(messageId);
     });
 
     log("Overlay cinemático T20 instalado.");
+}
+
+function showPending(messageId: string): void {
+    const pending = pendingOverlays.get(messageId);
+    if (!pending) return;
+    pendingOverlays.delete(messageId);
+    BG3Overlay.show(pending.meta, pending.roll);
+}
+
+/**
+ * Resolve the flavor text for a ChatMessage.
+ * Tries three sources in order:
+ *   1. message.flavor (set by most systems on the message or first roll)
+ *   2. First <h1>–<h6> element in the message content HTML
+ *   3. First plain-text line of the message content
+ */
+function resolveFlavorText(message: ChatMessage): string {
+    const direct = message.flavor?.trim();
+    if (direct) return direct;
+
+    const content = message.content ?? "";
+
+    const headingMatch = content.match(/<h[1-6][^>]*>([^<]+)<\/h[1-6]>/i);
+    if (headingMatch?.[1]) return headingMatch[1].trim();
+
+    const textOnly = content
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    return textOnly.slice(0, 200);
 }
 
 // ── Strategy 2: game.bg3rolls global API ─────────────────────────────────────
@@ -105,7 +148,6 @@ function installOverlayHook(): void {
 function tryGlobalApiRegistration(): boolean {
     const api = game.bg3rolls;
     if (typeof api?.registerParser !== "function") return false;
-
     api.registerParser(SYSTEM_ID, parseT20);
     log("Parser T20 registrado via game.bg3rolls.registerParser().");
     return true;
