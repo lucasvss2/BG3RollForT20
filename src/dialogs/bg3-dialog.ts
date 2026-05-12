@@ -96,11 +96,29 @@ const DIALOG_STYLES = `
     z-index: 1;
 }
 
+/* Row containing optional image + name */
+.bg3-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+}
+
+.bg3-skill-img {
+    border: 1px solid rgba(200, 169, 110, 0.5);
+    border-radius: 4px;
+    box-shadow: 0 0 14px rgba(200, 169, 110, 0.35);
+    flex-shrink: 0;
+    height: 56px;
+    object-fit: cover;
+    width: 56px;
+}
+
 .bg3-skill-name {
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: clamp(1.5rem, 4vw, 2.2rem);
     font-weight: 700;
-    color: #c8a96e;
+    color: #c8a96e !important;
     text-transform: uppercase;
     letter-spacing: 0.18em;
     text-shadow: 0 0 20px rgba(200, 169, 110, 0.65);
@@ -138,7 +156,8 @@ const DIALOG_STYLES = `
     border-bottom: none !important;
 }
 
-.window-app.bg3-dialog .form-group label {
+/* Direct-child labels = field names ("BÔNUS NO TESTE", "ROLL MODE") */
+.window-app.bg3-dialog .form-group > label {
     color: #8a7450 !important;
     font-size: 0.78rem !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
@@ -187,23 +206,27 @@ const DIALOG_STYLES = `
 
 .window-app.bg3-dialog footer button,
 .window-app.bg3-dialog .dialog-buttons button {
+    align-items: center !important;
     background: linear-gradient(to bottom, #5c3a10, #3a2208) !important;
     border: 1px solid #7a5818 !important;
     border-radius: 4px !important;
+    box-shadow:
+        0 0 16px rgba(139, 105, 20, 0.3),
+        inset 0 1px rgba(255, 220, 150, 0.15) !important;
     color: #f0e0b0 !important;
     cursor: pointer !important;
+    display: inline-flex !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 1rem !important;
     font-weight: 700 !important;
+    justify-content: center !important;
     letter-spacing: 0.2em !important;
     padding: 9px 16px !important;
+    text-align: center !important;
     text-shadow: 0 0 12px rgba(255, 200, 100, 0.5) !important;
     text-transform: uppercase !important;
     transition: all 0.15s !important;
     width: 100% !important;
-    box-shadow:
-        0 0 16px rgba(139, 105, 20, 0.3),
-        inset 0 1px rgba(255, 220, 150, 0.15) !important;
 }
 
 .window-app.bg3-dialog footer button:hover,
@@ -229,13 +252,12 @@ const DIALOG_STYLES = `
  * every text-bearing element inside the dialog content.
  *
  * Contrast targets (background ≈ #090604, luminance 0.003):
- *   #c8bfa0  →  luminance 0.57  →  contrast ~11:1  (WCAG AAA)
- *   #a09878  →  luminance 0.36  →  contrast  ~7:1  (WCAG AAA)
- *   #9a8a6a  →  luminance 0.27  →  contrast  ~5.8:1 (WCAG AA)
- *   #8a7450  →  luminance 0.20  →  contrast  ~4.8:1 (WCAG AA — labels/hints)
+ *   #c8bfa0  →  contrast ~11:1  (WCAG AAA)
+ *   #9a8a6a  →  contrast  ~5.8:1 (WCAG AA)
+ *   #8a7450  →  contrast  ~4.5:1 (WCAG AA — field-name labels)
  */
 
-/* Primary body text — descriptions, notes, cell content */
+/* Primary body text */
 .window-app.bg3-dialog .window-content p,
 .window-app.bg3-dialog .window-content span,
 .window-app.bg3-dialog .window-content small,
@@ -244,33 +266,21 @@ const DIALOG_STYLES = `
     color: #c8bfa0 !important;
 }
 
-/* Table cells and all their descendants */
-.window-app.bg3-dialog td,
-.window-app.bg3-dialog td p,
-.window-app.bg3-dialog td span,
-.window-app.bg3-dialog td small,
-.window-app.bg3-dialog td div,
-.window-app.bg3-dialog td label,
-.window-app.bg3-dialog td a {
+/* Table cells — base */
+.window-app.bg3-dialog td {
+    color: #c8bfa0 !important;
+}
+
+/* All descendants inside table cells (catches spans/labels set by system CSS) */
+.window-app.bg3-dialog tr td *:not(input[type="checkbox"]):not(select):not(button) {
     color: #c8bfa0 !important;
 }
 
 /* Secondary / muted text (costs, hints, categories) */
 .window-app.bg3-dialog .hint,
 .window-app.bg3-dialog .notes,
-.window-app.bg3-dialog .cost,
-.window-app.bg3-dialog .pm,
-.window-app.bg3-dialog .mana,
-.window-app.bg3-dialog [class*="pm"],
-.window-app.bg3-dialog [class*="mana"],
-.window-app.bg3-dialog [class*="cost"] {
-    color: #9a8a6a !important;
-}
-
-/* Inline text after checkboxes / counters that show "1 PM", "2 PM" etc. */
-.window-app.bg3-dialog .form-group span,
-.window-app.bg3-dialog .form-group small,
-.window-app.bg3-dialog .form-group p {
+.window-app.bg3-dialog [class*="cost"],
+.window-app.bg3-dialog [class*="mana"] {
     color: #9a8a6a !important;
 }
 
@@ -278,7 +288,7 @@ const DIALOG_STYLES = `
 
 .window-app.bg3-dialog input::placeholder,
 .window-app.bg3-dialog textarea::placeholder {
-    color: #9a8a6a !important;   /* contrast ~5.8:1 vs #090604 bg */
+    color: #9a8a6a !important;
     opacity: 1 !important;
 }
 
@@ -312,14 +322,7 @@ const DIALOG_STYLES = `
 }
 
 /* ── Counter (+ / −) buttons inside form groups ─────────────────────────── */
-/* Targets all small action buttons within the form area excluding footer    */
 
-.window-app.bg3-dialog .window-content a,
-.window-app.bg3-dialog .window-content button:not([data-action]):not([type="submit"]) {
-    /* Base reset — let specific selectors below override */
-}
-
-/* t20 counter / step buttons (various class names the system may use) */
 .window-app.bg3-dialog .minus,
 .window-app.bg3-dialog .plus,
 .window-app.bg3-dialog .decrease,
@@ -380,7 +383,7 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog table {
     background: transparent !important;
     border-collapse: collapse !important;
-    color: #d0c4a8 !important;
+    color: #c8bfa0 !important;
     width: 100% !important;
 }
 
@@ -403,7 +406,7 @@ const DIALOG_STYLES = `
 }
 
 .window-app.bg3-dialog tbody td {
-    color: #d0c4a8 !important;
+    color: #c8bfa0 !important;
     font-size: 0.82rem !important;
     padding: 4px 8px !important;
     vertical-align: middle !important;
@@ -447,41 +450,131 @@ function extractLabel(title: string): string {
     return title.trim();
 }
 
+/** Return true only when the value is a non-empty string that is not the literal "undefined". */
+function isValidName(v: unknown): v is string {
+    return typeof v === "string" && v.trim().length > 0 && v.trim().toLowerCase() !== "undefined";
+}
+
+const PLACEHOLDER_IMGS = [
+    "icons/svg/mystery-man.svg",
+    "icons/svg/item-bag.svg",
+    "icons/svg/coin.svg",
+];
+
 /**
- * Add the BG3 class + inject a skill-name banner into the dialog's form.
- * Works with V1 Application (jQuery html arg) and V2 (HTMLElement arg).
+ * Force readable text color on table cell content.
+ * Uses inline style with priority="important" to beat any system stylesheet rule.
+ * Re-applied on every render to catch elements added after initial inject.
+ */
+function forceTextVisibility(el: HTMLElement): void {
+    el.querySelectorAll("tbody td, tbody td *").forEach((node) => {
+        if (
+            node instanceof HTMLElement &&
+            !node.matches("input, select, button")
+        ) {
+            node.style.setProperty("color", "#c8bfa0", "important");
+        }
+    });
+    // Keep form-row field-name labels at the muted gold tone
+    el.querySelectorAll(".form-group > label:first-child").forEach((node) => {
+        if (node instanceof HTMLElement)
+            node.style.setProperty("color", "#8a7450", "important");
+    });
+}
+
+type AppLike = {
+    options?: { title?: string };
+    title?: string;
+    object?: { name?: string; img?: string };
+    item?: { name?: string; img?: string };
+};
+
+/**
+ * Add the BG3 class + inject a skill-name banner (with optional image) into
+ * the dialog's form. Works with V1 Application (jQuery html arg) and V2
+ * (HTMLElement arg). Accepts optional template data from hook args[2].
  */
 function stylizeDialog(
-    app: { options?: { title?: string }; title?: string },
+    app: AppLike,
     htmlArg: unknown,
+    templateData?: Record<string, unknown>,
 ): void {
-    // Resolve the root HTMLElement from whatever Foundry passes
+    // Resolve root HTMLElement from whatever Foundry passes
     let el: HTMLElement | null = null;
     if (htmlArg instanceof HTMLElement) {
         el = htmlArg;
     } else if (htmlArg && typeof htmlArg === "object") {
-        // jQuery object: {0: HTMLElement, ...}
+        // jQuery object
         el = (htmlArg as Record<string, unknown>)[0] as HTMLElement | null;
     }
     if (!el) return;
 
     el.classList.add("bg3-dialog");
 
-    // Inject skill-name banner once (guard against double-render)
+    // Always force text visibility (runs on every render)
+    forceTextVisibility(el);
+
+    // Banner is injected only once
     if (el.querySelector(".bg3-skill-banner")) return;
 
+    // ── Resolve name ────────────────────────────────────────────────────────
+
+    // Sources tried in order: app properties → template data item → options item
+    const tdItem = templateData?.["item"] as { name?: string; img?: string } | undefined;
+    const opts = (app as Record<string, unknown>).options as Record<string, unknown> | undefined;
+    const optsItem = opts?.["item"] as { name?: string; img?: string } | undefined;
+
+    const nameSources = [
+        app.object?.name,
+        app.item?.name,
+        tdItem?.name,
+        optsItem?.name,
+        // ability/skill keys stored directly on options
+        opts?.["ability"] as string | undefined,
+        opts?.["skill"] as string | undefined,
+    ];
+
+    const imgSources = [
+        app.object?.img,
+        app.item?.img,
+        tdItem?.img,
+        optsItem?.img,
+    ];
+
+    // First valid name wins
+    let itemName = nameSources.find(isValidName) ?? "";
+
+    // First non-placeholder image wins
+    const itemImg =
+        imgSources.find(
+            (s) => typeof s === "string" && s.length > 0 && !PLACEHOLDER_IMGS.some((p) => s.includes(p)),
+        ) ?? "";
+
+    // Prefer the title label (e.g. "Adaga Mental") over a generic item name.
+    // Fall back to itemName when the system couldn't fill the title (→ "undefined").
     const rawTitle: string = app.title ?? app.options?.title ?? "";
-    const label = extractLabel(rawTitle);
+    const titleLabel = extractLabel(rawTitle);
+    const label = isValidName(titleLabel) ? titleLabel : itemName;
+
     if (!label) return;
+
+    // ── Build banner ─────────────────────────────────────────────────────────
+
+    const imgHtml =
+        itemImg
+            ? `<img class="bg3-skill-img" src="${itemImg}" alt="" />`
+            : "";
 
     const banner = document.createElement("div");
     banner.className = "bg3-skill-banner";
     banner.innerHTML = `
-        <div class="bg3-skill-name">${esc(label)}</div>
+        <div class="bg3-banner-row">
+            ${imgHtml}
+            <div class="bg3-skill-name">${esc(label)}</div>
+        </div>
         <div class="bg3-skill-divider"></div>
     `;
 
-    // Prepend inside the form (or window-content if no form)
     const target =
         el.querySelector("form") ??
         el.querySelector(".window-content") ??
@@ -494,11 +587,12 @@ function stylizeDialog(
 export function setupDialogStyling(): void {
     ensureDialogStyles();
 
-    // Primary: AbilityUseDialog (perícias, resistências, ataques)
+    // Primary: AbilityUseDialog (perícias, resistências, ataques, magias)
     Hooks.on("renderAbilityUseDialog", (...args: unknown[]): void => {
         stylizeDialog(
-            args[0] as { options?: { title?: string }; title?: string },
+            args[0] as AppLike,
             args[1],
+            args[2] as Record<string, unknown> | undefined,
         );
     });
 
@@ -518,8 +612,9 @@ export function setupDialogStyling(): void {
             return;
 
         stylizeDialog(
-            args[0] as { options?: { title?: string }; title?: string },
+            args[0] as AppLike,
             htmlArg,
+            args[2] as Record<string, unknown> | undefined,
         );
     });
 }
