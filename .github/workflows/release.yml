@@ -25,10 +25,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build
         run: npm run build
@@ -37,26 +36,36 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+            TAG="${{ github.event.inputs.tag }}"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF_NAME}"
           fi
-
-      - name: Patch module.json version
-        run: |
-          VERSION="${{ steps.version.outputs.tag }}"
           # Strip leading "v"
-          VERSION="${VERSION#v}"
-          jq --arg v "$VERSION" '.version = $v' module.json > module.tmp.json
-          mv module.tmp.json module.json
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Patch version and download URL in module.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          jq \
+            --arg v "$VERSION" \
+            --arg dl "https://github.com/${{ github.repository }}/releases/download/$TAG/aeris-bg3-rolls-t20.zip" \
+            '.version = $v | .download = $dl' \
+            module.json > module.patched.json
+          mv module.patched.json module.json
 
       - name: Create ZIP
         run: |
           mkdir -p staging/aeris-bg3-rolls-t20/dist
-          cp module.json staging/aeris-bg3-rolls-t20/module.json
-          cp dist/main.bundle.js staging/aeris-bg3-rolls-t20/dist/main.bundle.js
+          cp module.json           staging/aeris-bg3-rolls-t20/module.json
+          cp dist/main.bundle.js   staging/aeris-bg3-rolls-t20/dist/main.bundle.js
           cd staging
           zip -r ../aeris-bg3-rolls-t20.zip aeris-bg3-rolls-t20/
+          cd ..
+          echo "ZIP contents:"
+          unzip -l aeris-bg3-rolls-t20.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -65,3 +74,5 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
           files: aeris-bg3-rolls-t20.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
