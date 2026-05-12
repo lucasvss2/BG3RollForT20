@@ -34,14 +34,20 @@ import {
     MODULE_ID,
     SYSTEM_ID,
 } from "@/constants";
-import { log, warn } from "@/utils/logging";
+import { log, warn, notifyWarn } from "@/utils/logging";
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
 export function setupIntegration(): void {
     const bg3 = game.modules.get(BG3_MODULE_ID);
     if (!bg3?.active) {
-        warn("aeris-bg3-rolls is not active — BG3 overlay will be unavailable.");
+        warn(
+            `O módulo "${BG3_MODULE_ID}" não está ativo. ` +
+            `Instale e ative "Aeris BG3 Rolls" para habilitar a sobreposição cinemática de dados.`,
+        );
+        notifyWarn(
+            `BG3RollForT20: instale e ative o módulo "Aeris BG3 Rolls" para que a sobreposição funcione.`,
+        );
         return;
     }
 
