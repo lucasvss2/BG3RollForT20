@@ -1,6 +1,6 @@
 export const MODULE_ID = "aeris-bg3-rolls-t20" as const;
 export const BG3_MODULE_ID = "aeris-bg3-rolls" as const;
-export const SYSTEM_ID = "t20" as const;
+export const SYSTEM_ID = "tormenta20" as const;
 
 /** Hook fired by aeris-bg3-rolls when a roll message is ready to be grouped */
 export const BG3_ALERT_HOOK = `${BG3_MODULE_ID}.alertChatMessage` as const;
