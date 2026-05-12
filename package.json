@@ -7,12 +7,15 @@
         "build": "vite build",
         "dev": "vite build --watch",
         "lint": "eslint src --ext .ts",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest"
     },
     "devDependencies": {
         "@types/jquery": "^3.5.32",
         "eslint": "^9.27.0",
         "typescript": "^5.8.3",
-        "vite": "^6.3.5"
+        "vite": "^6.3.5",
+        "vitest": "^4.1.6"
     }
 }

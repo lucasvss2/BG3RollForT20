@@ -83,8 +83,8 @@ const RE_SKILL_PAREN = /^([^(]+?)\s*\([^)]+\)\s*$/i;
 /** Matches "(dano)" anywhere — we deliberately skip damage rolls */
 const RE_DAMAGE = /dano/i;
 
-/** Matches "magia" — spell-related rolls */
-const RE_SPELL = /magia/i;
+/** Matches "magia" or "mágico" — spell-related rolls */
+const RE_SPELL = /mágico|magia/i;
 
 // ── Build lookup sets for O(1) membership checks ──────────────────────────────
 
