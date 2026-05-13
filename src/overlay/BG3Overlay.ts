@@ -4,6 +4,8 @@
  * is intercepted. No dependency on aeris-bg3-rolls.
  */
 
+import type { TestOutcome } from "@/hidden-test/types";
+
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
 const STYLES_ID = "bg3-t20-styles";
@@ -84,6 +86,14 @@ const STYLES = `
     color: #cc4444;
     text-shadow: 0 0 40px rgba(204, 68, 68, 0.85);
 }
+.bg3-t20-total.is-success {
+    color: #6ecf7a;
+    text-shadow: 0 0 40px rgba(110, 207, 122, 0.8), 0 0 80px rgba(80, 180, 90, 0.4);
+}
+.bg3-t20-total.is-failure {
+    color: #c8a070;
+    text-shadow: 0 0 30px rgba(200, 160, 112, 0.6);
+}
 .bg3-t20-crit-label {
     font-size: clamp(0.9rem, 1.5vw, 1.2rem);
     letter-spacing: 0.28em;
@@ -91,8 +101,10 @@ const STYLES = `
     font-weight: 700;
     margin-top: 2px;
 }
-.bg3-t20-crit-label.is-crit  { color: #ffd700; }
-.bg3-t20-crit-label.is-fumble { color: #cc4444; }
+.bg3-t20-crit-label.is-crit     { color: #ffd700; }
+.bg3-t20-crit-label.is-fumble   { color: #cc4444; }
+.bg3-t20-crit-label.is-success  { color: #6ecf7a; }
+.bg3-t20-crit-label.is-failure  { color: #c8a070; }
 .bg3-t20-formula {
     font-size: 0.82rem;
     color: #a89880;
@@ -149,19 +161,40 @@ function naturalD20(roll: Roll): number | null {
     return d20?.results?.find((r) => r.active)?.result ?? null;
 }
 
-function buildHtml(meta: RollMeta, roll: Roll): string {
+const OUTCOME_TOTAL_CLASS: Record<TestOutcome, string> = {
+    critico:       "is-crit",
+    sucesso:       "is-success",
+    falha:         "is-failure",
+    falha_critica: "is-fumble",
+};
+
+const OUTCOME_LABEL: Record<TestOutcome, string> = {
+    critico:       "SUCESSO CRÍTICO!",
+    sucesso:       "SUCESSO",
+    falha:         "FALHA",
+    falha_critica: "FALHA CRÍTICA",
+};
+
+function buildHtml(meta: RollMeta, roll: Roll, outcome?: TestOutcome): string {
     const total = roll.total ?? 0;
-    const d20 = naturalD20(roll);
-    const isCrit = d20 === 20;
-    const isFumble = d20 === 1;
 
-    const totalClass = isCrit ? " is-crit" : isFumble ? " is-fumble" : "";
+    let totalClass: string;
+    let resultHtml: string;
 
-    const critHtml = isCrit
-        ? `<div class="bg3-t20-crit-label is-crit">Acerto Crítico!</div>`
-        : isFumble
-          ? `<div class="bg3-t20-crit-label is-fumble">Falha Crítica</div>`
-          : "";
+    if (outcome) {
+        totalClass = ` ${OUTCOME_TOTAL_CLASS[outcome]}`;
+        resultHtml = `<div class="bg3-t20-crit-label ${OUTCOME_TOTAL_CLASS[outcome]}">${OUTCOME_LABEL[outcome]}</div>`;
+    } else {
+        const d20 = naturalD20(roll);
+        const isCrit   = d20 === 20;
+        const isFumble = d20 === 1;
+        totalClass = isCrit ? " is-crit" : isFumble ? " is-fumble" : "";
+        resultHtml = isCrit
+            ? `<div class="bg3-t20-crit-label is-crit">Acerto Crítico!</div>`
+            : isFumble
+              ? `<div class="bg3-t20-crit-label is-fumble">Falha Crítica</div>`
+              : "";
+    }
 
     const subHtml = meta.subcategory
         ? `<div class="bg3-t20-subcategory">${esc(meta.subcategory)}</div>`
@@ -177,7 +210,7 @@ function buildHtml(meta: RollMeta, roll: Roll): string {
             ${subHtml}
             <div class="bg3-t20-divider"></div>
             <div class="bg3-t20-total${totalClass}">${total}</div>
-            ${critHtml}
+            ${resultHtml}
             ${formulaHtml}
         </div>
         <div class="bg3-t20-hint">clique para fechar</div>
@@ -190,13 +223,13 @@ class BG3OverlaySingleton {
     private el: HTMLElement | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
 
-    show(meta: RollMeta, roll: Roll): void {
+    show(meta: RollMeta, roll: Roll, outcome?: TestOutcome): void {
         this.dismiss(true);
         ensureStyles();
 
         const el = document.createElement("div");
         el.id = OVERLAY_ID;
-        el.innerHTML = buildHtml(meta, roll);
+        el.innerHTML = buildHtml(meta, roll, outcome);
         el.addEventListener("click", () => this.dismiss());
         document.body.appendChild(el);
         this.el = el;

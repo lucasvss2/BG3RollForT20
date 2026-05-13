@@ -13,6 +13,7 @@ import { MODULE_ID, SYSTEM_ID } from "./constants";
 import { setupIntegration } from "./integration/index";
 import { setupDialogStyling } from "./dialogs/bg3-dialog";
 import { setupChatStyling } from "./chat/chatStyles";
+import { setupHiddenTest } from "./hidden-test/index";
 import { log, warn } from "./utils/logging";
 
 // ── Init: sanity checks ───────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ Hooks.once("setup", () => {
     setupIntegration();
     setupDialogStyling();
     setupChatStyling();
+    setupHiddenTest();
 });
 
 // ── Ready: confirm everything loaded ─────────────────────────────────────────

@@ -18,14 +18,27 @@ declare const game: {
         get(id: string): FoundryModule | undefined;
     };
     actors?: {
-        get(id: string): { system?: Record<string, unknown> } | undefined;
+        get(id: string): FoundryActor | undefined;
         contents?: Array<{ id: string }>;
     };
     messages?: {
         get(id: string): ChatMessage | undefined;
         contents?: ChatMessage[];
     };
-    user: { id: string; isGM: boolean } | null;
+    users?: {
+        find(fn: (u: FoundryUser) => boolean): FoundryUser | undefined;
+        get(id: string): FoundryUser | undefined;
+        contents: FoundryUser[];
+    };
+    user: {
+        id: string;
+        isGM: boolean;
+        targets: Set<FoundryToken>;
+    } | null;
+    socket?: {
+        emit(event: string, data: unknown): void;
+        on(event: string, handler: (data: unknown) => void): void;
+    };
     i18n: {
         localize(key: string): string;
         format(key: string, data?: Record<string, unknown>): string;
@@ -48,6 +61,31 @@ declare interface FoundryModule {
     active: boolean;
     version: string;
     api?: Record<string, unknown>;
+}
+
+declare interface FoundryUser {
+    id: string;
+    name: string;
+    isGM: boolean;
+    active: boolean;
+}
+
+declare interface FoundryToken {
+    id: string;
+    name: string;
+    actor: FoundryActor | null;
+}
+
+declare interface FoundryActor {
+    id: string;
+    name: string;
+    img?: string;
+    ownership: Record<string, number>;
+    system?: {
+        pericias?: Record<string, { total?: number; label?: string; value?: number }>;
+        atributos?: Record<string, { value?: number }>;
+        [key: string]: unknown;
+    };
 }
 
 declare interface SettingConfig {
@@ -78,15 +116,57 @@ declare class ChatMessage {
     updateSource(data: Record<string, unknown>): void;
     update(data: Record<string, unknown>): Promise<this>;
     toObject(): Record<string, unknown>;
+
+    static create(data: Record<string, unknown>): Promise<ChatMessage | undefined>;
+    static getSpeaker(options?: { actor?: FoundryActor | null; token?: FoundryToken }): Record<string, unknown>;
 }
+
+// ── Dialog ───────────────────────────────────────────────────────────────────
+
+declare interface DialogButtonConfig {
+    icon?: string;
+    label: string;
+    callback?: ($html: JQuery) => void | Promise<void>;
+}
+
+declare interface DialogData {
+    title: string;
+    content: string;
+    buttons?: Record<string, DialogButtonConfig>;
+    default?: string;
+    render?: ($html: JQuery) => void;
+    close?: () => void;
+}
+
+declare interface DialogOptions {
+    classes?: string[];
+    width?: number;
+    height?: number | string;
+    id?: string;
+    resizable?: boolean;
+}
+
+declare class Dialog {
+    constructor(data: DialogData, options?: DialogOptions);
+    render(force: boolean): this;
+    close(): Promise<void>;
+}
+
+// ── Utility ──────────────────────────────────────────────────────────────────
+
+declare function mergeObject<T extends object, U extends object>(original: T, other: U): T & U;
+declare function randomID(length?: number): string;
 
 // ── Roll ─────────────────────────────────────────────────────────────────────
 
 declare class Roll {
+    constructor(formula: string, data?: Record<string, unknown>);
     formula: string;
     total: number | null;
     terms: RollTerm[];
     dice: DiceTerm[];
+    evaluate(options?: { async?: boolean }): Promise<Roll>;
+    toJSON(): Record<string, unknown>;
     static fromData(data: Record<string, unknown>): Roll;
 }
 

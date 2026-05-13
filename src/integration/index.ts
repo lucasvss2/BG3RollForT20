@@ -55,6 +55,9 @@ function installOverlayHook(): void {
 
         if (game.system.id !== SYSTEM_ID) return;
 
+        // Hidden test messages are handled by hidden-test/index.ts
+        if (message.getFlag(MODULE_ID, "hiddenTest")) return;
+
         const rolls = getRolls(message);
         if (!rolls.length) {
             log("Sem rolagens na mensagem — ignorada.");

@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
+const FOUNDRY_OUT = process.env["FOUNDRY_OUT"] ??
+    "C:/Users/lucas/AppData/Local/FoundryVTT/Data/modules/aeris-bg3-rolls-t20";
+
 export default defineConfig({
     build: {
         lib: {
@@ -8,7 +11,7 @@ export default defineConfig({
             fileName: "main.bundle",
             formats: ["es"],
         },
-        outDir: "dist",
+        outDir: FOUNDRY_OUT,
         minify: false,
         sourcemap: true,
         rollupOptions: {
