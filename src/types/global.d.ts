@@ -76,14 +76,26 @@ declare interface FoundryToken {
     actor: FoundryActor | null;
 }
 
+declare interface FoundryItem {
+    id: string;
+    name: string;
+    type: string;
+    system: Record<string, unknown>;
+}
+
 declare interface FoundryActor {
     id: string;
     name: string;
     img?: string;
     ownership: Record<string, number>;
+    items?: { contents: FoundryItem[] };
     system?: {
-        pericias?: Record<string, { total?: number; label?: string; value?: number }>;
+        pericias?: Record<string, {
+            total?: number; label?: string; value?: number;
+            outros?: number; condi?: number; atributo?: string;
+        }>;
         atributos?: Record<string, { value?: number }>;
+        nivel?: { value?: number };
         [key: string]: unknown;
     };
 }

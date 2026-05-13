@@ -8,6 +8,7 @@ export interface HiddenTestRequest {
     skillKey: string;
     skillLabel: string;
     dc: number;
+    gmBonus?: number;
 }
 
 export interface HiddenTestFlag {

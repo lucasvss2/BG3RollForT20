@@ -58,12 +58,16 @@ export function openHiddenTestGMDialog(): void {
                 <label>DIFICULDADE</label>
                 <input type="number" name="dc" value="15" min="1" max="99" />
             </div>
+            <div class="form-group">
+                <label>BÔNUS / PENALIDADE</label>
+                <input type="number" name="gmBonus" value="0" min="-99" max="99" />
+            </div>
         </div>
     `;
 
     new Dialog(
         {
-            title: "Solicitar Teste Secreto",
+            title: "Solicitar Teste",
             content,
             buttons: {
                 send: {
@@ -74,6 +78,8 @@ export function openHiddenTestGMDialog(): void {
                         const [skillKey, ...rest] = raw.split("|");
                         const skillLabel = rest.join("|");
                         const dc = parseInt($html.find('[name="dc"]').val() as string, 10);
+                        const gmBonusRaw = parseInt($html.find('[name="gmBonus"]').val() as string, 10);
+                        const gmBonus = isNaN(gmBonusRaw) ? 0 : gmBonusRaw;
 
                         if (!skillKey || !skillLabel || isNaN(dc) || dc < 1) return;
 
@@ -85,6 +91,7 @@ export function openHiddenTestGMDialog(): void {
                             skillKey,
                             skillLabel,
                             dc,
+                            gmBonus,
                         };
 
                         game.socket?.emit(`module.${MODULE_ID}`, payload);

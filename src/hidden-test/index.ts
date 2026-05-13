@@ -141,13 +141,47 @@ const HIDDEN_TEST_STYLES = `
     text-align: right;
     padding-right: 4px;
 }
-.htg-roll-hint {
-    color: #5a5040;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    text-align: center;
-    padding: 6px 16px 8px;
-    text-transform: uppercase;
+/* ── Powers list ───────────────────────────────────────────────────────── */
+
+.htg-powers-section {
+    padding: 2px 16px 0;
+}
+.htg-powers-header {
+    display: grid;
+    grid-template-columns: 26px 38px 1fr;
+    gap: 6px;
+    padding: 4px 0 2px;
+}
+.htg-power-row {
+    display: grid;
+    grid-template-columns: 26px 38px 1fr;
+    gap: 6px;
+    align-items: center;
+    padding: 3px 0;
+}
+.htg-pm-cost {
+    color: #c8a96e;
+    font-family: monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.htg-power-name {
+    color: #e8d8a8;
+    font-size: 0.88rem;
+}
+.htg-pm-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-top: 1px solid rgba(200,169,110,0.2);
+    margin-top: 5px;
+    padding: 5px 0 2px;
+}
+.htg-pm-display {
+    color: #c8a96e;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 1.1rem;
+    font-weight: 700;
 }
 `;
 

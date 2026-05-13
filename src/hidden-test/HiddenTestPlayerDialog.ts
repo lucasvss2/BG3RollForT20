@@ -6,11 +6,28 @@ function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildHiddenTestCardHtml(
-    skillLabel: string,
-    roll: Roll,
-    outcome: TestOutcome,
-): string {
+// ── Activatable items (poderes with PM cost) ──────────────────────────────────
+
+interface ActivatableItem {
+    id: string;
+    name: string;
+    pm: number;
+}
+
+function getActivatableItems(actor: FoundryActor): ActivatableItem[] {
+    const items = actor.items?.contents ?? [];
+    return items.flatMap((item) => {
+        if (item.type !== "poder") return [];
+        const ativacao = (item.system.ativacao as Record<string, unknown>) ?? {};
+        const custo = (ativacao.custo as number) ?? 0;
+        if (custo <= 0) return [];
+        return [{ id: item.id, name: item.name, pm: custo }];
+    });
+}
+
+// ── Chat card HTML ────────────────────────────────────────────────────────────
+
+function buildHiddenTestCardHtml(skillLabel: string, roll: Roll, outcome: TestOutcome): string {
     const total = roll.total ?? 0;
     const formula = roll.formula ?? "1d20";
 
@@ -31,7 +48,7 @@ function buildHiddenTestCardHtml(
         <div class="aeris-hidden-test-card">
             <div class="htc-header">
                 <div class="htc-skill-name">${esc(skillLabel)}</div>
-                <div class="htc-subtitle">Teste Secreto</div>
+                <div class="htc-subtitle">Teste de Perícia</div>
             </div>
             <div class="htc-divider"></div>
             <div class="htc-body">
@@ -43,14 +60,34 @@ function buildHiddenTestCardHtml(
     `.trim();
 }
 
+// ── Player dialog ─────────────────────────────────────────────────────────────
+
 export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
     const actor = game.actors?.get(request.actorId);
     const actorName = actor?.name ?? "Personagem";
-
     const skillTotal = actor ? computeSkillTotal(actor, request.skillKey) : 0;
-
     const bonusStr = skillTotal >= 0 ? `+${skillTotal}` : `${skillTotal}`;
-    const formula = skillTotal !== 0 ? `1d20 + ${skillTotal}` : "1d20";
+    const powers = actor ? getActivatableItems(actor) : [];
+
+    const powersHtml = powers.length > 0 ? `
+        <div class="htg-divider"></div>
+        <div class="htg-powers-section">
+            <div class="htg-powers-header">
+                <span class="htg-label-sm">APLICAR</span>
+                <span class="htg-label-sm">PM</span>
+                <span class="htg-label-sm">PODER</span>
+            </div>
+            ${powers.map((p) => `
+            <div class="htg-power-row">
+                <input type="checkbox" class="htg-power-check" data-pm="${p.pm}">
+                <span class="htg-pm-cost">${p.pm}</span>
+                <span class="htg-power-name">${esc(p.name)}</span>
+            </div>`).join("")}
+            <div class="htg-pm-total-row">
+                <span class="htg-label-sm">CUSTO DE MANA TOTAL</span>
+                <span class="htg-pm-display" id="htg-pm-total">0</span>
+            </div>
+        </div>` : "";
 
     const content = `
         <div class="htg-body">
@@ -67,34 +104,63 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
                 <label>BÔNUS DE PERÍCIA</label>
                 <span class="htg-bonus-display">${bonusStr}</span>
             </div>
-            <div class="htg-roll-hint">A dificuldade é secreta — role e descubra!</div>
+            ${powersHtml}
+            <div class="htg-divider"></div>
+            <div class="form-group">
+                <label>BÔNUS NO TESTE</label>
+                <input type="text" name="bonusExtra" value="" placeholder="ex. +1d4 ou -3" />
+            </div>
         </div>
     `;
 
     new Dialog(
         {
-            title: "Teste Secreto",
+            title: "Teste",
             content,
             buttons: {
                 roll: {
                     icon: '<i class="fas fa-dice-d20"></i>',
                     label: "Rolar Teste",
-                    callback: () => {
-                        void executeHiddenTestRoll(request, skillTotal, formula);
+                    callback: ($html: JQuery) => {
+                        const bonusExtra = (($html.find('[name="bonusExtra"]').val() as string) ?? "").trim();
+                        void executeHiddenTestRoll(request, skillTotal, bonusExtra);
                     },
                 },
             },
             default: "roll",
+            render: ($html: JQuery) => {
+                $html.find(".htg-power-check").on("change", () => {
+                    const total = $html
+                        .find(".htg-power-check:checked")
+                        .toArray()
+                        .reduce(
+                            (sum, el) => sum + parseInt((el as HTMLElement).dataset["pm"] ?? "0", 10),
+                            0,
+                        );
+                    $html.find("#htg-pm-total").text(String(total));
+                });
+            },
         },
-        { classes: ["bg3-dialog"], width: 400, id: "hidden-test-player" },
+        { classes: ["bg3-dialog"], width: 420, id: "hidden-test-player" },
     ).render(true);
 }
+
+// ── Roll execution ────────────────────────────────────────────────────────────
 
 async function executeHiddenTestRoll(
     request: HiddenTestRequest,
     skillTotal: number,
-    formula: string,
+    extraBonus: string,
 ): Promise<void> {
+    const gmBonus = request.gmBonus ?? 0;
+    const baseBonus = skillTotal + gmBonus;
+
+    let formula = baseBonus !== 0 ? `1d20 + ${baseBonus}` : "1d20";
+    if (extraBonus) {
+        const trimmed = extraBonus.trim();
+        formula += (trimmed.startsWith("+") || trimmed.startsWith("-")) ? ` ${trimmed}` : ` + ${trimmed}`;
+    }
+
     const roll = new Roll(formula);
     await roll.evaluate({ async: true });
 
@@ -109,7 +175,6 @@ async function executeHiddenTestRoll(
 
     const flag: HiddenTestFlag = { outcome, skillLabel: request.skillLabel };
 
-    // Create public chat message — createChatMessage hook fires for all clients
     await ChatMessage.create({
         content: buildHiddenTestCardHtml(request.skillLabel, roll, outcome),
         flavor: `Teste de ${request.skillLabel}`,
@@ -118,6 +183,4 @@ async function executeHiddenTestRoll(
         type: 5,
         flags: { [MODULE_ID]: { hiddenTest: flag } },
     });
-
-    void skillTotal; // used in formula
 }
