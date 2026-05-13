@@ -291,6 +291,11 @@ const CHAT_STYLES = `
     padding: 4px 8px !important;
 }
 .tormenta20.chat-card.item-card .chat-apply-ae {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    overflow: hidden !important;
+    position: relative !important;
     background: rgba(106, 78, 24, 0.15) !important;
     border: 1px solid rgba(106, 78, 24, 0.4) !important;
     color: #c8a96e !important;
@@ -299,14 +304,18 @@ const CHAT_STYLES = `
     letter-spacing: 0.06em !important;
     border-radius: 3px !important;
     padding: 3px 8px !important;
-    gap: 6px !important;
     cursor: pointer !important;
 }
 .tormenta20.chat-card.item-card .chat-apply-ae img {
-    width: 16px !important;
-    height: 16px !important;
+    position: static !important;
+    display: inline-block !important;
+    width: 18px !important;
+    height: 18px !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
     border: none !important;
-    border-radius: 0 !important;
+    border-radius: 2px !important;
+    object-fit: contain !important;
 }
 .tormenta20.chat-card.item-card .chat-apply-ae:hover {
     background: rgba(106, 78, 24, 0.32) !important;
