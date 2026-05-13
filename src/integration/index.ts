@@ -123,7 +123,7 @@ function getRolls(message: ChatMessage): Roll[] {
  * inside the content HTML (typically in <h3 class="item-name">).
  * We try multiple sources in order.
  */
-function resolveFlavorText(message: ChatMessage): string {
+export function resolveFlavorText(message: ChatMessage): string {
     // 1. Direct flavor property
     const direct = message.flavor?.trim();
     if (direct) return direct;

@@ -12,6 +12,7 @@
 import { MODULE_ID, SYSTEM_ID } from "./constants";
 import { setupIntegration } from "./integration/index";
 import { setupDialogStyling } from "./dialogs/bg3-dialog";
+import { setupChatStyling } from "./chat/chatStyles";
 import { log, warn } from "./utils/logging";
 
 // ── Init: sanity checks ───────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ Hooks.once("setup", () => {
     if (game.system.id !== SYSTEM_ID) return;
     setupIntegration();
     setupDialogStyling();
+    setupChatStyling();
 });
 
 // ── Ready: confirm everything loaded ─────────────────────────────────────────
