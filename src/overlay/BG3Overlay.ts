@@ -95,7 +95,7 @@ const STYLES = `
 .bg3-t20-crit-label.is-fumble { color: #cc4444; }
 .bg3-t20-formula {
     font-size: 0.82rem;
-    color: #585048;
+    color: #a89880;
     letter-spacing: 0.06em;
     margin-top: 6px;
     font-family: monospace;
