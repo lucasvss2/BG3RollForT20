@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
-const FOUNDRY_OUT = process.env["FOUNDRY_OUT"] ??
-    "C:/Users/lucas/AppData/Local/FoundryVTT/Data/modules/aeris-bg3-rolls-t20";
+// Local dev: override via env var to deploy directly to Foundry's module folder.
+// CI/release: leave unset so the build goes to dist/ and the release workflow can zip it.
+const FOUNDRY_OUT = process.env["FOUNDRY_OUT"] ?? "dist";
 
 export default defineConfig({
     build: {
