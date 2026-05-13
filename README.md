@@ -1,6 +1,6 @@
 # BG3RollForT20
 
-Módulo para [Foundry VTT](https://foundryvtt.com) que adiciona overlay cinemático de dados inspirado em *Baldur's Gate 3* para o sistema **Tormenta20** (`t20`).
+Módulo para [Foundry VTT](https://foundryvtt.com) melhorias de layout para o sistema **Tormenta20** (`t20`).
 
 Funciona de forma **totalmente independente** — nenhuma dependência obrigatória. O [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) é recomendado mas opcional.
 
@@ -31,14 +31,14 @@ https://raw.githubusercontent.com/lucasvss2/BG3RollForT20/master/module.json
 
 Toda rolagem T20 interceptada exibe um overlay full-screen escuro com o resultado em destaque, estilo BG3. O overlay fecha automaticamente após 3 segundos ou ao clicar.
 
-| Tipo de rolagem | Rótulo no overlay |
-|---|---|
-| Perícia (Acrobacia, Percepção…) | `Teste de <Perícia>` |
+| Tipo de rolagem                             | Rótulo no overlay              |
+| ------------------------------------------- | ------------------------------ |
+| Perícia (Acrobacia, Percepção…)             | `Teste de <Perícia>`           |
 | Resistência (Fortitude / Reflexo / Vontade) | `Resistência de <Resistência>` |
-| Ataque com arma / à distância | `Ataque` + nome da arma |
-| Ataque mágico | `Ataque Mágico` |
-| Iniciativa | `Iniciativa` |
-| Teste de atributo (Força, Destreza…) | `Teste de <Atributo>` |
+| Ataque com arma / à distância               | `Ataque` + nome da arma        |
+| Ataque mágico                               | `Ataque Mágico`                |
+| Iniciativa                                  | `Iniciativa`                   |
+| Teste de atributo (Força, Destreza…)        | `Teste de <Atributo>`          |
 
 Acerto crítico (nat 20) aparece em dourado; falha crítica (nat 1) aparece em vermelho. Rolagens de **dano** não são interceptadas.
 
@@ -58,21 +58,21 @@ O GM pode solicitar um teste secreto a qualquer jogador sem revelar a dificuldad
 
 Quatro resultados possíveis:
 
-| Resultado | Condição | Cor |
-|---|---|---|
-| Falha Crítica | Nat 1 | Vermelho |
-| Falha | Total < CD | Âmbar |
-| Sucesso | Total ≥ CD | Verde |
-| Sucesso Crítico | Nat 20 | Dourado |
+| Resultado       | Condição   | Cor      |
+| --------------- | ---------- | -------- |
+| Falha Crítica   | Nat 1      | Vermelho |
+| Falha           | Total < CD | Âmbar    |
+| Sucesso         | Total ≥ CD | Verde    |
+| Sucesso Crítico | Nat 20     | Dourado  |
 
 ---
 
 ## Dependências
 
-| Módulo | Tipo |
-|---|---|
-| [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) | Opcional — integração avançada |
-| [lib-wrapper](https://foundryvtt.com/packages/lib-wrapper) | Opcional — estratégia de fallback |
+| Módulo                                                             | Tipo                              |
+| ------------------------------------------------------------------ | --------------------------------- |
+| [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) | Opcional — integração avançada    |
+| [lib-wrapper](https://foundryvtt.com/packages/lib-wrapper)         | Opcional — estratégia de fallback |
 
 Nenhuma dependência obrigatória. O módulo opera em modo standalone quando os opcionais não estão presentes.
 
@@ -158,12 +158,12 @@ O workflow executa typecheck, testes, build, monta o ZIP e publica a release no 
 
 ## Solução de problemas
 
-| Sintoma | Causa provável |
-|---|---|
-| Overlay nunca aparece | Sistema ativo não é `tormenta20`; verifique o console |
-| Rolagem aparece no chat sem overlay | Flavor text não reconhecido — abra uma issue com o texto exato |
-| Botão de Teste Secreto não aparece | Usuário não é GM, ou o hook de toolbar não disparou — recarregue a página |
-| Teste Secreto: "nenhum jogador ativo" | O dono do token está offline; o modal só abre se houver um jogador conectado |
-| Resultados duplicados | Uma versão do aeris-bg3-rolls adicionou suporte nativo ao T20 — desative este módulo |
+| Sintoma                               | Causa provável                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------ |
+| Overlay nunca aparece                 | Sistema ativo não é `tormenta20`; verifique o console                                |
+| Rolagem aparece no chat sem overlay   | Flavor text não reconhecido — abra uma issue com o texto exato                       |
+| Botão de Teste Secreto não aparece    | Usuário não é GM, ou o hook de toolbar não disparou — recarregue a página            |
+| Teste Secreto: "nenhum jogador ativo" | O dono do token está offline; o modal só abre se houver um jogador conectado         |
+| Resultados duplicados                 | Uma versão do aeris-bg3-rolls adicionou suporte nativo ao T20 — desative este módulo |
 
 Abra o console do navegador e filtre por `[aeris-bg3-rolls-t20]` para diagnóstico.
