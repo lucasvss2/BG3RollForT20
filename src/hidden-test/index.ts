@@ -206,7 +206,8 @@ function setupChatHook(): void {
 // ── Toolbar button ────────────────────────────────────────────────────────────
 
 function setupToolbarButton(): void {
-    Hooks.on("getSceneControlButtons", (controls: unknown[]) => {
+    Hooks.on("getSceneControlButtons", (...args: unknown[]) => {
+        const controls = args[0] as unknown[];
         if (!game.user?.isGM) return;
 
         const tokenGroup = controls.find(

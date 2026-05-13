@@ -1,5 +1,4 @@
 import { MODULE_ID } from "@/constants";
-import { BG3Overlay } from "@/overlay/BG3Overlay";
 import { computeSkillTotal } from "./skills";
 import type { HiddenTestFlag, HiddenTestRequest, TestOutcome } from "./types";
 
