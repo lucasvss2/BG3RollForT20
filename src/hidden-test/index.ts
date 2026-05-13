@@ -205,62 +205,39 @@ function setupChatHook(): void {
 
 // ── Toolbar button ────────────────────────────────────────────────────────────
 
+function injectToolbarButton(): void {
+    if (!game.user?.isGM) return;
+    if (document.getElementById("bg3-t20-hidden-test-btn")) return;
+
+    // Foundry v13: <aside id="scene-controls"> > <menu id="scene-controls-layers"> > <li> > <button>
+    const menu =
+        document.querySelector("menu#scene-controls-layers") ??
+        document.querySelector("aside#scene-controls menu") ??
+        document.querySelector("#ui-left menu");
+
+    if (!menu) return;
+
+    const btn = document.createElement("button");
+    btn.id = "bg3-t20-hidden-test-btn";
+    btn.type = "button";
+    btn.className = "control ui-control layer icon fa-solid fa-dice-d20";
+    btn.setAttribute("data-tooltip", "Solicitar Teste Secreto de Perícia");
+    btn.setAttribute("aria-label", "Solicitar Teste Secreto de Perícia");
+    btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openHiddenTestGMDialog();
+    });
+
+    const li = document.createElement("li");
+    li.appendChild(btn);
+    menu.appendChild(li);
+}
+
 function setupToolbarButton(): void {
-    Hooks.on("getSceneControlButtons", (...args: unknown[]) => {
-        const controls = args[0] as unknown[];
-        if (!game.user?.isGM) return;
-
-        const tokenGroup = controls.find(
-            (c) => (c as Record<string, unknown>)["name"] === "token",
-        ) as Record<string, unknown> | undefined;
-
-        if (!tokenGroup) return;
-
-        const tool = {
-            name: "hidden-test",
-            title: "Solicitar Teste Secreto de Perícia",
-            icon: "fa-solid fa-dice-d20",
-            button: true,
-            visible: true,
-            onClick: () => openHiddenTestGMDialog(),
-        };
-
-        const tools = tokenGroup["tools"];
-        if (Array.isArray(tools)) {
-            tools.push(tool);
-        }
-    });
-
-    // DOM fallback: inject into the rendered toolbar if hook didn't add the button
-    Hooks.on("renderSceneControls", (...args: unknown[]) => {
-        if (!game.user?.isGM) return;
-        if (document.getElementById("bg3-t20-hidden-test-btn")) return;
-
-        // Try to find the controls list (v13 uses <ol class="main-controls">)
-        const ol =
-            document.querySelector("ol.main-controls") ??
-            document.querySelector("#ui-left ol") ??
-            document.querySelector(".control-tools ol");
-
-        if (!ol) return;
-
-        const li = document.createElement("li");
-        li.id = "bg3-t20-hidden-test-btn";
-        li.className = "scene-control";
-        li.title = "Solicitar Teste Secreto de Perícia";
-        li.setAttribute("data-control", "hidden-test");
-        li.setAttribute("aria-label", "Solicitar Teste Secreto de Perícia");
-        li.innerHTML = `<i class="fa-solid fa-dice-d20"></i>`;
-        li.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openHiddenTestGMDialog();
-        });
-        ol.appendChild(li);
-
-        const args0 = args[0];
-        void args0;
-    });
+    Hooks.on("renderSceneControls", () => injectToolbarButton());
+    // Also try immediately in case the hook already fired
+    Hooks.once("ready", () => injectToolbarButton());
 }
 
 // ── Public entry ──────────────────────────────────────────────────────────────
