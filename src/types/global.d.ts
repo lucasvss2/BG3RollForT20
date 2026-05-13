@@ -17,6 +17,14 @@ declare const game: {
     modules: {
         get(id: string): FoundryModule | undefined;
     };
+    actors?: {
+        get(id: string): { system?: Record<string, unknown> } | undefined;
+        contents?: Array<{ id: string }>;
+    };
+    messages?: {
+        get(id: string): ChatMessage | undefined;
+        contents?: ChatMessage[];
+    };
     user: { id: string; isGM: boolean } | null;
     i18n: {
         localize(key: string): string;

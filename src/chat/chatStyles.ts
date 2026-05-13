@@ -9,14 +9,15 @@ import { log } from "@/utils/logging";
 
 const CHAT_STYLES_ID = "bg3-t20-chat-styles";
 
-// ── Roll type fallback labels ─────────────────────────────────────────────────
+// ── T20 attribute key → display label ────────────────────────────────────────
 
-const ROLL_TYPE_LABELS: Record<string, string> = {
-    attack:     "Ataque",
-    damage:     "Dano",
-    initiative: "Iniciativa",
-    skill:      "Perícia",
-    save:       "Resistência",
+const ATTR_LABELS: Record<string, string> = {
+    for: "Força",
+    des: "Destreza",
+    con: "Constituição",
+    int: "Inteligência",
+    sab: "Sabedoria",
+    car: "Carisma",
 };
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -367,23 +368,54 @@ function ensureChatStyles(): void {
     }
 }
 
-function rollTypeLabel(message: ChatMessage): string {
-    const rolls = message.rolls ?? [];
-    const first = rolls[0] as (Roll & { options?: Record<string, unknown> }) | undefined;
-    const type = first?.options?.["type"];
-    if (typeof type === "string" && type in ROLL_TYPE_LABELS) {
-        return ROLL_TYPE_LABELS[type] ?? "";
+type RollTermExt = {
+    constructor?: { name?: string };
+    number?: number;
+};
+
+function inferAttrLabel(message: ChatMessage, card: HTMLElement): string {
+    // Only applies when there is no linked item (pure attribute test)
+    if (card.dataset["itemId"]) return "";
+
+    const roll = message.rolls?.[0] as (Roll & { terms?: RollTermExt[] }) | undefined;
+    if (!roll) return "";
+
+    // Extract the first numeric bonus after the d20
+    let foundDie = false;
+    let attrBonus: number | null = null;
+    for (const term of roll.terms ?? []) {
+        if (term.constructor?.name === "Die") { foundDie = true; continue; }
+        if (foundDie && term.constructor?.name === "NumericTerm" && term.number !== undefined) {
+            attrBonus = term.number;
+            break;
+        }
     }
+    if (attrBonus === null) return "";
+
+    // Match bonus against actor's atributos
+    const actorId = message.speaker?.actor;
+    if (!actorId) return "";
+    const actor = game.actors?.get(actorId);
+    const atributos = (actor?.system?.["atributos"]) as Record<string, { value?: number }> | undefined;
+    if (!atributos) return "";
+
+    const matches = Object.entries(atributos).filter(
+        ([key, attr]) => (attr as { value?: number }).value === attrBonus && key in ATTR_LABELS
+    );
+
+    // Only resolve when unambiguous
+    if (matches.length === 1) return ATTR_LABELS[matches[0]![0]] ?? "";
+    if (matches.length > 1) return "Teste de Atributo";
     return "";
 }
 
 function fixEmptyItemName(message: ChatMessage, root: HTMLElement): void {
-    const nameDiv = root.querySelector<HTMLElement>(
-        ".tormenta20.chat-card.item-card .item-name div"
-    );
+    const card = root.querySelector<HTMLElement>(".tormenta20.chat-card.item-card");
+    if (!card) return;
+    const nameDiv = card.querySelector<HTMLElement>(".item-name div");
     if (!nameDiv || nameDiv.textContent?.trim()) return;
 
-    // Try flavor → parseT20
+    // Try flavor → parseT20 first
     const flavor = resolveFlavorText(message);
     if (flavor) {
         const meta = parseT20({ flavor });
@@ -395,8 +427,8 @@ function fixEmptyItemName(message: ChatMessage, root: HTMLElement): void {
         }
     }
 
-    // Fallback: roll options type
-    const label = rollTypeLabel(message);
+    // Infer attribute from actor data (only for no-item rolls)
+    const label = inferAttrLabel(message, card);
     if (label) nameDiv.textContent = label;
 }
 
