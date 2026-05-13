@@ -97,7 +97,10 @@ declare interface FoundryActor {
         }>;
         atributos?: Record<string, { value?: number }>;
         nivel?: { value?: number };
-        pm?: { value?: number; max?: number };
+        attributes?: {
+            pm?: { value?: number; max?: number; temp?: number };
+            [key: string]: unknown;
+        };
         [key: string]: unknown;
     };
 }

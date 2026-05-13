@@ -83,6 +83,7 @@ function getActivatableItems(actor: FoundryActor, skillKey: string): Activatable
         const custo = (ativacao.custo as number) ?? 0;
         if (custo <= 0) return [];
         const { formula, label } = extractPowerBonus(item, actor, skillKey);
+        if (label === "?") return [];
         return [{ id: item.id, name: item.name, pm: custo, bonusFormula: formula, bonusLabel: label }];
     });
 }
@@ -243,8 +244,8 @@ async function executeHiddenTestRoll(
     if (totalPm > 0) {
         const actor = game.actors?.get(request.actorId);
         if (actor) {
-            const currentPm = actor.system?.pm?.value ?? 0;
-            await actor.update({ "system.pm.value": Math.max(0, currentPm - totalPm) });
+            const currentPm = actor.system?.attributes?.pm?.value ?? 0;
+            await actor.update({ "system.attributes.pm.value": Math.max(0, currentPm - totalPm) });
         }
     }
 
