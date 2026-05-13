@@ -80,6 +80,27 @@ const HIDDEN_TEST_STYLES = `
 .htc-failure { color: #c8a070 !important; }
 .htc-fumble  { color: #cc4444 !important; text-shadow: 0 0 12px rgba(204,68,68,0.6); }
 
+/* ── Strip Foundry's default chat message wrapper ──────────────────────── */
+
+.chat-message:has(.aeris-hidden-test-card) {
+    background: transparent !important;
+    background-image: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+.chat-message:has(.aeris-hidden-test-card) header,
+.chat-message:has(.aeris-hidden-test-card) .message-header {
+    display: none !important;
+}
+.chat-message:has(.aeris-hidden-test-card) .message-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    background-image: none !important;
+}
+
 /* ── GM/Player dialog inner layout ────────────────────────────────────── */
 
 .htg-body {
