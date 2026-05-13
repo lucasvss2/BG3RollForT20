@@ -36,11 +36,17 @@ const CHAT_STYLES = `
     padding: 1px 6px !important;
 }
 .chat-message:has(.tormenta20.chat-card.item-card) .message-sender {
-    color: #9a8e7a !important;
+    color: #d4c4a0 !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.68rem !important;
     letter-spacing: 0.12em !important;
     text-transform: uppercase !important;
+    text-shadow:
+        -1px -1px 0 rgba(0,0,0,0.85),
+         1px -1px 0 rgba(0,0,0,0.85),
+        -1px  1px 0 rgba(0,0,0,0.85),
+         1px  1px 0 rgba(0,0,0,0.85),
+        0 0 6px rgba(0,0,0,0.9) !important;
 }
 .chat-message:has(.tormenta20.chat-card.item-card) .message-metadata,
 .chat-message:has(.tormenta20.chat-card.item-card) .message-timestamp,
@@ -401,8 +407,15 @@ export function setupChatStyling(): void {
 
     Hooks.on("renderChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
-        const htmlArg = args[1] as HTMLElement[] | { 0?: HTMLElement };
-        const root = Array.isArray(htmlArg) ? htmlArg[0] : htmlArg[0];
+        const htmlArg = args[1] as unknown;
+        let root: HTMLElement | undefined;
+        if (htmlArg instanceof HTMLElement) {
+            root = htmlArg;
+        } else if (Array.isArray(htmlArg)) {
+            root = htmlArg[0] as HTMLElement | undefined;
+        } else if (htmlArg && typeof htmlArg === "object") {
+            root = (htmlArg as Record<string, unknown>)[0] as HTMLElement | undefined;
+        }
         if (!root) return;
         fixEmptyItemName(message, root);
     });
