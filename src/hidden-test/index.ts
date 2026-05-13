@@ -148,13 +148,13 @@ const HIDDEN_TEST_STYLES = `
 }
 .htg-powers-header {
     display: grid;
-    grid-template-columns: 26px 38px 1fr;
+    grid-template-columns: 26px 38px 1fr auto;
     gap: 6px;
     padding: 4px 0 2px;
 }
 .htg-power-row {
     display: grid;
-    grid-template-columns: 26px 38px 1fr;
+    grid-template-columns: 26px 38px 1fr auto;
     gap: 6px;
     align-items: center;
     padding: 3px 0;
@@ -168,6 +168,22 @@ const HIDDEN_TEST_STYLES = `
 .htg-power-name {
     color: #e8d8a8;
     font-size: 0.88rem;
+}
+.htg-col-bonus {
+    text-align: right;
+}
+.htg-power-bonus {
+    font-family: monospace;
+    font-size: 0.82rem;
+    text-align: right;
+    min-width: 48px;
+}
+.htg-bonus-known {
+    color: #8ecf8e;
+}
+.htg-bonus-unknown {
+    color: #aaa;
+    font-style: italic;
 }
 .htg-pm-total-row {
     display: flex;

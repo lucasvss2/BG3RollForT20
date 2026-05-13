@@ -89,6 +89,7 @@ declare interface FoundryActor {
     img?: string;
     ownership: Record<string, number>;
     items?: { contents: FoundryItem[] };
+    update(data: Record<string, unknown>): Promise<void>;
     system?: {
         pericias?: Record<string, {
             total?: number; label?: string; value?: number;
@@ -96,6 +97,7 @@ declare interface FoundryActor {
         }>;
         atributos?: Record<string, { value?: number }>;
         nivel?: { value?: number };
+        pm?: { value?: number; max?: number };
         [key: string]: unknown;
     };
 }

@@ -6,22 +6,84 @@ function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// ── Activatable items (poderes with PM cost) ──────────────────────────────────
+function stripHtml(html: string): string {
+    return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// ── Power bonus extraction ────────────────────────────────────────────────────
 
 interface ActivatableItem {
     id: string;
     name: string;
     pm: number;
+    bonusFormula: string;  // e.g. "+9", "+1d4", "" = unknown/complex
+    bonusLabel: string;    // e.g. "+9 CAR", "dobrar treino", "?"
 }
 
-function getActivatableItems(actor: FoundryActor): ActivatableItem[] {
+// Map attribute keys to display labels and regex patterns in Portuguese
+const ATTR_BONUS_PATTERNS: Array<{ regex: RegExp; key: string; short: string }> = [
+    { regex: /carisma/i,              key: "car", short: "CAR" },
+    { regex: /for[çc]a/i,             key: "for", short: "FOR" },
+    { regex: /destreza/i,             key: "des", short: "DES" },
+    { regex: /sabedoria/i,            key: "sab", short: "SAB" },
+    { regex: /intelig[eê]ncia/i,      key: "int", short: "INT" },
+    { regex: /constitui[çc][aã]o/i,   key: "con", short: "CON" },
+];
+
+function extractPowerBonus(
+    item: FoundryItem,
+    actor: FoundryActor,
+    skillKey: string,
+): { formula: string; label: string } {
+    const desc = stripHtml((item.system.description as Record<string, string>)?.value ?? "");
+
+    // "somar seu/sua {Atributo}" — e.g. Audácia, Canalização, etc.
+    if (/somar.{1,20}(seu|sua)/i.test(desc)) {
+        for (const { regex, key, short } of ATTR_BONUS_PATTERNS) {
+            if (regex.test(desc)) {
+                const val = (actor.system?.atributos as Record<string, { value?: number }>)?.[key]?.value ?? 0;
+                const sign = val >= 0 ? "+" : "";
+                return { formula: `${sign}${val}`, label: `${sign}${val} ${short}` };
+            }
+        }
+    }
+
+    // "dobrar (seu) bônus de treinamento" — e.g. Especialista
+    if (/dobrar.{1,20}treina(mento|do)/i.test(desc)) {
+        const pericias = actor.system?.pericias;
+        const skill = pericias?.[skillKey];
+        const base = skill?.value ?? 0;
+        const attrMod = skill?.atributo
+            ? ((actor.system?.atributos as Record<string, { value?: number }>)?.[skill.atributo]?.value ?? 0)
+            : 0;
+        const halfLevel = Math.floor((actor.system?.nivel?.value ?? 0) / 2);
+        // training rank = total - attrMod - halfLevel
+        const trainingRank = Math.max(0, base - attrMod - halfLevel);
+        if (trainingRank > 0) {
+            return { formula: `+${trainingRank}`, label: `+${trainingRank} treino×2` };
+        }
+        return { formula: "", label: "dobrar treino" };
+    }
+
+    // Fixed numeric bonus: "+2 no teste" / "bônus de +4"
+    const numMatch = desc.match(/b[oô]nus\s+(?:de\s+)?\+(\d+)/i)
+                  ?? desc.match(/\+(\d+)\s+(?:ao?|no?)\s+teste/i);
+    if (numMatch) {
+        return { formula: `+${numMatch[1]}`, label: `+${numMatch[1]}` };
+    }
+
+    return { formula: "", label: "?" };
+}
+
+function getActivatableItems(actor: FoundryActor, skillKey: string): ActivatableItem[] {
     const items = actor.items?.contents ?? [];
     return items.flatMap((item) => {
         if (item.type !== "poder") return [];
         const ativacao = (item.system.ativacao as Record<string, unknown>) ?? {};
         const custo = (ativacao.custo as number) ?? 0;
         if (custo <= 0) return [];
-        return [{ id: item.id, name: item.name, pm: custo }];
+        const { formula, label } = extractPowerBonus(item, actor, skillKey);
+        return [{ id: item.id, name: item.name, pm: custo, bonusFormula: formula, bonusLabel: label }];
     });
 }
 
@@ -67,7 +129,7 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
     const actorName = actor?.name ?? "Personagem";
     const skillTotal = actor ? computeSkillTotal(actor, request.skillKey) : 0;
     const bonusStr = skillTotal >= 0 ? `+${skillTotal}` : `${skillTotal}`;
-    const powers = actor ? getActivatableItems(actor) : [];
+    const powers = actor ? getActivatableItems(actor, request.skillKey) : [];
 
     const powersHtml = powers.length > 0 ? `
         <div class="htg-divider"></div>
@@ -76,12 +138,16 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
                 <span class="htg-label-sm">APLICAR</span>
                 <span class="htg-label-sm">PM</span>
                 <span class="htg-label-sm">PODER</span>
+                <span class="htg-label-sm htg-col-bonus">BÔNUS</span>
             </div>
             ${powers.map((p) => `
             <div class="htg-power-row">
-                <input type="checkbox" class="htg-power-check" data-pm="${p.pm}">
+                <input type="checkbox" class="htg-power-check"
+                    data-pm="${p.pm}"
+                    data-bonus="${esc(p.bonusFormula)}">
                 <span class="htg-pm-cost">${p.pm}</span>
                 <span class="htg-power-name">${esc(p.name)}</span>
+                <span class="htg-power-bonus ${p.bonusFormula ? "htg-bonus-known" : "htg-bonus-unknown"}">${esc(p.bonusLabel)}</span>
             </div>`).join("")}
             <div class="htg-pm-total-row">
                 <span class="htg-label-sm">CUSTO DE MANA TOTAL</span>
@@ -123,25 +189,24 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
                     label: "Rolar Teste",
                     callback: ($html: JQuery) => {
                         const bonusExtra = (($html.find('[name="bonusExtra"]').val() as string) ?? "").trim();
-                        void executeHiddenTestRoll(request, skillTotal, bonusExtra);
+                        const selected = $html.find(".htg-power-check:checked").toArray().map((el) => ({
+                            pm:    parseInt((el as HTMLElement).dataset["pm"]    ?? "0", 10),
+                            bonus: (el as HTMLElement).dataset["bonus"] ?? "",
+                        }));
+                        void executeHiddenTestRoll(request, skillTotal, bonusExtra, selected);
                     },
                 },
             },
             default: "roll",
             render: ($html: JQuery) => {
                 $html.find(".htg-power-check").on("change", () => {
-                    const total = $html
-                        .find(".htg-power-check:checked")
-                        .toArray()
-                        .reduce(
-                            (sum, el) => sum + parseInt((el as HTMLElement).dataset["pm"] ?? "0", 10),
-                            0,
-                        );
-                    $html.find("#htg-pm-total").text(String(total));
+                    const totalPm = $html.find(".htg-power-check:checked").toArray()
+                        .reduce((s, el) => s + parseInt((el as HTMLElement).dataset["pm"] ?? "0", 10), 0);
+                    $html.find("#htg-pm-total").text(String(totalPm));
                 });
             },
         },
-        { classes: ["bg3-dialog"], width: 420, id: "hidden-test-player" },
+        { classes: ["bg3-dialog"], width: 440, id: "hidden-test-player" },
     ).render(true);
 }
 
@@ -151,20 +216,39 @@ async function executeHiddenTestRoll(
     request: HiddenTestRequest,
     skillTotal: number,
     extraBonus: string,
+    selectedPowers: Array<{ pm: number; bonus: string }>,
 ): Promise<void> {
     const gmBonus = request.gmBonus ?? 0;
     const baseBonus = skillTotal + gmBonus;
 
-    let formula = baseBonus !== 0 ? `1d20 + ${baseBonus}` : "1d20";
-    if (extraBonus) {
-        const trimmed = extraBonus.trim();
-        formula += (trimmed.startsWith("+") || trimmed.startsWith("-")) ? ` ${trimmed}` : ` + ${trimmed}`;
+    const parts: string[] = ["1d20"];
+    if (baseBonus !== 0) parts.push(baseBonus > 0 ? `+ ${baseBonus}` : `- ${Math.abs(baseBonus)}`);
+
+    for (const p of selectedPowers) {
+        if (!p.bonus) continue;
+        const b = p.bonus.trim();
+        parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
     }
 
-    const roll = new Roll(formula);
+    if (extraBonus) {
+        const b = extraBonus.trim();
+        parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
+    }
+
+    const roll = new Roll(parts.join(" "));
     await roll.evaluate({ async: true });
 
-    const nat = roll.dice[0]?.results?.find((r) => r.active)?.result ?? 0;
+    // Deduct PM from actor for selected powers
+    const totalPm = selectedPowers.reduce((s, p) => s + p.pm, 0);
+    if (totalPm > 0) {
+        const actor = game.actors?.get(request.actorId);
+        if (actor) {
+            const currentPm = actor.system?.pm?.value ?? 0;
+            await actor.update({ "system.pm.value": Math.max(0, currentPm - totalPm) });
+        }
+    }
+
+    const nat   = roll.dice[0]?.results?.find((r) => r.active)?.result ?? 0;
     const total = roll.total ?? 0;
 
     const outcome: TestOutcome =
