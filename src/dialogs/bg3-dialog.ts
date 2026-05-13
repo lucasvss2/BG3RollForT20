@@ -586,6 +586,13 @@ function stylizeDialog(
 
     if (!label) return;
 
+    // ── Fix window title if t20 left "undefined" in it ──────────────────────
+    const titleEl = el.querySelector<HTMLElement>(".window-title");
+    const titleTextNode = titleEl?.childNodes[0];
+    if (titleTextNode && titleEl?.textContent?.toLowerCase().includes("undefined")) {
+        titleTextNode.textContent = titleEl.textContent.replace("undefined", label);
+    }
+
     // ── Build and inject banner ──────────────────────────────────────────────
 
     const imgHtml = itemImg
