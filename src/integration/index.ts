@@ -73,7 +73,7 @@ function installOverlayHook(): void {
         const roll = rolls[0];
         if (!roll) return;
 
-        BG3Overlay.show(rollMeta, roll);
+        setTimeout(() => BG3Overlay.show(rollMeta, roll), 1000);
 
         const bg3 = game.modules.get(BG3_MODULE_ID);
         if (bg3?.active) {
