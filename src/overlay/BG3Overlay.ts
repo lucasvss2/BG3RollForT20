@@ -8,7 +8,7 @@
 
 const STYLES_ID = "bg3-t20-styles";
 const OVERLAY_ID = "bg3-t20-overlay";
-const DISMISS_DELAY_MS = 4500;
+const DISMISS_DELAY_MS = 3000;
 
 const STYLES = `
 #${OVERLAY_ID} {

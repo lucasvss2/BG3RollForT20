@@ -2,9 +2,8 @@
  * Integration layer: T20 roll interception and BG3 cinematic overlay.
  *
  * Flow:
- *   createChatMessage → parse T20 flavor → register as pending
- *   diceSoNice:rollComplete → show overlay after 3D dice animation
- *   (no Dice So Nice: show immediately)
+ *   createChatMessage → parse T20 flavor → show overlay immediately
+ *   Overlay auto-dismisses after 3 s or on click, whichever comes first.
  */
 
 import { parseT20 } from "@/parser/t20";
@@ -50,18 +49,11 @@ export function setupIntegration(): void {
 
 // ── Core overlay hook ─────────────────────────────────────────────────────────
 
-const pendingOverlays = new Map<string, { meta: RollMeta; roll: Roll }>();
-
 function installOverlayHook(): void {
     Hooks.on("createChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
 
         if (game.system.id !== SYSTEM_ID) return;
-
-        // Diagnostic: always log in t20 worlds so we can verify the hook runs
-        console.error(
-            `[BG3RollForT20] createChatMessage — rolls: ${String(getRolls(message).length)}, flavor: "${message.flavor ?? ""}", isRoll: ${String(message.isRoll)}`,
-        );
 
         const rolls = getRolls(message);
         if (!rolls.length) {
@@ -81,13 +73,7 @@ function installOverlayHook(): void {
         const roll = rolls[0];
         if (!roll) return;
 
-        const dicesonice = game.modules.get("dice-so-nice");
-        if (dicesonice?.active) {
-            pendingOverlays.set(message.id, { meta: rollMeta, roll });
-            setTimeout(() => showPending(message.id), 8000);
-        } else {
-            BG3Overlay.show(rollMeta, roll);
-        }
+        BG3Overlay.show(rollMeta, roll);
 
         const bg3 = game.modules.get(BG3_MODULE_ID);
         if (bg3?.active) {
@@ -100,20 +86,7 @@ function installOverlayHook(): void {
         }
     });
 
-    // Show overlay after Dice So Nice 3D animation finishes
-    Hooks.on("diceSoNice:rollComplete", (...args: unknown[]): void => {
-        const messageId = args[0] as string;
-        showPending(messageId);
-    });
-
-    log("Overlay cinemático T20 instalado (createChatMessage + diceSoNice).");
-}
-
-function showPending(messageId: string): void {
-    const pending = pendingOverlays.get(messageId);
-    if (!pending) return;
-    pendingOverlays.delete(messageId);
-    BG3Overlay.show(pending.meta, pending.roll);
+    log("Overlay cinemático T20 instalado.");
 }
 
 // ── Roll extraction ───────────────────────────────────────────────────────────
