@@ -2009,7 +2009,8 @@ export function setupSheetRedesign(): void {
     // Spell sheets have many details fields (728px+ of content) so the generic
     // 620×480 default leaves the window too wide and the details tab cramped.
     // Apply a better initial size only on first render; respect later user resizes.
-    Hooks.on("renderItemSheetT20", (app: Record<string, unknown>): void => {
+    Hooks.on("renderItemSheetT20", (...hookArgs: unknown[]): void => {
+        const app = hookArgs[0] as Record<string, unknown>;
         const item = app.item as Record<string, unknown> | undefined;
         if (item?.type !== "magia") return;
         if (_resizedSpellSheets.has(app)) return;

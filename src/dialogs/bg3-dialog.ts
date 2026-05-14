@@ -23,12 +23,12 @@ const DIALOG_STYLES = `
         inset 0 0 60px rgba(0, 0, 0, 0.5) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", "Book Antiqua", serif !important;
     min-width: 480px !important;
-    width: auto !important;
 }
 
-/* Non-ability-use dialogs: auto-height so they size to content */
+/* Non-ability-use dialogs: auto-size to content */
 .window-app.bg3-dialog:not(.ability-use-form) {
     height: auto !important;
+    width: auto !important;
 }
 .window-app.bg3-dialog:not(.ability-use-form) .window-content {
     height: auto !important;
@@ -36,12 +36,37 @@ const DIALOG_STYLES = `
     overflow: visible !important;
 }
 
-/* AbilityUseDialog: constrain height, allow scroll, show resize cursor */
+/* AbilityUseDialog: scroll — height is set by JS (syncContentHeight) */
 .window-app.ability-use-form.bg3-dialog .window-content {
     overflow-y: auto !important;
+    overflow-x: hidden !important;
 }
+
+/* Full-width bottom drag bar */
 .window-app.ability-use-form .window-resizable-handle {
-    cursor: se-resize !important;
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: 14px !important;
+    cursor: s-resize !important;
+    background: linear-gradient(to bottom, rgba(10,7,4,0.5), rgba(20,14,8,0.85)) !important;
+    border-top: 1px solid rgba(106,78,24,0.5) !important;
+    border-radius: 0 0 6px 6px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 10 !important;
+}
+.window-app.ability-use-form .window-resizable-handle::after {
+    content: "" !important;
+    display: block !important;
+    width: 48px !important;
+    height: 3px !important;
+    border-radius: 2px !important;
+    background: rgba(200,169,110,0.45) !important;
+    box-shadow: 0 -4px 0 rgba(200,169,110,0.22), 0 4px 0 rgba(200,169,110,0.22) !important;
 }
 
 .window-app.bg3-dialog::before {
@@ -446,9 +471,14 @@ const DIALOG_STYLES = `
     padding: 0 !important;
 }
 
-.window-app.bg3-dialog form {
+.window-app.bg3-dialog:not(.ability-use-form) form {
     overflow: visible !important;
     height: auto !important;
+}
+.window-app.ability-use-form.bg3-dialog form {
+    height: auto !important;
+    overflow: visible !important;
+    /* form is taller than window-content → window-content scrolls */
 }
 `;
 
@@ -688,6 +718,52 @@ function stylizeDialog(
     target.prepend(banner);
 }
 
+// ── Resize + scroll helpers ───────────────────────────────────────────────────
+
+const HANDLE_H = 14;
+
+function syncContentHeight(appEl: HTMLElement): void {
+    const header = appEl.querySelector<HTMLElement>(".window-header");
+    const content = appEl.querySelector<HTMLElement>(".window-content");
+    if (!content) return;
+    const headerH = header?.offsetHeight ?? 32;
+    const appH = appEl.offsetHeight;
+    const h = Math.max(80, appH - headerH - HANDLE_H);
+    content.style.setProperty("height", `${h}px`, "important");
+    content.style.setProperty("overflow-y", "auto", "important");
+}
+
+function attachResizeDrag(handle: HTMLElement, appEl: HTMLElement): void {
+    handle.dataset.bg3Resize = "1";
+    handle.addEventListener("mousedown", (startEvent: MouseEvent) => {
+        startEvent.preventDefault();
+        startEvent.stopPropagation();
+        const startY = startEvent.clientY;
+        const startH = appEl.offsetHeight;
+        const onMove = (ev: MouseEvent): void => {
+            const newH = Math.max(300, startH + ev.clientY - startY);
+            appEl.style.setProperty("height", `${newH}px`, "important");
+            syncContentHeight(appEl);
+        };
+        const onUp = (): void => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+    });
+}
+
+function ensureResizeHandle(appEl: HTMLElement): void {
+    let handle = appEl.querySelector<HTMLElement>(".window-resizable-handle");
+    if (!handle) {
+        handle = document.createElement("div");
+        handle.className = "window-resizable-handle";
+        appEl.appendChild(handle);
+    }
+    if (!handle.dataset.bg3Resize) attachResizeDrag(handle, appEl);
+}
+
 // ── Public setup ──────────────────────────────────────────────────────────────
 
 export function setupDialogStyling(): void {
@@ -712,19 +788,19 @@ export function setupDialogStyling(): void {
         const app = args[0] as Record<string, unknown>;
         const htmlArg = args[1];
 
-        // Add resize handle for dialogs already open before the defaultOptions patch
         let appEl: HTMLElement | null = null;
         if (htmlArg instanceof HTMLElement) appEl = htmlArg;
         else if (htmlArg && typeof htmlArg === "object")
             appEl = (htmlArg as Record<string, unknown>)[0] as HTMLElement | null;
 
-        if (appEl && !appEl.querySelector(".window-resizable-handle")) {
-            const handle = document.createElement("div");
-            handle.className = "window-resizable-handle";
-            appEl.appendChild(handle);
-            const opts = app.options as Record<string, unknown> | undefined;
-            if (opts) opts.resizable = true;
-            (app._activateResizeListeners as (() => void) | undefined)?.call(app);
+        if (appEl) {
+            ensureResizeHandle(appEl);
+            if (appEl.offsetWidth > 800) {
+                appEl.style.setProperty("width", "600px", "important");
+            }
+            // Sync after layout settles so offsetHeight is final
+            const el = appEl;
+            requestAnimationFrame(() => syncContentHeight(el));
         }
 
         stylizeDialog(
