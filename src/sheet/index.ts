@@ -1827,9 +1827,18 @@ form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute
     width: 100% !important;
     max-width: 100% !important;
 }
+
+/* ── Item sheet: resize handle cursor ─────────────────────────────────────── */
+.app.tormenta20.sheet.item .window-resizable-handle {
+    cursor: se-resize !important;
+}
 `;
 
 // ── JS Enhancements ───────────────────────────────────────────────────────────
+
+// Track which spell sheets have already received their initial size so we don't
+// snap them back to default on subsequent re-renders (e.g. after field edits).
+const _resizedSpellSheets = new WeakSet<object>();
 
 function injectVitalBars(root: HTMLElement): void {
     root.querySelectorAll(".t20-vital-bar").forEach((el) => el.remove());
@@ -1995,6 +2004,18 @@ export function setupSheetRedesign(): void {
             root = (htmlArg as Record<string, unknown>)[0] as HTMLElement | undefined;
         if (!(root instanceof HTMLElement)) return;
         enhanceSheet(root);
+    });
+
+    // Spell sheets have many details fields (728px+ of content) so the generic
+    // 620×480 default leaves the window too wide and the details tab cramped.
+    // Apply a better initial size only on first render; respect later user resizes.
+    Hooks.on("renderItemSheetT20", (app: Record<string, unknown>): void => {
+        const item = app.item as Record<string, unknown> | undefined;
+        if (item?.type !== "magia") return;
+        if (_resizedSpellSheets.has(app)) return;
+        _resizedSpellSheets.add(app);
+        const setPos = app.setPosition as ((opts: Record<string, number>) => void) | undefined;
+        setPos?.call(app, { width: 520, height: 620 });
     });
 
     log("Sheet redesign ativo.");
