@@ -268,6 +268,15 @@ const HIDDEN_TEST_STYLES = `
     font-size: 1.1rem;
     font-weight: 700;
 }
+
+/* ── Dialog button spacing ─────────────────────────────────────────────── */
+
+.bg3-dialog .dialog-buttons,
+.bg3-dialog footer.form-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 `;
 
 function ensureHiddenTestStyles(): void {
