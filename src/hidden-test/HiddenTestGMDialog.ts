@@ -21,20 +21,22 @@ export function openHiddenTestGMDialog(): void {
 
     const targets = game.user.targets;
     if (!targets?.size) {
-        ui.notifications.warn("Selecione um token como alvo primeiro (tecla T).");
+        ui.notifications.warn("Selecione um ou mais tokens como alvo primeiro (tecla T).");
         return;
     }
 
-    const token = [...targets][0];
-    const actor = token.actor;
-    if (!actor) {
-        ui.notifications.warn("O token alvo não tem ator associado.");
-        return;
+    // Collect all valid targets that have an active player owner
+    const validTargets: Array<{ actor: FoundryActor; user: FoundryUser }> = [];
+    for (const token of targets) {
+        const actor = token.actor;
+        if (!actor) continue;
+        const user = findTokenOwner(actor);
+        if (!user) continue;
+        validTargets.push({ actor, user });
     }
 
-    const targetUser = findTokenOwner(actor);
-    if (!targetUser) {
-        ui.notifications.warn("Nenhum jogador ativo controla este personagem.");
+    if (validTargets.length === 0) {
+        ui.notifications.warn("Nenhum token selecionado tem um jogador ativo associado.");
         return;
     }
 
@@ -42,14 +44,25 @@ export function openHiddenTestGMDialog(): void {
         (s) => `<option value="${esc(s.key)}|${esc(s.label)}">${esc(s.label)}</option>`,
     ).join("");
 
+    const targetsHtml = validTargets.map((t) => `
+        <div class="htg-target-check-row">
+            <input type="checkbox" class="htg-target-check"
+                data-actor-id="${esc(t.actor.id)}"
+                data-user-id="${esc(t.user.id)}"
+                checked>
+            <span class="htg-value-lg">${esc(t.actor.name)}</span>
+            <span class="htg-player-tag">${esc(t.user.name)}</span>
+        </div>`).join("");
+
     const content = `
         <div class="htg-body">
-            <div class="htg-target-row">
-                <span class="htg-label-sm">PERSONAGEM</span>
-                <span class="htg-value-lg">${esc(actor.name)}</span>
-                <span class="htg-player-tag">${esc(targetUser.name)}</span>
+            <div class="htg-request-banner">
+                <div class="htg-label-sm">PERSONAGENS</div>
+                <div class="htg-targets-list">
+                    ${targetsHtml}
+                </div>
+                <div class="htg-divider"></div>
             </div>
-            <div class="htg-divider"></div>
             <div class="form-group">
                 <label>PERÍCIA</label>
                 <select name="skill" autofocus>${skillOptions}</select>
@@ -83,20 +96,33 @@ export function openHiddenTestGMDialog(): void {
 
                         if (!skillKey || !skillLabel || isNaN(dc) || dc < 1) return;
 
-                        const payload: HiddenTestRequest = {
-                            type: "hidden-test-request",
-                            requestId: randomID(),
-                            targetUserId: targetUser.id,
-                            actorId: actor.id,
-                            skillKey,
-                            skillLabel,
-                            dc,
-                            gmBonus,
-                        };
+                        const checked = $html.find(".htg-target-check:checked").toArray();
+                        if (checked.length === 0) {
+                            ui.notifications.warn("Nenhum personagem selecionado.");
+                            return;
+                        }
 
-                        game.socket?.emit(`module.${MODULE_ID}`, payload);
+                        for (const el of checked) {
+                            const actorId  = (el as HTMLElement).dataset["actorId"]  ?? "";
+                            const userId   = (el as HTMLElement).dataset["userId"]   ?? "";
+                            if (!actorId || !userId) continue;
+
+                            const payload: HiddenTestRequest = {
+                                type: "hidden-test-request",
+                                requestId: randomID(),
+                                targetUserId: userId,
+                                actorId,
+                                skillKey,
+                                skillLabel,
+                                dc,
+                                gmBonus,
+                            };
+                            game.socket?.emit(`module.${MODULE_ID}`, payload);
+                        }
+
+                        const n = checked.length;
                         ui.notifications.info(
-                            `Teste secreto de ${skillLabel} enviado para ${targetUser.name}.`,
+                            `Teste secreto de ${skillLabel} enviado para ${n} jogador${n > 1 ? "es" : ""}.`,
                         );
                     },
                 },

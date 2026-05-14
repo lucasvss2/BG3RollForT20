@@ -143,6 +143,21 @@ const HIDDEN_TEST_STYLES = `
     gap: 6px;
     padding: 8px 16px;
 }
+.htg-targets-list {
+    padding: 4px 16px 0;
+}
+.htg-target-check-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+}
+.htg-target-check-row input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+}
 .htg-label-sm {
     color: #8a7450;
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
