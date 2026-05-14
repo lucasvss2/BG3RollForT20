@@ -1,5 +1,5 @@
 import { MODULE_ID } from "@/constants";
-import type { AutoDamageRequest, AutoDamageSocketData, DamageRerollRequest } from "./types";
+import type { AutoDamageRequest, AttackRerollRequest, AttackMissNotify, AutoDamageSocketData } from "./types";
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -194,24 +194,54 @@ async function applyDamage(targetActorId: string, amount: number, pmCost: number
 
 // ── Reroll handling (runs on attacker's client) ───────────────────────────────
 
-async function handleReroll(req: DamageRerollRequest): Promise<void> {
-    ui.notifications.info(`Relançando dano — ${req.rollLabel}…`);
+async function handleReroll(req: AttackRerollRequest): Promise<void> {
+    ui.notifications.info(`Relançando ataque — ${req.rollLabel}…`);
 
-    const roll = new Roll(req.damageFormula);
-    await roll.evaluate({ async: true });
+    const attackRoll = new Roll(req.attackFormula);
+    await attackRoll.evaluate({ async: true });
+    const newAttackTotal = attackRoll.total ?? 0;
+
+    // Missed on reroll — notify defender
+    if (newAttackTotal < req.targetDef) {
+        ui.notifications.info(
+            `Ataque relançado errou! ${newAttackTotal} vs DEF ${req.targetDef}`,
+        );
+
+        const missPayload: AttackMissNotify = {
+            type:         "attack-miss-notify",
+            targetUserId: req.targetUserId,
+            attackerName: req.attackerName,
+            attackTotal:  newAttackTotal,
+            targetDef:    req.targetDef,
+        };
+
+        if (req.targetUserId === game.user?.id) {
+            ui.notifications.info(
+                `Ataque de ${req.attackerName} errou no reroll! (${newAttackTotal} vs DEF ${req.targetDef})`,
+            );
+        } else {
+            game.socket?.emit(`module.${MODULE_ID}`, missPayload);
+        }
+        return;
+    }
+
+    // Still hits — reroll damage and send new prompt
+    const damageRoll = new Roll(req.damageFormula);
+    await damageRoll.evaluate({ async: true });
 
     const newPayload: AutoDamageRequest = {
-        type:          "auto-damage-request",
-        requestId:     randomID(),
-        targetUserId:  req.targetUserId,
+        type:           "auto-damage-request",
+        requestId:      randomID(),
+        targetUserId:   req.targetUserId,
         attackerUserId: game.user?.id ?? "",
-        targetActorId: req.targetActorId,
-        attackerName:  req.attackerName,
-        rollLabel:     req.rollLabel,
-        attackTotal:   req.attackTotal,
-        targetDef:     req.targetDef,
-        damageTotal:   roll.total ?? 0,
-        damageFormula: req.damageFormula,
+        targetActorId:  req.targetActorId,
+        attackerName:   req.attackerName,
+        rollLabel:      req.rollLabel,
+        attackTotal:    newAttackTotal,
+        targetDef:      req.targetDef,
+        damageTotal:    damageRoll.total ?? 0,
+        attackFormula:  req.attackFormula,
+        damageFormula:  req.damageFormula,
     };
 
     if (req.targetUserId === game.user?.id) {
@@ -289,19 +319,19 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 },
                 reroll: {
                     icon:  '<i class="fas fa-dice-d20"></i>',
-                    label: "Forçar Rerolar Dano",
+                    label: "Forçar Rerolar Ataque",
                     callback: () => {
-                        const rerollReq: DamageRerollRequest = {
-                            type:          "damage-reroll-request",
-                            requestId:     req.requestId,
+                        const rerollReq: AttackRerollRequest = {
+                            type:           "attack-reroll-request",
+                            requestId:      req.requestId,
                             attackerUserId: req.attackerUserId,
-                            targetUserId:  req.targetUserId,
-                            targetActorId: req.targetActorId,
-                            damageFormula: req.damageFormula,
-                            attackerName:  req.attackerName,
-                            rollLabel:     req.rollLabel,
-                            attackTotal:   req.attackTotal,
-                            targetDef:     req.targetDef,
+                            targetUserId:   req.targetUserId,
+                            targetActorId:  req.targetActorId,
+                            attackFormula:  req.attackFormula,
+                            damageFormula:  req.damageFormula,
+                            attackerName:   req.attackerName,
+                            rollLabel:      req.rollLabel,
+                            targetDef:      req.targetDef,
                         };
 
                         if (req.attackerUserId === game.user?.id) {
@@ -334,9 +364,17 @@ function setupSocket(): void {
             return;
         }
 
-        if (data?.type === "damage-reroll-request") {
+        if (data?.type === "attack-reroll-request") {
             if (data.attackerUserId !== game.user?.id) return;
             void handleReroll(data);
+            return;
+        }
+
+        if (data?.type === "attack-miss-notify") {
+            if (data.targetUserId !== game.user?.id) return;
+            ui.notifications.info(
+                `Ataque de ${data.attackerName} errou no reroll! (${data.attackTotal} vs DEF ${data.targetDef})`,
+            );
         }
     });
 }
@@ -361,6 +399,7 @@ function setupCreateChatHook(): void {
 
         const attackTotal   = attackRoll.total ?? 0;
         const damageTotal   = damageRoll.total ?? 0;
+        const attackFormula = attackRoll.formula ?? "1d20";
         const damageFormula = damageRoll.formula ?? "";
 
         const targets = game.user?.targets;
@@ -396,6 +435,7 @@ function setupCreateChatHook(): void {
                 attackTotal,
                 targetDef,
                 damageTotal,
+                attackFormula,
                 damageFormula,
             };
 
