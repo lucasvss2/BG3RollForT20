@@ -195,17 +195,21 @@ async function applyDamage(targetActorId: string, amount: number, pmCost: number
 // ── Reroll handling (runs on attacker's client) ───────────────────────────────
 
 async function handleReroll(req: AttackRerollRequest): Promise<void> {
-    ui.notifications.info(`Relançando ataque — ${req.rollLabel}…`);
+    const speaker = { alias: req.attackerName };
+    const flavor  = `↺ Rerolagem — ${req.rollLabel}`;
 
     const attackRoll = new Roll(req.attackFormula);
     await attackRoll.evaluate({ async: true });
     const newAttackTotal = attackRoll.total ?? 0;
 
-    // Missed on reroll — notify defender
+    // Missed on reroll — post attack roll to chat, notify both sides
     if (newAttackTotal < req.targetDef) {
-        ui.notifications.info(
-            `Ataque relançado errou! ${newAttackTotal} vs DEF ${req.targetDef}`,
-        );
+        await ChatMessage.create({
+            flavor,
+            rolls:   [attackRoll.toJSON()],
+            type:    5,
+            speaker,
+        });
 
         const missPayload: AttackMissNotify = {
             type:         "attack-miss-notify",
@@ -225,9 +229,16 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         return;
     }
 
-    // Still hits — reroll damage and send new prompt
+    // Still hits — reroll damage, post both rolls to chat, send new prompt
     const damageRoll = new Roll(req.damageFormula);
     await damageRoll.evaluate({ async: true });
+
+    await ChatMessage.create({
+        flavor,
+        rolls:   [attackRoll.toJSON(), damageRoll.toJSON()],
+        type:    5,
+        speaker,
+    });
 
     const newPayload: AutoDamageRequest = {
         type:           "auto-damage-request",
