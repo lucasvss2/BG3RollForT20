@@ -76,11 +76,20 @@ declare interface FoundryToken {
     actor: FoundryActor | null;
 }
 
+declare interface FoundryItemEffect {
+    id: string;
+    name: string;
+    disabled: boolean;
+    changes: Array<{ key: string; value: string; mode: number; priority?: number | null }>;
+    flags: Record<string, Record<string, unknown>>;
+}
+
 declare interface FoundryItem {
     id: string;
     name: string;
     type: string;
     system: Record<string, unknown>;
+    effects?: { contents: FoundryItemEffect[] };
 }
 
 declare interface FoundryActor {

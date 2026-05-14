@@ -23,8 +23,25 @@ const HIDDEN_TEST_STYLES = `
 .aeris-hidden-test-card .htc-header {
     background: linear-gradient(to right, transparent, rgba(106,78,24,0.2), transparent);
     border-bottom: 1px solid rgba(106,78,24,0.4);
-    padding: 10px 14px 8px;
+    padding: 8px 14px 6px;
     text-align: center;
+}
+.aeris-hidden-test-card .htc-header-top {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2px;
+}
+.aeris-hidden-test-card .htc-actor-name {
+    color: #8a7a5a;
+    font-size: 0.65rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+.aeris-hidden-test-card .htc-applied-bonus {
+    color: #b09060;
+    font-size: 0.70rem;
+    letter-spacing: 0.06em;
+    margin-top: 3px;
 }
 .aeris-hidden-test-card .htc-skill-name {
     color: #c8a96e;
@@ -201,6 +218,9 @@ const HIDDEN_TEST_STYLES = `
 }
 .htg-bonus-known {
     color: #8ecf8e;
+}
+.htg-bonus-advantage {
+    color: #c8d870;
 }
 .htg-bonus-unknown {
     color: #aaa;

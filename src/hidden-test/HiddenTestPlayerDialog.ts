@@ -6,91 +6,93 @@ function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function stripHtml(html: string): string {
-    return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-// ── Power bonus extraction ────────────────────────────────────────────────────
+// ── Activatable items via T20 ActiveEffect system ─────────────────────────────
 
 interface ActivatableItem {
     id: string;
     name: string;
     pm: number;
-    bonusFormula: string;  // e.g. "+9", "+1d4", "" = unknown/complex
-    bonusLabel: string;    // e.g. "+9 CAR", "dobrar treino", "?"
+    bonusFormula: string;  // "+9", "kh" (advantage), or ""
+    bonusLabel: string;    // "+9 CAR", "Vantagem", etc.
+    isAdvantage: boolean;
 }
 
-// Map attribute keys to display labels and regex patterns in Portuguese
-const ATTR_BONUS_PATTERNS: Array<{ regex: RegExp; key: string; short: string }> = [
-    { regex: /carisma/i,              key: "car", short: "CAR" },
-    { regex: /for[çc]a/i,             key: "for", short: "FOR" },
-    { regex: /destreza/i,             key: "des", short: "DES" },
-    { regex: /sabedoria/i,            key: "sab", short: "SAB" },
-    { regex: /intelig[eê]ncia/i,      key: "int", short: "INT" },
-    { regex: /constitui[çc][aã]o/i,   key: "con", short: "CON" },
-];
-
-function extractPowerBonus(
-    item: FoundryItem,
-    actor: FoundryActor,
-    skillKey: string,
-): { formula: string; label: string } {
-    const desc = stripHtml((item.system.description as Record<string, string>)?.value ?? "");
-
-    // "somar seu/sua {Atributo}" — e.g. Audácia, Canalização, etc.
-    if (/somar.{1,20}(seu|sua)/i.test(desc)) {
-        for (const { regex, key, short } of ATTR_BONUS_PATTERNS) {
-            if (regex.test(desc)) {
-                const val = (actor.system?.atributos as Record<string, { value?: number }>)?.[key]?.value ?? 0;
-                const sign = val >= 0 ? "+" : "";
-                return { formula: `${sign}${val}`, label: `${sign}${val} ${short}` };
-            }
-        }
-    }
-
-    // "dobrar (seu) bônus de treinamento" — e.g. Especialista
-    if (/dobrar.{1,20}treina(mento|do)/i.test(desc)) {
-        const pericias = actor.system?.pericias;
-        const skill = pericias?.[skillKey];
-        const base = skill?.value ?? 0;
-        const attrMod = skill?.atributo
-            ? ((actor.system?.atributos as Record<string, { value?: number }>)?.[skill.atributo]?.value ?? 0)
-            : 0;
-        const halfLevel = Math.floor((actor.system?.nivel?.value ?? 0) / 2);
-        // training rank = total - attrMod - halfLevel
-        const trainingRank = Math.max(0, base - attrMod - halfLevel);
-        if (trainingRank > 0) {
-            return { formula: `+${trainingRank}`, label: `+${trainingRank} treino×2` };
-        }
-        return { formula: "", label: "dobrar treino" };
-    }
-
-    // Fixed numeric bonus: "+2 no teste" / "bônus de +4"
-    const numMatch = desc.match(/b[oô]nus\s+(?:de\s+)?\+(\d+)/i)
-                  ?? desc.match(/\+(\d+)\s+(?:ao?|no?)\s+teste/i);
-    if (numMatch) {
-        return { formula: `+${numMatch[1]}`, label: `+${numMatch[1]}` };
-    }
-
-    return { formula: "", label: "?" };
-}
-
-function getActivatableItems(actor: FoundryActor, skillKey: string): ActivatableItem[] {
+function getActivatableItems(actor: FoundryActor, skillLabel: string): ActivatableItem[] {
     const items = actor.items?.contents ?? [];
-    return items.flatMap((item) => {
-        if (item.type !== "poder") return [];
-        const ativacao = (item.system.ativacao as Record<string, unknown>) ?? {};
-        const custo = (ativacao.custo as number) ?? 0;
-        if (custo <= 0) return [];
-        const { formula, label } = extractPowerBonus(item, actor, skillKey);
-        if (label === "?") return [];
-        return [{ id: item.id, name: item.name, pm: custo, bonusFormula: formula, bonusLabel: label }];
-    });
+    const result: ActivatableItem[] = [];
+
+    for (const item of items) {
+        const effects = item.effects?.contents ?? [];
+        for (const effect of effects) {
+            const t20 = (effect.flags?.["tormenta20"] ?? {}) as Record<string, unknown>;
+            if (!t20["onuse"] || !t20["skill"]) continue;
+
+            // Skill filter: semicolon-separated labels like "Fortitude;Reflexos;Vontade"
+            const itemsFilter = ((t20["items"] as string) ?? "").trim();
+            if (itemsFilter) {
+                const allowed = itemsFilter.split(";").map((s) => s.trim().toLowerCase());
+                if (!allowed.includes(skillLabel.toLowerCase())) continue;
+            }
+
+            let formula = "";
+            let label = "?";
+            let isAdvantage = false;
+
+            for (const change of effect.changes) {
+                const val = (change.value ?? "").trim();
+
+                if (val === "kh") {
+                    isAdvantage = true;
+                    formula = "kh";
+                    label = "Vantagem";
+                    break;
+                }
+
+                if (val.startsWith("@")) {
+                    const attrKey = val.substring(1);
+                    const attrVal = (actor.system?.atributos as Record<string, { value?: number }>)?.[attrKey]?.value ?? 0;
+                    const sign = attrVal >= 0 ? "+" : "";
+                    formula = `${sign}${attrVal}`;
+                    label = `${sign}${attrVal} ${attrKey.toUpperCase()}`;
+                    break;
+                }
+
+                const num = parseInt(val, 10);
+                if (!isNaN(num)) {
+                    const sign = num >= 0 ? "+" : "";
+                    formula = `${sign}${num}`;
+                    label = formula;
+                    break;
+                }
+            }
+
+            if (label === "?") continue;
+
+            const pm = parseInt((t20["custo"] as string) ?? "0", 10) || 0;
+
+            result.push({
+                id: `${item.id}::${effect.id}`,
+                name: effect.name || item.name,
+                pm,
+                bonusFormula: formula,
+                bonusLabel: label,
+                isAdvantage,
+            });
+        }
+    }
+
+    return result;
 }
 
 // ── Chat card HTML ────────────────────────────────────────────────────────────
 
-function buildHiddenTestCardHtml(skillLabel: string, roll: Roll, outcome: TestOutcome): string {
+function buildHiddenTestCardHtml(
+    skillLabel: string,
+    actorName: string,
+    roll: Roll,
+    outcome: TestOutcome,
+    appliedBonuses: string[],
+): string {
     const total = roll.total ?? 0;
     const formula = roll.formula ?? "1d20";
 
@@ -107,11 +109,19 @@ function buildHiddenTestCardHtml(skillLabel: string, roll: Roll, outcome: TestOu
         falha_critica: "htc-fumble",
     };
 
+    const bonusesHtml = appliedBonuses.length > 0
+        ? appliedBonuses.map((b) => `<div class="htc-applied-bonus">${esc(b)}</div>`).join("")
+        : "";
+
     return `
         <div class="aeris-hidden-test-card">
             <div class="htc-header">
+                <div class="htc-header-top">
+                    <span class="htc-actor-name">${esc(actorName.toUpperCase())}</span>
+                </div>
                 <div class="htc-skill-name">${esc(skillLabel)}</div>
-                <div class="htc-subtitle">Teste de Perícia</div>
+                <div class="htc-subtitle">TESTE DE PERÍCIA</div>
+                ${bonusesHtml}
             </div>
             <div class="htc-divider"></div>
             <div class="htc-body">
@@ -130,7 +140,7 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
     const actorName = actor?.name ?? "Personagem";
     const skillTotal = actor ? computeSkillTotal(actor, request.skillKey) : 0;
     const bonusStr = skillTotal >= 0 ? `+${skillTotal}` : `${skillTotal}`;
-    const powers = actor ? getActivatableItems(actor, request.skillKey) : [];
+    const powers = actor ? getActivatableItems(actor, request.skillLabel) : [];
 
     const powersHtml = powers.length > 0 ? `
         <div class="htg-divider"></div>
@@ -138,17 +148,20 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
             <div class="htg-powers-header">
                 <span class="htg-label-sm">APLICAR</span>
                 <span class="htg-label-sm">PM</span>
-                <span class="htg-label-sm">PODER</span>
+                <span class="htg-label-sm">PODER / ITEM</span>
                 <span class="htg-label-sm htg-col-bonus">BÔNUS</span>
             </div>
             ${powers.map((p) => `
             <div class="htg-power-row">
                 <input type="checkbox" class="htg-power-check"
                     data-pm="${p.pm}"
-                    data-bonus="${esc(p.bonusFormula)}">
-                <span class="htg-pm-cost">${p.pm}</span>
+                    data-bonus="${esc(p.bonusFormula)}"
+                    data-advantage="${p.isAdvantage}"
+                    data-label="${esc(p.bonusLabel)}"
+                    data-name="${esc(p.name)}">
+                <span class="htg-pm-cost">${p.pm > 0 ? p.pm : "—"}</span>
                 <span class="htg-power-name">${esc(p.name)}</span>
-                <span class="htg-power-bonus ${p.bonusFormula ? "htg-bonus-known" : "htg-bonus-unknown"}">${esc(p.bonusLabel)}</span>
+                <span class="htg-power-bonus ${p.isAdvantage ? "htg-bonus-advantage" : "htg-bonus-known"}">${esc(p.bonusLabel)}</span>
             </div>`).join("")}
             <div class="htg-pm-total-row">
                 <span class="htg-label-sm">CUSTO DE MANA TOTAL</span>
@@ -191,10 +204,13 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
                     callback: ($html: JQuery) => {
                         const bonusExtra = (($html.find('[name="bonusExtra"]').val() as string) ?? "").trim();
                         const selected = $html.find(".htg-power-check:checked").toArray().map((el) => ({
-                            pm:    parseInt((el as HTMLElement).dataset["pm"]    ?? "0", 10),
-                            bonus: (el as HTMLElement).dataset["bonus"] ?? "",
+                            pm:          parseInt((el as HTMLElement).dataset["pm"]        ?? "0", 10),
+                            bonus:       (el as HTMLElement).dataset["bonus"]      ?? "",
+                            advantage:   (el as HTMLElement).dataset["advantage"]  === "true",
+                            bonusLabel:  (el as HTMLElement).dataset["label"]      ?? "",
+                            name:        (el as HTMLElement).dataset["name"]       ?? "",
                         }));
-                        void executeHiddenTestRoll(request, skillTotal, bonusExtra, selected);
+                        void executeHiddenTestRoll(request, actorName, skillTotal, bonusExtra, selected);
                     },
                 },
             },
@@ -215,18 +231,21 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
 
 async function executeHiddenTestRoll(
     request: HiddenTestRequest,
+    actorName: string,
     skillTotal: number,
     extraBonus: string,
-    selectedPowers: Array<{ pm: number; bonus: string }>,
+    selectedPowers: Array<{ pm: number; bonus: string; advantage: boolean; bonusLabel: string; name: string }>,
 ): Promise<void> {
     const gmBonus = request.gmBonus ?? 0;
     const baseBonus = skillTotal + gmBonus;
 
-    const parts: string[] = ["1d20"];
+    const hasAdvantage = selectedPowers.some((p) => p.advantage);
+    const parts: string[] = [hasAdvantage ? "2d20kh1" : "1d20"];
+
     if (baseBonus !== 0) parts.push(baseBonus > 0 ? `+ ${baseBonus}` : `- ${Math.abs(baseBonus)}`);
 
     for (const p of selectedPowers) {
-        if (!p.bonus) continue;
+        if (!p.bonus || p.bonus === "kh") continue;
         const b = p.bonus.trim();
         parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
     }
@@ -239,7 +258,7 @@ async function executeHiddenTestRoll(
     const roll = new Roll(parts.join(" "));
     await roll.evaluate({ async: true });
 
-    // Deduct PM from actor for selected powers
+    // Deduct PM
     const totalPm = selectedPowers.reduce((s, p) => s + p.pm, 0);
     if (totalPm > 0) {
         const actor = game.actors?.get(request.actorId);
@@ -258,10 +277,17 @@ async function executeHiddenTestRoll(
         : total >= request.dc ? "sucesso"
         : "falha";
 
-    const flag: HiddenTestFlag = { outcome, skillLabel: request.skillLabel };
+    // Build applied bonus labels for chat card
+    const appliedBonuses: string[] = selectedPowers.map((p) => {
+        const pmStr = p.pm > 0 ? ` (${p.pm} PM)` : "";
+        return `${p.bonusLabel} · ${p.name}${pmStr}`;
+    });
+    if (extraBonus) appliedBonuses.push(`${extraBonus} (manual)`);
+
+    const flag: HiddenTestFlag = { outcome, skillLabel: request.skillLabel, actorName, appliedBonuses };
 
     await ChatMessage.create({
-        content: buildHiddenTestCardHtml(request.skillLabel, roll, outcome),
+        content: buildHiddenTestCardHtml(request.skillLabel, actorName, roll, outcome, appliedBonuses),
         flavor: `Teste de ${request.skillLabel}`,
         speaker: ChatMessage.getSpeaker({ actor: game.actors?.get(request.actorId) ?? null }),
         rolls: [roll.toJSON()],

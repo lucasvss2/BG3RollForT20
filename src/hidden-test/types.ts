@@ -14,6 +14,8 @@ export interface HiddenTestRequest {
 export interface HiddenTestFlag {
     outcome: TestOutcome;
     skillLabel: string;
+    actorName: string;
+    appliedBonuses: string[];  // e.g. ["+9 CAR · Audácia (2 PM)", "Vantagem · Lupa"]
 }
 
 export type HiddenTestSocketData = HiddenTestRequest;
