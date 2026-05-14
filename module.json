@@ -1,8 +1,8 @@
 {
     "id": "aeris-bg3-rolls-t20",
-    "title": "BG3RollForT20",
-    "description": "Overlay cinemático de dados inspirado em BG3 para o sistema Tormenta20 (t20). Exibe perícias, resistências, ataques e iniciativa com animação dramática em tela cheia. Funciona de forma independente — aeris-bg3-rolls é recomendado mas não obrigatório.",
-    "version": "1.4.1",
+    "title": "T20 Theme Overhaul",
+    "description": "Melhorias visuais e mecânicas para o sistema Tormenta20 no Foundry VTT: overlay cinemático de dados inspirado em BG3, chat cards estilizados, teste secreto de perícia com multi-alvo e aplicação automática de dano com prompt interativo.",
+    "version": "1.4.2",
     "authors": [
         {
             "name": "lucasvss2",
@@ -14,8 +14,8 @@
         "minimum": "13",
         "verified": "13.351"
     },
-    "manifest": "https://raw.githubusercontent.com/lucasvss2/BG3RollForT20/master/module.json",
-    "download": "https://github.com/lucasvss2/BG3RollForT20/releases/latest/download/aeris-bg3-rolls-t20.zip",
+    "manifest": "https://raw.githubusercontent.com/lucasvss2/T20ThemeOverhaul/master/module.json",
+    "download": "https://github.com/lucasvss2/T20ThemeOverhaul/releases/latest/download/aeris-bg3-rolls-t20.zip",
     "socket": true,
     "relationships": {
         "requires": [],

@@ -1,7 +1,7 @@
 {
-    "name": "aeris-bg3-rolls-t20",
-    "version": "1.0.0",
-    "description": "Tormenta20 support for Aeris BG3 Rolls",
+    "name": "t20-theme-overhaul",
+    "version": "1.4.2",
+    "description": "Melhorias visuais e mecânicas para Tormenta20 no Foundry VTT",
     "type": "module",
     "scripts": {
         "build": "vite build",
