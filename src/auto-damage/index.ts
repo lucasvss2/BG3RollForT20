@@ -100,6 +100,22 @@ const AUTO_DAMAGE_STYLES = `
     border-color: rgba(200,169,110,0.7);
 }
 
+/* ── Reroll chat card header ───────────────────────────────────────────── */
+
+.bg3-reroll-header {
+    color: #c8a96e;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-shadow: 0 0 12px rgba(200,169,110,0.45);
+    text-align: center;
+    padding: 4px 8px 6px;
+    border-bottom: 1px solid rgba(200,169,110,0.35);
+    margin-bottom: 4px;
+}
+
 /* ── Dialog button layout ──────────────────────────────────────────────── */
 
 .aad-dialog .dialog-buttons,
@@ -195,8 +211,8 @@ async function applyDamage(targetActorId: string, amount: number, pmCost: number
 // ── Reroll handling (runs on attacker's client) ───────────────────────────────
 
 async function handleReroll(req: AttackRerollRequest): Promise<void> {
-    const speaker = { alias: req.attackerName };
-    const flavor  = `↺ Rerolagem — ${req.rollLabel}`;
+    const speaker       = { alias: req.attackerName };
+    const rerollContent = `<div class="bg3-reroll-header">↺ Rerolagem — ${esc(req.rollLabel)}</div>`;
 
     const attackRoll = new Roll(req.attackFormula);
     await attackRoll.evaluate({ async: true });
@@ -205,7 +221,7 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     // Missed on reroll — post attack roll to chat, notify both sides
     if (newAttackTotal < req.targetDef) {
         await ChatMessage.create({
-            flavor,
+            content: rerollContent,
             rolls:   [attackRoll.toJSON()],
             type:    5,
             speaker,
@@ -234,7 +250,7 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     await damageRoll.evaluate({ async: true });
 
     await ChatMessage.create({
-        flavor,
+        content: rerollContent,
         rolls:   [attackRoll.toJSON(), damageRoll.toJSON()],
         type:    5,
         speaker,
