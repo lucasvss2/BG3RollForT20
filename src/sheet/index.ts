@@ -1122,6 +1122,17 @@ form.tormenta20.tabbed select:focus {
     color: #c0b4a0 !important;
     font-size: 0.8rem !important;
 }
+/* Force readable color on all children of effect rows */
+.tormenta20.sheet.item .tab.effects .effect *,
+.tormenta20.sheet.item .tab.effects li.effect * {
+    color: #c0b4a0 !important;
+}
+/* PM cost prefix bold — gold */
+.tormenta20.sheet.item .tab.effects .effect b,
+.tormenta20.sheet.item .tab.effects li.effect b {
+    color: #c9a76a !important;
+    font-weight: 600 !important;
+}
 .tormenta20.sheet.item .tab.effects .item-controls a,
 .tormenta20.sheet.item .tab.effects .create-item { color: #6a5e48 !important; font-size: 0.72rem !important; }
 .tormenta20.sheet.item .tab.effects .item-controls a:hover,
