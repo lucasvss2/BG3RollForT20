@@ -805,6 +805,231 @@ form.tormenta20.tabbed select:focus {
     outline: none !important; box-shadow: 0 0 0 1px rgba(201,167,106,0.4) !important;
 }
 
+/* ── Item / Power / Spell Sheet ───────────────────────────────────────────── */
+.tormenta20.sheet.item form.editable {
+    background: #0c0907 !important;
+    color: #c8bda8 !important;
+    font-family: 'EB Garamond', 'Palatino Linotype', serif !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+/* Header */
+.tormenta20.sheet.item .sheet-header {
+    background: linear-gradient(to bottom, #1a1108, #0c0907) !important;
+    border-bottom: 1px solid rgba(201,167,106,0.4) !important;
+    padding: 8px 10px !important;
+    gap: 8px !important;
+    align-items: flex-start !important;
+    flex-shrink: 0 !important;
+}
+.tormenta20.sheet.item .sheet-header .profile {
+    border: 2px solid rgba(201,167,106,0.5) !important;
+    border-radius: 3px !important;
+    box-shadow: 0 0 0 1px #2a1e08, 0 4px 14px rgba(0,0,0,0.7) !important;
+    flex-shrink: 0 !important;
+    object-fit: contain !important;
+    background: #0c0907 !important;
+}
+.tormenta20.sheet.item .charname,
+.tormenta20.sheet.item .header-details h1 { margin: 0 !important; padding: 0 !important; border: none !important; background: transparent !important; }
+.tormenta20.sheet.item .charname input[name="name"],
+.tormenta20.sheet.item .header-details h1 input {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(201,167,106,0.3) !important;
+    color: #e6c987 !important;
+    font-family: 'Cinzel', 'Modesto Condensed', serif !important;
+    font-size: 1.2rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    padding: 1px 0 !important;
+    width: 100% !important;
+    height: auto !important;
+}
+.tormenta20.sheet.item .item-subtitle {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    margin: 3px 0 !important;
+}
+.tormenta20.sheet.item .item-subtitle .item-type,
+.tormenta20.sheet.item .item-subtitle h4 {
+    color: #8a7e6a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    margin: 0 !important;
+    padding: 2px 8px !important;
+    background: rgba(201,167,106,0.1) !important;
+    border: 1px solid rgba(201,167,106,0.3) !important;
+    border-radius: 3px !important;
+}
+.tormenta20.sheet.item ul.summary {
+    display: flex !important;
+    list-style: none !important;
+    padding: 3px 0 0 !important;
+    margin: 2px 0 0 !important;
+    border-top: 1px solid rgba(201,167,106,0.18) !important;
+    gap: 0 8px !important;
+}
+.tormenta20.sheet.item ul.summary li {
+    color: #9a8e7a !important;
+    font-size: 0.8rem !important;
+    font-style: italic !important;
+    border: none !important;
+}
+/* Tab nav */
+.tormenta20.sheet.item nav.sheet-tabs,
+.tormenta20.sheet.item nav.tabs {
+    background: rgba(8,5,1,0.95) !important;
+    border-top: 1px solid rgba(201,167,106,0.12) !important;
+    border-bottom: 1px solid rgba(201,167,106,0.32) !important;
+    border-left: none !important;
+    border-right: none !important;
+    padding: 0 4px !important;
+    gap: 0 !important;
+    flex-shrink: 0 !important;
+}
+.tormenta20.sheet.item nav.sheet-tabs .item,
+.tormenta20.sheet.item nav.tabs .item {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    color: #4a4030 !important;
+    font-family: 'Cinzel', 'Modesto Condensed', serif !important;
+    font-size: 0.62rem !important;
+    letter-spacing: 0.1em !important;
+    padding: 6px 9px !important;
+    text-transform: uppercase !important;
+    transition: color 0.2s, border-color 0.2s !important;
+    margin-bottom: -1px !important;
+}
+.tormenta20.sheet.item nav.sheet-tabs .item:hover,
+.tormenta20.sheet.item nav.tabs .item:hover {
+    color: #9a8870 !important;
+    border-bottom-color: rgba(201,167,106,0.3) !important;
+    background: transparent !important;
+}
+.tormenta20.sheet.item nav.sheet-tabs .item.active,
+.tormenta20.sheet.item nav.tabs .item.active {
+    color: #c9a76a !important;
+    border-bottom-color: #c9a76a !important;
+    background: transparent !important;
+}
+/* Sheet body */
+.tormenta20.sheet.item .sheet-body {
+    background: #0c0907 !important;
+    color: #c8bda8 !important;
+    padding: 8px !important;
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+.tormenta20.sheet.item .tab { color: #c8bda8 !important; }
+/* Properties list left panel ("Ability: Paladino" etc.) */
+.tormenta20.sheet.item .properties-list {
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+}
+.tormenta20.sheet.item .properties-list li {
+    background: rgba(15,10,4,0.6) !important;
+    border: 1px solid rgba(201,167,106,0.2) !important;
+    border-radius: 3px !important;
+    color: #c0b4a0 !important;
+    font-size: 0.78rem !important;
+    padding: 4px 8px !important;
+}
+.tormenta20.sheet.item .properties-list li strong {
+    color: #6a5e48 !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.64rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+}
+/* Item-properties panel divider */
+.tormenta20.sheet.item .item-properties {
+    padding: 0 6px 0 0 !important;
+    border-right: 1px solid rgba(201,167,106,0.12) !important;
+    min-width: 0 !important;
+}
+/* Description editor */
+.tormenta20.sheet.item .editor {
+    background: transparent !important;
+    border: none !important;
+    color: #c8bda8 !important;
+}
+.tormenta20.sheet.item .editor-content,
+.tormenta20.sheet.item .prosemirror {
+    background: rgba(8,5,1,0.4) !important;
+    color: #b8ad9a !important;
+    font-family: 'EB Garamond', serif !important;
+    font-size: 0.85rem !important;
+    line-height: 1.5 !important;
+    padding: 8px 10px !important;
+    border: 1px solid rgba(201,167,106,0.1) !important;
+    border-radius: 3px !important;
+    min-height: 60px !important;
+}
+.tormenta20.sheet.item .editor-content p,
+.tormenta20.sheet.item .prosemirror p,
+.tormenta20.sheet.item .editor-content * { color: #b8ad9a !important; }
+/* Condition/entity inline link tags inside editor */
+.tormenta20.sheet.item .editor-content a.content-link,
+.tormenta20.sheet.item .prosemirror a.content-link,
+.tormenta20.sheet.item a.content-link {
+    background: rgba(201,167,106,0.1) !important;
+    border: 1px solid rgba(201,167,106,0.35) !important;
+    border-radius: 3px !important;
+    color: #c9a76a !important;
+    padding: 1px 6px !important;
+    font-size: 0.8rem !important;
+    text-decoration: none !important;
+}
+.tormenta20.sheet.item .editor-content a.content-link:hover,
+.tormenta20.sheet.item .prosemirror a.content-link:hover,
+.tormenta20.sheet.item a.content-link:hover {
+    background: rgba(201,167,106,0.2) !important;
+    color: #e6c987 !important;
+}
+/* Editor edit / save button */
+.tormenta20.sheet.item a.editor-edit {
+    background: rgba(15,10,4,0.8) !important;
+    border: 1px solid rgba(201,167,106,0.3) !important;
+    border-radius: 3px !important;
+    color: #8a7e6a !important;
+}
+.tormenta20.sheet.item a.editor-edit:hover { color: #c9a76a !important; }
+/* Details tab form fields */
+.tormenta20.sheet.item .tab.details label { color: #8a7e6a !important; font-size: 0.78rem !important; }
+.tormenta20.sheet.item .tab.details input[type="text"],
+.tormenta20.sheet.item .tab.details input[type="number"],
+.tormenta20.sheet.item .tab.details select,
+.tormenta20.sheet.item input[type="text"],
+.tormenta20.sheet.item input[type="number"],
+.tormenta20.sheet.item select {
+    background: rgba(15,10,4,0.8) !important;
+    border: 1px solid rgba(201,167,106,0.22) !important;
+    border-radius: 2px !important;
+    color: #c0b49a !important;
+    font-size: 0.8rem !important;
+}
+.tormenta20.sheet.item .form-group {
+    border-bottom: 1px solid rgba(201,167,106,0.08) !important;
+    padding: 4px 0 !important;
+}
+/* Scrollbar */
+.tormenta20.sheet.item ::-webkit-scrollbar { width: 6px !important; }
+.tormenta20.sheet.item ::-webkit-scrollbar-track { background: #0c0907 !important; }
+.tormenta20.sheet.item ::-webkit-scrollbar-thumb { background: rgba(201,167,106,0.4) !important; border-radius: 3px !important; }
+
 /* ── T20 dialog modals ────────────────────────────────────────────────────── */
 .app.window-app.tormenta20:not(.sheet) .window-content form { padding: 8px 12px !important; }
 .app.window-app.tormenta20:not(.sheet) h2,
