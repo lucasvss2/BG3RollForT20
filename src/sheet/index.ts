@@ -384,6 +384,8 @@ form.tormenta20.tabbed ::-webkit-scrollbar-thumb:hover,
 form.tormenta20.tabbed .ability-scores {
     display: flex !important; flex-wrap: wrap !important; gap: 5px !important;
     list-style: none !important; padding: 0 !important; margin: 0 0 10px !important;
+    border: 1px solid rgba(201,167,106,0.14) !important;
+    border-radius: 4px !important;
 }
 form.tormenta20.tabbed .ability-scores .ability {
     background: radial-gradient(ellipse at top, #1a1108 0%, #0d0a05 100%) !important;
@@ -559,6 +561,15 @@ form.tormenta20.tabbed .item-controls a,
 form.tormenta20.tabbed .item-control { color: #5a5040 !important; font-size: 0.72rem !important; }
 form.tormenta20.tabbed .item-controls a:hover,
 form.tormenta20.tabbed .item-control:hover { color: #c9a76a !important; }
+/* Item-header: CRIAR and ATIVAÇÃO must be visible gold (not dark on dark) */
+form.tormenta20.tabbed .item-list .item-header .item-controls a,
+form.tormenta20.tabbed ol.item-list .item-header .item-controls a {
+    color: #8a7e6a !important; font-size: 0.64rem !important;
+}
+form.tormenta20.tabbed .item-list .item-header .item-controls a:hover,
+form.tormenta20.tabbed ol.item-list .item-header .item-controls a:hover { color: #c9a76a !important; }
+form.tormenta20.tabbed .item-list .item-header .item-activation,
+form.tormenta20.tabbed ol.item-list .item-header .item-activation { color: #8a7e6a !important; }
 
 /* ── Inventory Tab ────────────────────────────────────────────────────────── */
 form.tormenta20.tabbed .tab.inventory > header {
@@ -718,9 +729,72 @@ form.tormenta20.tabbed .tab.effects .ae-onuseTemp .effect:nth-child(even) { bord
 /* ── Modifiers Tab ────────────────────────────────────────────────────────── */
 form.tormenta20.tabbed .tab.modifiers { color: #b8ad9a !important; }
 
+/* ── Expanded item description (.item-summary) ────────────────────────────── */
+form.tormenta20.tabbed .item-summary {
+    color: #b8ad9a !important;
+    background: rgba(8,5,1,0.6) !important;
+    border-top: 1px solid rgba(201,167,106,0.1) !important;
+    padding: 6px 10px !important; flex: 0 0 100% !important;
+}
+form.tormenta20.tabbed .item-summary p { color: #b8ad9a !important; margin: 0 0 4px !important; }
+form.tormenta20.tabbed .item-summary a.content-link {
+    background: rgba(201,167,106,0.1) !important;
+    border: 1px solid rgba(201,167,106,0.3) !important;
+    border-radius: 3px !important; color: #c9a76a !important;
+    padding: 1px 6px !important; font-size: 0.78rem !important;
+    text-decoration: none !important; display: inline-flex !important;
+    align-items: center !important; gap: 3px !important;
+}
+form.tormenta20.tabbed .item-summary a.content-link:hover { background: rgba(201,167,106,0.2) !important; }
+form.tormenta20.tabbed .item-summary a.content-link i { color: #8a7e6a !important; font-size: 0.7em !important; }
+/* Tags broken-link fallback */
+form.tormenta20.tabbed .item-summary a.content-link.broken {
+    border-color: rgba(180,60,60,0.5) !important; color: #c87878 !important;
+}
+/* Properties list inside summary */
+form.tormenta20.tabbed .item-summary .item-properties {
+    display: flex !important; flex-wrap: wrap !important; gap: 4px !important;
+    list-style: none !important; padding: 0 !important; margin: 4px 0 0 !important;
+}
+form.tormenta20.tabbed .item-summary .item-property {
+    background: rgba(201,167,106,0.08) !important;
+    border: 1px solid rgba(201,167,106,0.25) !important; border-radius: 2px !important;
+    color: #9a8e7a !important; font-size: 0.72rem !important; padding: 1px 6px !important;
+}
+
+/* ── Foundry context menu ─────────────────────────────────────────────────── */
+#context-menu {
+    background: #1a1108 !important;
+    border: 1px solid rgba(201,167,106,0.38) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.85) !important;
+    padding: 3px 0 !important;
+    z-index: 99999 !important;
+}
+#context-menu .context-item {
+    color: #c0b4a0 !important;
+    font-family: 'EB Garamond', serif !important;
+    font-size: 0.85rem !important;
+    padding: 5px 14px !important;
+    border-bottom: 1px solid rgba(201,167,106,0.08) !important;
+    cursor: pointer !important;
+    background: transparent !important;
+}
+#context-menu .context-item:last-child { border-bottom: none !important; }
+#context-menu .context-item:hover {
+    background: rgba(201,167,106,0.12) !important;
+    color: #e6c987 !important;
+}
+#context-menu .context-item i { color: #8a7e6a !important; margin-right: 6px !important; font-size: 0.8em !important; }
+#context-menu .context-item:hover i { color: #c9a76a !important; }
+#context-menu hr, #context-menu li.context-divider {
+    border-color: rgba(201,167,106,0.2) !important; margin: 3px 0 !important;
+}
+
 /* ── Global selects ───────────────────────────────────────────────────────── */
 form.tormenta20.tabbed select {
-    background: rgba(15,10,4,0.8) !important; border: 1px solid rgba(201,167,106,0.22) !important; border-radius: 2px !important;
+    background: rgba(15,10,4,0.8) !important; border: 1px solid rgba(201,167,106,0.22) !important;
+    border-radius: 2px !important; color-scheme: dark !important;
 }
 form.tormenta20.tabbed input:focus,
 form.tormenta20.tabbed textarea:focus,
