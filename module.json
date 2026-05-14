@@ -2,7 +2,7 @@
     "id": "aeris-bg3-rolls-t20",
     "title": "T20 Theme Overhaul",
     "description": "Melhorias visuais e mecânicas para o sistema Tormenta20 no Foundry VTT: overlay cinemático de dados inspirado em BG3, chat cards estilizados, teste secreto de perícia com multi-alvo e aplicação automática de dano com prompt interativo.",
-    "version": "1.5.2",
+    "version": "1.5.3",
     "authors": [
         {
             "name": "lucasvss2",

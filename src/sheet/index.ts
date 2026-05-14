@@ -94,6 +94,9 @@ form.tormenta20.tabbed .sheet-header .charlevel {
     flex-direction: row !important;
     align-items: center !important;
     gap: 6px !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-end !important;
+    width: 100% !important;
 }
 form.tormenta20.tabbed .sheet-header .level {
     background: rgba(201,167,106,0.1) !important;
@@ -179,6 +182,10 @@ form.tormenta20.tabbed ul.attributes:not(.summary) .attribute {
     padding: 4px 10px 5px !important;
     min-width: 88px !important; flex: 1 !important;
     display: flex !important; flex-direction: column !important; gap: 0 !important;
+    height: auto !important; overflow: visible !important;
+}
+form.tormenta20.tabbed ul.attributes:not(.summary) {
+    height: auto !important; align-items: stretch !important;
 }
 form.tormenta20.tabbed ul.attributes:not(.summary) .attribute-name.box-title {
     color: #6a5e48 !important; font-family: 'Cinzel', serif !important;
@@ -233,9 +240,13 @@ form.tormenta20.tabbed ul.attributes:not(.summary) .attribute.defense select {
 .t20-toggle {
     background: transparent !important; border: none !important;
     color: #c9a76a !important; cursor: pointer !important;
-    font-family: monospace !important; font-size: 1rem !important; font-weight: 700 !important;
-    padding: 0 5px 0 0 !important; margin: 0 !important; flex-shrink: 0 !important;
-    line-height: 1 !important; vertical-align: middle !important;
+    font-family: monospace !important; font-size: 0.8rem !important; font-weight: 700 !important;
+    padding: 0 4px 0 0 !important; margin: 0 !important;
+    flex-shrink: 0 !important; flex-grow: 0 !important;
+    width: auto !important; max-width: 1.6em !important;
+    line-height: 1 !important; display: inline-flex !important;
+    align-items: center !important; justify-content: center !important;
+    align-self: center !important;
 }
 .t20-toggle:hover { color: #e6c987 !important; }
 .t20-section-hidden { display: none !important; }
@@ -325,6 +336,20 @@ form.tormenta20.tabbed nav.sheet-tabs .item.active {
     color: #c9a76a !important; border-bottom-color: #c9a76a !important; background: transparent !important;
 }
 form.tormenta20.tabbed nav.sheet-tabs .item i { margin-right: 3px !important; font-size: 0.7em !important; }
+
+/* ── Attributes tab: keep two columns side by side, never wrap ────────────── */
+form.tormenta20.tabbed .tab.attributes {
+    flex-wrap: nowrap !important;
+}
+form.tormenta20.tabbed .tab.attributes .attributes-mid {
+    flex-shrink: 0 !important;
+    min-width: 0 !important;
+}
+form.tormenta20.tabbed .tab.attributes .attributes-right {
+    flex: 1 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
 
 /* ── Sheet Body — flex:1 + min-height:0 so it scrolls within the form ─────── */
 form.tormenta20.tabbed .sheet-body {
@@ -513,6 +538,11 @@ form.tormenta20.tabbed ol.item-list .item input[type="text"] {
 }
 form.tormenta20.tabbed .item-list .item .item-equipped i,
 form.tormenta20.tabbed ol.item-list .item .item-equipped i { color: #5a5040 !important; }
+/* Kill parchment-color borders on item cell columns */
+form.tormenta20.tabbed .item-list .item > *,
+form.tormenta20.tabbed ol.item-list .item > * {
+    border-color: rgba(201,167,106,0.15) !important;
+}
 form.tormenta20.tabbed .item-list .item .item-toggles a,
 form.tormenta20.tabbed ol.item-list .item .item-toggles a { color: #4a3e2a !important; }
 form.tormenta20.tabbed .item-list .item .item-toggles a.active,
@@ -544,6 +574,7 @@ form.tormenta20.tabbed .currency-item {
     display: flex !important; align-items: center !important; gap: 8px !important;
     flex: 1 !important; padding: 6px 12px !important;
     border-right: 1px solid rgba(201,167,106,0.15) !important;
+    background: rgba(10,7,3,0.7) !important;
 }
 form.tormenta20.tabbed .currency-item:last-child { border-right: none !important; }
 form.tormenta20.tabbed .currency-item .denomination {
