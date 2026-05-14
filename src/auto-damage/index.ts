@@ -1,5 +1,5 @@
 import { MODULE_ID } from "@/constants";
-import type { AutoDamageRequest, AutoDamageSocketData } from "./types";
+import type { AutoDamageRequest, AutoDamageSocketData, DamageRerollRequest } from "./types";
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,7 @@ const AUTO_DAMAGE_STYLES = `
     font-size: 0.72rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
+    flex: 0 0 auto;
 }
 .aad-target-name {
     color: #c8a96e;
@@ -66,7 +67,7 @@ const AUTO_DAMAGE_STYLES = `
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 6px 16px 8px;
+    padding: 6px 16px 4px;
     gap: 2px;
 }
 .aad-damage-total {
@@ -76,8 +77,30 @@ const AUTO_DAMAGE_STYLES = `
     line-height: 1;
     text-shadow: 0 0 30px rgba(204,68,68,0.6);
 }
+.aad-pm-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 16px 8px;
+}
+.aad-pm-input {
+    width: 70px;
+    text-align: center;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(200,169,110,0.35);
+    border-radius: 3px;
+    color: #e8d8a8;
+    font-family: "Modesto Condensed", monospace;
+    font-size: 1rem;
+    padding: 2px 6px;
+    margin-left: auto;
+}
+.aad-pm-input:focus {
+    outline: none;
+    border-color: rgba(200,169,110,0.7);
+}
 
-/* ── Strip Foundry wrapper from damage prompt chat echoes ──────────────── */
+/* ── Dialog button layout ──────────────────────────────────────────────── */
 
 .aad-dialog .dialog-buttons,
 .aad-dialog footer.form-footer {
@@ -103,7 +126,6 @@ function esc(s: string): string {
 }
 
 function getMsgAuthorId(message: ChatMessage): string {
-    // Foundry v13: message.author.id  |  v12: message.user (string ID or User object)
     const m = message as unknown as { author?: { id: string }; user?: { id: string } | string };
     return m.author?.id ?? (typeof m.user === "object" ? m.user?.id : m.user) ?? "";
 }
@@ -132,20 +154,23 @@ function getDef(actor: FoundryActor): number {
     return actor.system?.attributes?.defesa?.value ?? 10;
 }
 
-// ── Damage application ────────────────────────────────────────────────────────
+function readPmInput($html: JQuery): number {
+    return parseInt($html.find('[name="pmCost"]').val() as string, 10) || 0;
+}
 
-async function applyDamage(targetActorId: string, amount: number): Promise<void> {
+// ── Damage & PM application ───────────────────────────────────────────────────
+
+async function applyDamage(targetActorId: string, amount: number, pmCost: number): Promise<void> {
     const actor = game.actors?.get(targetActorId);
     if (!actor) return;
 
-    const pv = actor.system?.attributes?.pv;
-    const currentTemp = pv?.temp ?? 0;
+    const pv         = actor.system?.attributes?.pv;
+    const currentTemp = pv?.temp  ?? 0;
     const currentHp   = pv?.value ?? 0;
 
     let remaining = Math.max(0, amount);
     let newTemp   = currentTemp;
 
-    // Drain temp HP first
     if (newTemp > 0) {
         const used = Math.min(newTemp, remaining);
         remaining -= used;
@@ -154,10 +179,46 @@ async function applyDamage(targetActorId: string, amount: number): Promise<void>
 
     const newHp = Math.max(0, currentHp - remaining);
 
-    await actor.update({
+    const update: Record<string, unknown> = {
         "system.attributes.pv.temp":  newTemp,
         "system.attributes.pv.value": newHp,
-    });
+    };
+
+    if (pmCost > 0) {
+        const currentPm = actor.system?.attributes?.pm?.value ?? 0;
+        update["system.attributes.pm.value"] = Math.max(0, currentPm - pmCost);
+    }
+
+    await actor.update(update);
+}
+
+// ── Reroll handling (runs on attacker's client) ───────────────────────────────
+
+async function handleReroll(req: DamageRerollRequest): Promise<void> {
+    ui.notifications.info(`Relançando dano — ${req.rollLabel}…`);
+
+    const roll = new Roll(req.damageFormula);
+    await roll.evaluate({ async: true });
+
+    const newPayload: AutoDamageRequest = {
+        type:          "auto-damage-request",
+        requestId:     randomID(),
+        targetUserId:  req.targetUserId,
+        attackerUserId: game.user?.id ?? "",
+        targetActorId: req.targetActorId,
+        attackerName:  req.attackerName,
+        rollLabel:     req.rollLabel,
+        attackTotal:   req.attackTotal,
+        targetDef:     req.targetDef,
+        damageTotal:   roll.total ?? 0,
+        damageFormula: req.damageFormula,
+    };
+
+    if (req.targetUserId === game.user?.id) {
+        openDamagePrompt(newPayload);
+    } else {
+        game.socket?.emit(`module.${MODULE_ID}`, newPayload);
+    }
 }
 
 // ── Damage prompt dialog ──────────────────────────────────────────────────────
@@ -191,6 +252,11 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 <div class="aad-label-sm">DANO</div>
                 <div class="aad-damage-total">${req.damageTotal}</div>
             </div>
+            <div class="aad-divider"></div>
+            <div class="aad-pm-row">
+                <span class="aad-label-sm">CUSTO DE MANA (PM)</span>
+                <input type="number" name="pmCost" value="0" min="0" max="999" class="aad-pm-input" />
+            </div>
         </div>
     `;
 
@@ -202,16 +268,48 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 full: {
                     icon:  '<i class="fas fa-sword"></i>',
                     label: "Aplicar Integral",
-                    callback: () => { void applyDamage(req.targetActorId, req.damageTotal); },
+                    callback: ($html: JQuery) => {
+                        void applyDamage(req.targetActorId, req.damageTotal, readPmInput($html));
+                    },
                 },
                 half: {
                     icon:  '<i class="fas fa-shield-halved"></i>',
                     label: `Aplicar Metade (${halfDmg})`,
-                    callback: () => { void applyDamage(req.targetActorId, halfDmg); },
+                    callback: ($html: JQuery) => {
+                        void applyDamage(req.targetActorId, halfDmg, readPmInput($html));
+                    },
                 },
                 none: {
                     icon:  '<i class="fas fa-ban"></i>',
                     label: "Não Aplicar",
+                    callback: ($html: JQuery) => {
+                        const pm = readPmInput($html);
+                        if (pm > 0) void applyDamage(req.targetActorId, 0, pm);
+                    },
+                },
+                reroll: {
+                    icon:  '<i class="fas fa-dice-d20"></i>',
+                    label: "Forçar Rerolar Dano",
+                    callback: () => {
+                        const rerollReq: DamageRerollRequest = {
+                            type:          "damage-reroll-request",
+                            requestId:     req.requestId,
+                            attackerUserId: req.attackerUserId,
+                            targetUserId:  req.targetUserId,
+                            targetActorId: req.targetActorId,
+                            damageFormula: req.damageFormula,
+                            attackerName:  req.attackerName,
+                            rollLabel:     req.rollLabel,
+                            attackTotal:   req.attackTotal,
+                            targetDef:     req.targetDef,
+                        };
+
+                        if (req.attackerUserId === game.user?.id) {
+                            void handleReroll(rerollReq);
+                        } else {
+                            game.socket?.emit(`module.${MODULE_ID}`, rerollReq);
+                        }
+                    },
                 },
             },
             default: "full",
@@ -229,9 +327,17 @@ function openDamagePrompt(req: AutoDamageRequest): void {
 function setupSocket(): void {
     game.socket?.on(`module.${MODULE_ID}`, (raw: unknown) => {
         const data = raw as AutoDamageSocketData;
-        if (data?.type !== "auto-damage-request") return;
-        if (data.targetUserId !== game.user?.id) return;
-        openDamagePrompt(data);
+
+        if (data?.type === "auto-damage-request") {
+            if (data.targetUserId !== game.user?.id) return;
+            openDamagePrompt(data);
+            return;
+        }
+
+        if (data?.type === "damage-reroll-request") {
+            if (data.attackerUserId !== game.user?.id) return;
+            void handleReroll(data);
+        }
     });
 }
 
@@ -241,14 +347,11 @@ function setupCreateChatHook(): void {
     Hooks.on("createChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
 
-        // Only the attacker's client has the correct game.user.targets snapshot
         if (getMsgAuthorId(message) !== game.user?.id) return;
 
-        // Must be a T20 item roll (weapon attack cards carry this flag)
         const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
         if (!itemData) return;
 
-        // Need both an attack roll and a damage roll in the same message
         const rolls = message.rolls;
         if (!rolls?.length) return;
 
@@ -256,23 +359,22 @@ function setupCreateChatHook(): void {
         const damageRoll = rolls.find((r) => (r.options as Record<string, unknown>)?.["type"] === "damage");
         if (!attackRoll || !damageRoll) return;
 
-        const attackTotal = attackRoll.total ?? 0;
-        const damageTotal = damageRoll.total ?? 0;
+        const attackTotal   = attackRoll.total ?? 0;
+        const damageTotal   = damageRoll.total ?? 0;
+        const damageFormula = damageRoll.formula ?? "";
 
-        // Targets selected by the attacker with T
         const targets = game.user?.targets;
         if (!targets?.size) return;
 
-        const attackerName = message.speaker?.alias ?? "Atacante";
-        const rollLabel    = message.flavor || "Ataque";
+        const attackerName  = message.speaker?.alias ?? "Atacante";
+        const rollLabel     = message.flavor || "Ataque";
+        const attackerUserId = game.user?.id ?? "";
 
         for (const token of targets) {
             const targetActor = token.actor;
             if (!targetActor) continue;
 
             const targetDef = getDef(targetActor);
-
-            // Miss — no prompt
             if (attackTotal < targetDef) continue;
 
             const targetUserId = getTargetUserId(targetActor);
@@ -287,16 +389,17 @@ function setupCreateChatHook(): void {
                 type:          "auto-damage-request",
                 requestId:     randomID(),
                 targetUserId,
+                attackerUserId,
                 targetActorId: targetActor.id,
                 attackerName,
                 rollLabel,
                 attackTotal,
                 targetDef,
                 damageTotal,
+                damageFormula,
             };
 
             if (targetUserId === game.user?.id) {
-                // Recipient is the current client — show locally
                 openDamagePrompt(payload);
             } else {
                 game.socket?.emit(`module.${MODULE_ID}`, payload);
