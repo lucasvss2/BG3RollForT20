@@ -230,16 +230,27 @@ form.tormenta20.tabbed ul.attributes:not(.summary) .attribute.defense select {
     background: rgba(255,255,255,0.05) !important;
     border-radius: 3px !important; overflow: hidden !important;
     margin: 3px 0 2px !important; flex-shrink: 0 !important;
+    display: flex !important;
+}
+.t20-vital-bar__fill, .t20-vital-bar__fill-temp {
+    height: 100% !important;
+    border-radius: 0 !important;
+    transition: width 0.4s ease !important;
+    flex-shrink: 0 !important;
 }
 .t20-vital-bar--hp .t20-vital-bar__fill {
-    height: 100% !important;
     background: linear-gradient(90deg, #6e2922, #b34a3c) !important;
-    border-radius: 3px !important; transition: width 0.4s ease !important;
+}
+/* Temp HP: darker red, consumed first */
+.t20-vital-bar--hp .t20-vital-bar__fill-temp {
+    background: linear-gradient(90deg, #3d1008, #6e2414) !important;
 }
 .t20-vital-bar--pm .t20-vital-bar__fill {
-    height: 100% !important;
     background: linear-gradient(90deg, #1a3f7a, #3a8ad4) !important;
-    border-radius: 3px !important; transition: width 0.4s ease !important;
+}
+/* Temp PM: darker blue, consumed first */
+.t20-vital-bar--pm .t20-vital-bar__fill-temp {
+    background: linear-gradient(90deg, #0a1a3d, #1a3060) !important;
 }
 
 /* ── Section collapse toggle ──────────────────────────────────────────────── */
@@ -1174,29 +1185,27 @@ form.tormenta20.tabbed select:focus {
 function injectVitalBars(root: HTMLElement): void {
     root.querySelectorAll(".t20-vital-bar").forEach((el) => el.remove());
 
-    const healthEl = root.querySelector<HTMLElement>(".attribute.health");
-    if (healthEl) {
-        const cur = parseInt(healthEl.querySelector<HTMLInputElement>('input[name*="pv.value"]')?.value ?? "0") || 0;
-        const max = Math.max(1, parseInt(healthEl.querySelector<HTMLInputElement>('input[name*="pv.max"]')?.value ?? "1") || 1);
-        const pct = Math.min(100, Math.max(0, (cur / max) * 100));
+    const buildBar = (el: HTMLElement, valueSelector: string, maxSelector: string, tempSelector: string, cls: string) => {
+        const cur  = parseInt(el.querySelector<HTMLInputElement>(valueSelector)?.value ?? "0") || 0;
+        const max  = Math.max(1, parseInt(el.querySelector<HTMLInputElement>(maxSelector)?.value  ?? "1") || 1);
+        const temp = Math.max(0, parseInt(el.querySelector<HTMLInputElement>(tempSelector)?.value ?? "0") || 0);
+        const total = max + temp;
+        const regPct  = Math.min(100, Math.max(0, (cur  / total) * 100));
+        const tempPct = Math.min(100 - regPct, Math.max(0, (temp / total) * 100));
         const bar = document.createElement("div");
-        bar.className = "t20-vital-bar t20-vital-bar--hp";
-        bar.innerHTML = `<div class="t20-vital-bar__fill" style="width:${pct.toFixed(1)}%"></div>`;
-        const footer = healthEl.querySelector(".attribute-footer");
-        footer ? healthEl.insertBefore(bar, footer) : healthEl.appendChild(bar);
-    }
+        bar.className = `t20-vital-bar ${cls}`;
+        bar.innerHTML =
+            `<div class="t20-vital-bar__fill" style="width:${regPct.toFixed(1)}%"></div>` +
+            (temp > 0 ? `<div class="t20-vital-bar__fill-temp" style="width:${tempPct.toFixed(1)}%"></div>` : "");
+        const footer = el.querySelector(".attribute-footer");
+        footer ? el.insertBefore(bar, footer) : el.appendChild(bar);
+    };
+
+    const healthEl = root.querySelector<HTMLElement>(".attribute.health");
+    if (healthEl) buildBar(healthEl, 'input[name*="pv.value"]', 'input[name*="pv.max"]', 'input[name*="pv.temp"]', "t20-vital-bar--hp");
 
     const manaEl = root.querySelector<HTMLElement>(".attribute.mana");
-    if (manaEl) {
-        const cur = parseInt(manaEl.querySelector<HTMLInputElement>('input[name*="pm.value"]')?.value ?? "0") || 0;
-        const max = Math.max(1, parseInt(manaEl.querySelector<HTMLInputElement>('input[name*="pm.max"]')?.value ?? "1") || 1);
-        const pct = Math.min(100, Math.max(0, (cur / max) * 100));
-        const bar = document.createElement("div");
-        bar.className = "t20-vital-bar t20-vital-bar--pm";
-        bar.innerHTML = `<div class="t20-vital-bar__fill" style="width:${pct.toFixed(1)}%"></div>`;
-        const footer = manaEl.querySelector(".attribute-footer");
-        footer ? manaEl.insertBefore(bar, footer) : manaEl.appendChild(bar);
-    }
+    if (manaEl) buildBar(manaEl, 'input[name*="pm.value"]', 'input[name*="pm.max"]', 'input[name*="pm.temp"]', "t20-vital-bar--pm");
 }
 
 function injectTraitSections(root: HTMLElement): void {
