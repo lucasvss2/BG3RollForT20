@@ -95,6 +95,7 @@ declare interface FoundryItem {
 declare interface FoundryActor {
     id: string;
     name: string;
+    type?: string;
     img?: string;
     ownership: Record<string, number>;
     items?: { contents: FoundryItem[] };
@@ -107,7 +108,9 @@ declare interface FoundryActor {
         atributos?: Record<string, { value?: number }>;
         nivel?: { value?: number };
         attributes?: {
-            pm?: { value?: number; max?: number; temp?: number };
+            pm?:     { value?: number; max?: number; temp?: number };
+            pv?:     { value?: number; max?: number; temp?: number };
+            defesa?: { value?: number; base?: number };
             [key: string]: unknown;
         };
         [key: string]: unknown;
@@ -134,7 +137,9 @@ declare class ChatMessage {
     rolls: Roll[];
     isRoll: boolean;
     flags: Record<string, Record<string, unknown>>;
-    user: string;
+    user: string | { id: string };
+    /** Foundry v13 alias for user */
+    author?: { id: string };
 
     getFlag(scope: string, key: string): unknown;
     setFlag(scope: string, key: string, value: unknown): Promise<this>;
@@ -186,11 +191,13 @@ declare function randomID(length?: number): string;
 // ── Roll ─────────────────────────────────────────────────────────────────────
 
 declare class Roll {
-    constructor(formula: string, data?: Record<string, unknown>);
+    constructor(formula: string, data?: Record<string, unknown>, options?: Record<string, unknown>);
     formula: string;
     total: number | null;
     terms: RollTerm[];
     dice: DiceTerm[];
+    /** Arbitrary options stored on the roll — T20 uses `options.type: "attack" | "damage"` */
+    options: Record<string, unknown>;
     evaluate(options?: { async?: boolean }): Promise<Roll>;
     toJSON(): Record<string, unknown>;
     static fromData(data: Record<string, unknown>): Roll;
