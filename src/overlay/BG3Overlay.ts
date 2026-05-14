@@ -11,12 +11,13 @@ import type { TestOutcome } from "@/hidden-test/types";
 const STYLES_ID = "bg3-t20-styles";
 const OVERLAY_ID = "bg3-t20-overlay";
 const DISMISS_DELAY_MS = 3000;
+const OVERLAY_Z = 99999;
 
 const STYLES = `
 #${OVERLAY_ID} {
     position: fixed;
     inset: 0;
-    z-index: 99999;
+    z-index: ${OVERLAY_Z};
     display: flex;
     align-items: center;
     justify-content: center;
@@ -105,31 +106,6 @@ const STYLES = `
 .bg3-t20-crit-label.is-fumble   { color: #cc4444; }
 .bg3-t20-crit-label.is-success  { color: #6ecf7a; }
 .bg3-t20-crit-label.is-failure  { color: #c8a070; }
-.bg3-t20-d20 {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    margin-bottom: -6px;
-}
-.bg3-t20-d20::before {
-    content: "d20";
-    font-size: clamp(0.7rem, 1.2vw, 0.95rem);
-    color: #7a6a4a;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-}
-.bg3-t20-d20-value {
-    font-size: clamp(1.6rem, 3.5vw, 2.6rem);
-    font-weight: 700;
-    color: #c8b88a;
-    text-shadow: 0 0 18px rgba(200,184,138,0.45);
-    line-height: 1;
-}
-.bg3-t20-d20-dropped {
-    font-size: clamp(0.75rem, 1.3vw, 1rem);
-    color: #5a4a2a;
-    font-family: monospace;
-}
 .bg3-t20-formula {
     font-size: 0.82rem;
     color: #a89880;
@@ -198,19 +174,6 @@ const OUTCOME_LABEL: Record<TestOutcome, string> = {
 function buildHtml(meta: RollMeta, roll: Roll, outcome?: TestOutcome): string {
     const total = roll.total ?? 0;
 
-    // d20 natural result(s)
-    const d20Die = roll.dice?.find((d) => d.faces === 20);
-    const activeD20 = d20Die?.results?.find((r) => r.active)?.result ?? null;
-    const droppedD20 = d20Die?.results?.filter((r) => !r.active).map((r) => r.result) ?? [];
-    const d20Html = activeD20 !== null
-        ? droppedD20.length > 0
-            ? `<div class="bg3-t20-d20">
-                   <span class="bg3-t20-d20-value">${activeD20}</span>
-                   <span class="bg3-t20-d20-dropped">(${[activeD20, ...droppedD20].sort((a, b) => b - a).join(", ")})</span>
-               </div>`
-            : `<div class="bg3-t20-d20"><span class="bg3-t20-d20-value">${activeD20}</span></div>`
-        : "";
-
     let totalClass: string;
     let resultHtml: string;
 
@@ -218,8 +181,9 @@ function buildHtml(meta: RollMeta, roll: Roll, outcome?: TestOutcome): string {
         totalClass = ` ${OUTCOME_TOTAL_CLASS[outcome]}`;
         resultHtml = `<div class="bg3-t20-crit-label ${OUTCOME_TOTAL_CLASS[outcome]}">${OUTCOME_LABEL[outcome]}</div>`;
     } else {
-        const isCrit   = activeD20 === 20;
-        const isFumble = activeD20 === 1;
+        const d20 = roll.dice?.find((d) => d.faces === 20)?.results?.find((r) => r.active)?.result ?? null;
+        const isCrit   = d20 === 20;
+        const isFumble = d20 === 1;
         totalClass = isCrit ? " is-crit" : isFumble ? " is-fumble" : "";
         resultHtml = isCrit
             ? `<div class="bg3-t20-crit-label is-crit">Acerto Crítico!</div>`
@@ -241,7 +205,6 @@ function buildHtml(meta: RollMeta, roll: Roll, outcome?: TestOutcome): string {
             <div class="bg3-t20-category">${esc(meta.category)}</div>
             ${subHtml}
             <div class="bg3-t20-divider"></div>
-            ${d20Html}
             <div class="bg3-t20-total${totalClass}">${total}</div>
             ${resultHtml}
             ${formulaHtml}
@@ -252,9 +215,30 @@ function buildHtml(meta: RollMeta, roll: Roll, outcome?: TestOutcome): string {
 
 // ── Overlay singleton ─────────────────────────────────────────────────────────
 
+// Selectors for 3D dice canvases that should always appear above the overlay
+const DICE_CANVAS_SELECTORS = ["#dice-box-canvas", "#dice-box", "canvas.dsn-canvas"];
+
 class BG3OverlaySingleton {
     private el: HTMLElement | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
+    private diceElevations: Array<{ el: HTMLElement; original: string }> = [];
+
+    private elevateDice(): void {
+        this.diceElevations = [];
+        for (const sel of DICE_CANVAS_SELECTORS) {
+            document.querySelectorAll<HTMLElement>(sel).forEach((canvas) => {
+                this.diceElevations.push({ el: canvas, original: canvas.style.zIndex });
+                canvas.style.zIndex = String(Number(OVERLAY_Z) + 1);
+            });
+        }
+    }
+
+    private restoreDice(): void {
+        for (const { el, original } of this.diceElevations) {
+            el.style.zIndex = original;
+        }
+        this.diceElevations = [];
+    }
 
     show(meta: RollMeta, roll: Roll, outcome?: TestOutcome): void {
         this.dismiss(true);
@@ -267,6 +251,7 @@ class BG3OverlaySingleton {
         document.body.appendChild(el);
         this.el = el;
 
+        this.elevateDice();
         this.timer = setTimeout(() => this.dismiss(), DISMISS_DELAY_MS);
     }
 
@@ -278,6 +263,7 @@ class BG3OverlaySingleton {
         const el = this.el;
         if (!el) return;
         this.el = null;
+        this.restoreDice();
 
         if (immediate) {
             el.remove();
