@@ -210,9 +210,14 @@ async function applyDamage(targetActorId: string, amount: number, pmCost: number
 
 // ── Reroll handling (runs on attacker's client) ───────────────────────────────
 
+async function buildRerollContent(rollLabel: string, attackRoll: Roll, damageRoll?: Roll): Promise<string> {
+    const attackHtml = await attackRoll.render({ flavor: "Ataque" });
+    const damageHtml = damageRoll ? await damageRoll.render({ flavor: "Dano" }) : "";
+    return `<div class="bg3-reroll-header">↺ Rerolagem — ${esc(rollLabel)}</div>${attackHtml}${damageHtml}`;
+}
+
 async function handleReroll(req: AttackRerollRequest): Promise<void> {
-    const speaker       = { alias: req.attackerName };
-    const rerollContent = `<div class="bg3-reroll-header">↺ Rerolagem — ${esc(req.rollLabel)}</div>`;
+    const speaker = { alias: req.attackerName };
 
     const attackRoll = new Roll(req.attackFormula);
     await attackRoll.evaluate({ async: true });
@@ -221,7 +226,7 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     // Missed on reroll — post attack roll to chat, notify both sides
     if (newAttackTotal < req.targetDef) {
         await ChatMessage.create({
-            content: rerollContent,
+            content: await buildRerollContent(req.rollLabel, attackRoll),
             rolls:   [attackRoll.toJSON()],
             type:    5,
             speaker,
@@ -250,7 +255,7 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     await damageRoll.evaluate({ async: true });
 
     await ChatMessage.create({
-        content: rerollContent,
+        content: await buildRerollContent(req.rollLabel, attackRoll, damageRoll),
         rolls:   [attackRoll.toJSON(), damageRoll.toJSON()],
         type:    5,
         speaker,
