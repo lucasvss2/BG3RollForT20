@@ -52,8 +52,8 @@ form.tormenta20.tabbed select { color: #c0b49a !important; }
 form.tormenta20.tabbed .sheet-header {
     background: linear-gradient(to bottom, #1a1108, #0c0907) !important;
     border-bottom: 1px solid rgba(201,167,106,0.4) !important;
-    padding: 8px 12px !important;
-    gap: 10px !important;
+    padding: 4px 8px !important;
+    gap: 4px !important;
     align-items: flex-start !important;
     flex-shrink: 0 !important;
 }
@@ -71,13 +71,13 @@ form.tormenta20.tabbed .sheet-header .header-details {
     flex: 1 !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 3px !important;
+    gap: 2px !important;
     min-width: 0 !important;
 }
 form.tormenta20.tabbed .sheet-header .general-information {
     display: flex !important;
     flex-direction: column !important;
-    gap: 2px !important;
+    gap: 4px !important;
     flex: 1 !important;
 }
 /* Level + config buttons row (sits ABOVE name) */
@@ -177,9 +177,9 @@ form.tormenta20.tabbed ul.attributes:not(.summary) {
 }
 form.tormenta20.tabbed ul.attributes:not(.summary) .attribute {
     background: rgba(15,10,4,0.85) !important;
-    border: 1px solid rgba(201,167,106,0.32) !important;
+    border: 1px solid rgba(201,167,106,0.14) !important;
     border-radius: 4px !important;
-    padding: 4px 10px 5px !important;
+    padding: 0 0 5px !important;
     min-width: 88px !important; flex: 1 !important;
     display: flex !important; flex-direction: column !important; gap: 0 !important;
     height: auto !important; overflow: visible !important;
@@ -187,14 +187,18 @@ form.tormenta20.tabbed ul.attributes:not(.summary) .attribute {
 form.tormenta20.tabbed ul.attributes:not(.summary) {
     height: auto !important; align-items: stretch !important;
 }
+/* Title area matches the item-list header gradient pattern */
 form.tormenta20.tabbed ul.attributes:not(.summary) .attribute-name.box-title {
-    color: #6a5e48 !important; font-family: 'Cinzel', serif !important;
+    background: linear-gradient(to right, rgba(201,167,106,0.14), transparent) !important;
+    border-bottom: 1px solid rgba(201,167,106,0.22) !important;
+    color: #c9a76a !important; font-family: 'Cinzel', serif !important;
     font-size: 0.57rem !important; letter-spacing: 0.14em !important;
-    text-transform: uppercase !important; margin: 0 0 2px !important;
-    border: none !important; padding: 0 !important; background: none !important;
+    text-transform: uppercase !important; margin: 0 0 4px !important;
+    padding: 3px 10px !important; width: 100% !important; box-sizing: border-box !important;
 }
 form.tormenta20.tabbed ul.attributes:not(.summary) .attribute-value {
     display: flex !important; align-items: center !important; justify-content: center !important; gap: 3px !important;
+    padding: 4px 10px 2px !important;
 }
 form.tormenta20.tabbed ul.attributes:not(.summary) input[type="number"] {
     background: transparent !important; border: none !important;
@@ -232,7 +236,7 @@ form.tormenta20.tabbed ul.attributes:not(.summary) .attribute.defense select {
 }
 .t20-vital-bar--pm .t20-vital-bar__fill {
     height: 100% !important;
-    background: linear-gradient(90deg, #3d2c6b, #7a5fb3) !important;
+    background: linear-gradient(90deg, #1a3f7a, #3a8ad4) !important;
     border-radius: 3px !important; transition: width 0.4s ease !important;
 }
 
@@ -268,8 +272,12 @@ form.tormenta20.tabbed .traits h3 {
     border: none !important; background: transparent !important;
 }
 
-/* Traits section content wrapper (injected by JS) */
+/* Traits section content wrapper (injected by JS).
+   T20 system CSS has ".traits div { display: flex }" which would make us row.
+   Override to column so each property row stacks vertically. */
 .t20-section-content {
+    display: flex !important;
+    flex-direction: column !important;
     border: 1px solid rgba(201,167,106,0.25) !important;
     border-radius: 3px !important; margin-bottom: 8px !important; overflow: visible !important;
 }
