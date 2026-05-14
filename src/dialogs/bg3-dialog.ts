@@ -42,31 +42,37 @@ const DIALOG_STYLES = `
     overflow-x: hidden !important;
 }
 
-/* Full-width bottom drag bar */
+/* Corner resize handle — bottom-right, bidirectional */
 .window-app.ability-use-form .window-resizable-handle {
     position: absolute !important;
     bottom: 0 !important;
-    left: 0 !important;
     right: 0 !important;
-    width: 100% !important;
-    height: 14px !important;
-    cursor: s-resize !important;
-    background: linear-gradient(to bottom, rgba(10,7,4,0.5), rgba(20,14,8,0.85)) !important;
-    border-top: 1px solid rgba(106,78,24,0.5) !important;
-    border-radius: 0 0 6px 6px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+    width: 22px !important;
+    height: 22px !important;
+    cursor: se-resize !important;
+    background: transparent !important;
+    border: none !important;
+    overflow: hidden !important;
+    border-radius: 0 0 6px 0 !important;
     z-index: 10 !important;
 }
 .window-app.ability-use-form .window-resizable-handle::after {
     content: "" !important;
-    display: block !important;
-    width: 48px !important;
-    height: 3px !important;
-    border-radius: 2px !important;
-    background: rgba(200,169,110,0.45) !important;
-    box-shadow: 0 -4px 0 rgba(200,169,110,0.22), 0 4px 0 rgba(200,169,110,0.22) !important;
+    position: absolute !important;
+    right: 3px !important;
+    bottom: 3px !important;
+    width: 14px !important;
+    height: 14px !important;
+    background:
+        linear-gradient(135deg,
+            transparent 0%,   transparent 38%,
+            rgba(200,169,110,0.65) 38%, rgba(200,169,110,0.65) 46%,
+            transparent 46%,  transparent 54%,
+            rgba(200,169,110,0.45) 54%, rgba(200,169,110,0.45) 62%,
+            transparent 62%,  transparent 70%,
+            rgba(200,169,110,0.28) 70%, rgba(200,169,110,0.28) 78%,
+            transparent 78%
+        ) !important;
 }
 
 .window-app.bg3-dialog::before {
@@ -720,15 +726,12 @@ function stylizeDialog(
 
 // ── Resize + scroll helpers ───────────────────────────────────────────────────
 
-const HANDLE_H = 14;
-
 function syncContentHeight(appEl: HTMLElement): void {
     const header = appEl.querySelector<HTMLElement>(".window-header");
     const content = appEl.querySelector<HTMLElement>(".window-content");
     if (!content) return;
     const headerH = header?.offsetHeight ?? 32;
-    const appH = appEl.offsetHeight;
-    const h = Math.max(80, appH - headerH - HANDLE_H);
+    const h = Math.max(80, appEl.offsetHeight - headerH);
     content.style.setProperty("height", `${h}px`, "important");
     content.style.setProperty("overflow-y", "auto", "important");
 }
@@ -738,10 +741,14 @@ function attachResizeDrag(handle: HTMLElement, appEl: HTMLElement): void {
     handle.addEventListener("mousedown", (startEvent: MouseEvent) => {
         startEvent.preventDefault();
         startEvent.stopPropagation();
+        const startX = startEvent.clientX;
         const startY = startEvent.clientY;
+        const startW = appEl.offsetWidth;
         const startH = appEl.offsetHeight;
         const onMove = (ev: MouseEvent): void => {
+            const newW = Math.max(480, startW + ev.clientX - startX);
             const newH = Math.max(300, startH + ev.clientY - startY);
+            appEl.style.setProperty("width", `${newW}px`, "important");
             appEl.style.setProperty("height", `${newH}px`, "important");
             syncContentHeight(appEl);
         };
