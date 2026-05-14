@@ -24,13 +24,24 @@ const DIALOG_STYLES = `
     font-family: "Modesto Condensed", "Palatino Linotype", "Book Antiqua", serif !important;
     min-width: 480px !important;
     width: auto !important;
-    height: auto !important;
 }
 
-.window-app.bg3-dialog .window-content {
+/* Non-ability-use dialogs: auto-height so they size to content */
+.window-app.bg3-dialog:not(.ability-use-form) {
+    height: auto !important;
+}
+.window-app.bg3-dialog:not(.ability-use-form) .window-content {
     height: auto !important;
     max-height: none !important;
     overflow: visible !important;
+}
+
+/* AbilityUseDialog: constrain height, allow scroll, show resize cursor */
+.window-app.ability-use-form.bg3-dialog .window-content {
+    overflow-y: auto !important;
+}
+.window-app.ability-use-form .window-resizable-handle {
+    cursor: se-resize !important;
 }
 
 .window-app.bg3-dialog::before {
@@ -425,11 +436,14 @@ const DIALOG_STYLES = `
 
 /* ── Tormenta20 overrides ────────────────────────────────────────────────── */
 
-.window-app.bg3-dialog.tormenta20 .window-content {
+.window-app.bg3-dialog.tormenta20:not(.ability-use-form) .window-content {
     padding: 0 !important;
     overflow: visible !important;
     height: auto !important;
     max-height: none !important;
+}
+.window-app.bg3-dialog.tormenta20.ability-use-form .window-content {
+    padding: 0 !important;
 }
 
 .window-app.bg3-dialog form {
@@ -679,10 +693,43 @@ function stylizeDialog(
 export function setupDialogStyling(): void {
     ensureDialogStyles();
 
+    // Patch AbilityUseDialog to be resizable with a sensible initial height.
+    // Must run after ready so game.tormenta20.applications is populated.
+    Hooks.once("ready", (): void => {
+        const cls = (game as Record<string, unknown> as Record<string, Record<string, Record<string, unknown>>>)
+            .tormenta20?.applications?.AbilityUseDialog as (new (...a: unknown[]) => unknown) & { defaultOptions?: unknown } | undefined;
+        if (!cls) return;
+        const parentCls = Object.getPrototypeOf(cls) as { defaultOptions?: Record<string, unknown> };
+        Object.defineProperty(cls, "defaultOptions", {
+            get() {
+                return { ...(parentCls?.defaultOptions ?? {}), resizable: true, height: 680 };
+            },
+            configurable: true,
+        });
+    });
+
     Hooks.on("renderAbilityUseDialog", (...args: unknown[]): void => {
+        const app = args[0] as Record<string, unknown>;
+        const htmlArg = args[1];
+
+        // Add resize handle for dialogs already open before the defaultOptions patch
+        let appEl: HTMLElement | null = null;
+        if (htmlArg instanceof HTMLElement) appEl = htmlArg;
+        else if (htmlArg && typeof htmlArg === "object")
+            appEl = (htmlArg as Record<string, unknown>)[0] as HTMLElement | null;
+
+        if (appEl && !appEl.querySelector(".window-resizable-handle")) {
+            const handle = document.createElement("div");
+            handle.className = "window-resizable-handle";
+            appEl.appendChild(handle);
+            const opts = app.options as Record<string, unknown> | undefined;
+            if (opts) opts.resizable = true;
+            (app._activateResizeListeners as (() => void) | undefined)?.call(app);
+        }
+
         stylizeDialog(
-            args[0] as AppLike,
-            args[1],
+            app as AppLike,
+            htmlArg,
             args[2] as Record<string, unknown> | undefined,
         );
     });
