@@ -71,7 +71,7 @@ form.tormenta20.tabbed .sheet-header .header-details {
     flex: 1 !important;
     display: flex !important;
     flex-direction: column !important;
-    gap: 2px !important;
+    gap: 0 !important;
     min-width: 0 !important;
 }
 form.tormenta20.tabbed .sheet-header .general-information {
@@ -88,6 +88,7 @@ form.tormenta20.tabbed .sheet-header .header-exp {
     flex-direction: row !important;
     align-items: center !important;
     gap: 6px !important;
+    height: 30px !important;
 }
 form.tormenta20.tabbed .sheet-header .charlevel {
     display: flex !important;
@@ -126,9 +127,10 @@ form.tormenta20.tabbed .sheet-header .charname input {
     font-size: 1.3rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.05em !important;
-    padding: 1px 0 !important;
+    padding: 0 !important;
     width: 100% !important;
-    height: auto !important;
+    height: 30px !important;
+    line-height: 30px !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
@@ -1008,23 +1010,122 @@ form.tormenta20.tabbed select:focus {
 }
 .tormenta20.sheet.item a.editor-edit:hover { color: #c9a76a !important; }
 /* Details tab form fields */
-.tormenta20.sheet.item .tab.details label { color: #8a7e6a !important; font-size: 0.78rem !important; }
-.tormenta20.sheet.item .tab.details input[type="text"],
-.tormenta20.sheet.item .tab.details input[type="number"],
-.tormenta20.sheet.item .tab.details select,
+.tormenta20.sheet.item label { color: #8a7e6a !important; font-size: 0.78rem !important; }
 .tormenta20.sheet.item input[type="text"],
 .tormenta20.sheet.item input[type="number"],
-.tormenta20.sheet.item select {
+.tormenta20.sheet.item select,
+.tormenta20.sheet.item textarea {
     background: rgba(15,10,4,0.8) !important;
     border: 1px solid rgba(201,167,106,0.22) !important;
     border-radius: 2px !important;
     color: #c0b49a !important;
     font-size: 0.8rem !important;
+    font-family: 'EB Garamond', serif !important;
 }
+.tormenta20.sheet.item textarea {
+    resize: vertical !important;
+    line-height: 1.45 !important;
+    padding: 4px 6px !important;
+    min-height: 60px !important;
+}
+/* Form-group rows: themed separator, kill T20 parchment border */
 .tormenta20.sheet.item .form-group {
-    border-bottom: 1px solid rgba(201,167,106,0.08) !important;
-    padding: 4px 0 !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(201,167,106,0.1) !important;
+    padding: 5px 0 !important;
+    margin: 0 !important;
 }
+.tormenta20.sheet.item .form-group:last-child { border-bottom: none !important; }
+/* Checkboxes: gold accent */
+.tormenta20.sheet.item input[type="checkbox"] {
+    accent-color: #c9a76a !important;
+    width: 14px !important;
+    height: 14px !important;
+    cursor: pointer !important;
+}
+/* Section headers inside details (e.g. "Propriedades", "Rolagens") */
+.tormenta20.sheet.item .tab.details h3,
+.tormenta20.sheet.item .tab.details h4 {
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    border-bottom: 1px solid rgba(201,167,106,0.28) !important;
+    padding-bottom: 4px !important;
+    margin: 10px 0 5px !important;
+    background: transparent !important;
+}
+/* Roll rows (Ataque, Dano sub-rows) */
+.tormenta20.sheet.item .roll-list,
+.tormenta20.sheet.item ol.roll-list,
+.tormenta20.sheet.item .rolls-list {
+    list-style: none !important;
+    padding: 0 !important;
+    margin: 0 0 4px !important;
+}
+.tormenta20.sheet.item .roll-group,
+.tormenta20.sheet.item .roll-header {
+    background: rgba(201,167,106,0.08) !important;
+    border: 1px solid rgba(201,167,106,0.18) !important;
+    border-radius: 3px !important;
+    padding: 3px 8px !important;
+    margin: 4px 0 2px !important;
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.7rem !important;
+    letter-spacing: 0.08em !important;
+}
+/* Effects tab in item sheet — kill white groove borders */
+.tormenta20.sheet.item .tab.effects .items-header,
+.tormenta20.sheet.item .tab.effects li.items-header {
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(201,167,106,0.22) !important;
+    background: linear-gradient(to right, rgba(201,167,106,0.12), transparent) !important;
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.65rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    padding: 4px 8px !important;
+}
+.tormenta20.sheet.item .tab.effects .items-header h3,
+.tormenta20.sheet.item .tab.effects .items-header h4,
+.tormenta20.sheet.item .tab.effects .items-header * {
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.65rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+}
+.tormenta20.sheet.item .tab.effects .effects-list,
+.tormenta20.sheet.item .tab.effects ol.item-list,
+.tormenta20.sheet.item .tab.effects ul.item-list {
+    background: rgba(10,7,3,0.5) !important;
+    border: 1px solid rgba(201,167,106,0.14) !important;
+    border-radius: 3px !important;
+    margin: 0 0 6px !important;
+    padding: 0 !important;
+    list-style: none !important;
+}
+.tormenta20.sheet.item .tab.effects .effect,
+.tormenta20.sheet.item .tab.effects li.effect {
+    border-bottom: 1px solid rgba(201,167,106,0.07) !important;
+    padding: 3px 8px !important;
+    background: transparent !important;
+    color: #c0b4a0 !important;
+    font-size: 0.8rem !important;
+}
+.tormenta20.sheet.item .tab.effects .item-controls a,
+.tormenta20.sheet.item .tab.effects .create-item { color: #6a5e48 !important; font-size: 0.72rem !important; }
+.tormenta20.sheet.item .tab.effects .item-controls a:hover,
+.tormenta20.sheet.item .tab.effects .create-item:hover { color: #c9a76a !important; }
 /* Scrollbar */
 .tormenta20.sheet.item ::-webkit-scrollbar { width: 6px !important; }
 .tormenta20.sheet.item ::-webkit-scrollbar-track { background: #0c0907 !important; }
