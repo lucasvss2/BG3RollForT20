@@ -1577,6 +1577,256 @@ form.tormenta20.npc ::-webkit-scrollbar-thumb, form.tormenta20.hazard ::-webkit-
 form.tormenta20.simple ::-webkit-scrollbar-thumb, form.tormenta20.sheet.actor ::-webkit-scrollbar-thumb {
     background: rgba(201,167,106,0.4) !important; border-radius: 3px !important;
 }
+
+/* ── v1.6.2 Inventory fixes (NPC + Simple) ────────────────────────────────── */
+
+/* Currency items: kill parchment background */
+form.tormenta20.npc .currency-item,
+form.tormenta20.simple .currency-item {
+    background: transparent !important;
+    border: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    padding: 2px 8px !important;
+}
+form.tormenta20.npc .currency-item label,
+form.tormenta20.simple .currency-item label {
+    color: #6a5e48 !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.58rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+}
+form.tormenta20.npc .currency-item input,
+form.tormenta20.simple .currency-item input {
+    background: rgba(15,10,4,0.7) !important;
+    border: 1px solid rgba(201,167,106,0.22) !important;
+    border-radius: 2px !important;
+    color: #c0b49a !important;
+    text-align: center !important;
+    width: 60px !important;
+}
+form.tormenta20.npc ul.currency,
+form.tormenta20.simple ul.currency {
+    gap: 4px !important;
+    padding: 3px 0 !important;
+    align-items: center !important;
+    list-style: none !important;
+}
+form.tormenta20.npc .currency-header i,
+form.tormenta20.simple .currency-header i {
+    color: #c9a76a !important;
+}
+form.tormenta20.npc .inventory-currency,
+form.tormenta20.simple .inventory-currency {
+    background: transparent !important;
+    border: none !important;
+    padding: 4px 0 !important;
+}
+
+/* Inventory column separators: kill parchment border-left on QTD/ESP */
+form.tormenta20.npc .item-qty, form.tormenta20.npc .item-weight,
+form.tormenta20.simple .item-qty, form.tormenta20.simple .item-weight {
+    border-left: 1px solid rgba(201,167,106,0.2) !important;
+    border-right: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.62rem !important;
+    letter-spacing: 0.08em !important;
+    text-align: center !important;
+}
+form.tormenta20.npc .item-rolls,
+form.tormenta20.simple .item-rolls {
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.62rem !important;
+    letter-spacing: 0.06em !important;
+}
+/* item-header rows in inventory lists */
+form.tormenta20.npc .item-header,
+form.tormenta20.simple .item-header {
+    background: linear-gradient(to right, rgba(201,167,106,0.12), transparent) !important;
+    border-bottom: 1px solid rgba(201,167,106,0.22) !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.64rem !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    padding: 4px 8px !important;
+}
+form.tormenta20.npc .item-header > *,
+form.tormenta20.simple .item-header > * {
+    color: #c9a76a !important;
+}
+/* Item name labels and controls */
+form.tormenta20.npc .item-list .item .item-name label,
+form.tormenta20.simple .item-list .item .item-name label {
+    color: #c0b4a0 !important;
+}
+form.tormenta20.npc .item-list .item input[type="number"],
+form.tormenta20.simple .item-list .item input[type="number"] {
+    color: #c0b49a !important;
+    background: rgba(15,10,4,0.5) !important;
+    border: 1px solid rgba(201,167,106,0.18) !important;
+    border-radius: 2px !important;
+    text-align: center !important;
+}
+/* encumbrance bar */
+form.tormenta20.npc .encumbrance,
+form.tormenta20.simple .encumbrance {
+    background: rgba(15,10,4,0.5) !important;
+    border: 1px solid rgba(201,167,106,0.12) !important;
+    border-radius: 3px !important;
+    color: #7a7060 !important;
+    font-size: 0.72rem !important;
+    padding: 3px 8px !important;
+    margin-top: 4px !important;
+}
+form.tormenta20.npc .encumbrance .encumbrance-bar,
+form.tormenta20.simple .encumbrance .encumbrance-bar {
+    background: rgba(201,167,106,0.12) !important;
+    border-radius: 2px !important;
+}
+form.tormenta20.npc .encumbrance .encumbrance-bar .bar,
+form.tormenta20.simple .encumbrance .encumbrance-bar .bar {
+    background: linear-gradient(90deg, #6a4a18, #c9a76a) !important;
+}
+
+/* ── NPC skills tab: kill alternating parchment rows ─────────────────────── */
+form.tormenta20.npc .skill {
+    background: transparent !important;
+    border-bottom: 1px solid rgba(201,167,106,0.06) !important;
+}
+form.tormenta20.npc .skill .item-name { color: #c0b4a0 !important; }
+form.tormenta20.npc .skill .ability-mod { color: #9a8e7a !important; font-size: 0.72rem !important; }
+form.tormenta20.npc .skill .skill-mod { color: #c0b4a0 !important; }
+form.tormenta20.npc .skill.item-header {
+    background: linear-gradient(to right, rgba(201,167,106,0.12), transparent) !important;
+    border-bottom: 1px solid rgba(201,167,106,0.28) !important;
+}
+form.tormenta20.npc .skill.item-header > * { color: #c9a76a !important; }
+form.tormenta20.npc .skill a { color: #6a5e48 !important; }
+form.tormenta20.npc .skill a:hover { color: #c9a76a !important; }
+
+/* ── Effects tab: create button row layout (all non-player sheets) ─────────── */
+form.tormenta20.npc .effect-control,
+form.tormenta20.hazard .effect-control,
+form.tormenta20.simple .effect-control,
+form.tormenta20.sheet.actor .effect-control {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 4px !important;
+    color: #6a5e48 !important;
+    font-size: 0.72rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+}
+form.tormenta20.npc .effect-control:hover,
+form.tormenta20.hazard .effect-control:hover,
+form.tormenta20.simple .effect-control:hover,
+form.tormenta20.sheet.actor .effect-control:hover { color: #c9a76a !important; }
+form.tormenta20.npc .effect-control i,
+form.tormenta20.hazard .effect-control i,
+form.tormenta20.simple .effect-control i,
+form.tormenta20.sheet.actor .effect-control i { color: inherit !important; }
+
+/* ── Bases header: kill groove border on ul.attributes.summary ──────────── */
+form.tormenta20.sheet.actor .sheet-header ul.attributes.summary {
+    border: none !important;
+    border-top: 1px solid rgba(201,167,106,0.18) !important;
+    padding: 3px 0 0 !important;
+    margin: 2px 0 0 !important;
+    list-style: none !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes.summary li {
+    border: none !important;
+    color: #9a8e7a !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes.summary input {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(201,167,106,0.15) !important;
+    color: #9a8e7a !important;
+    font-size: 0.78rem !important;
+    font-style: italic !important;
+    padding: 0 2px !important;
+}
+
+/* ── Bases header: attribute block height/overflow fix ───────────────────── */
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 4px 0 !important;
+    gap: 5px !important;
+    list-style: none !important;
+    display: flex !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute {
+    height: auto !important;
+    overflow: visible !important;
+    min-height: 0 !important;
+    padding: 4px 8px !important;
+    gap: 2px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    flex: 1 !important;
+    background: rgba(15,10,4,0.85) !important;
+    border: 1px solid rgba(201,167,106,0.14) !important;
+    border-radius: 4px !important;
+    text-align: center !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute h4.box-title,
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute .attribute-name {
+    color: #c9a76a !important;
+    font-family: 'Cinzel', serif !important;
+    font-size: 0.58rem !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    margin: 0 0 3px !important;
+    padding: 0 0 3px !important;
+    border-bottom: 1px solid rgba(201,167,106,0.2) !important;
+    background: transparent !important;
+    width: 100% !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute .attribute-value {
+    color: #e6c987 !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    font-family: 'Cinzel', serif !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute .attribute-footer {
+    border-top: 1px solid rgba(201,167,106,0.1) !important;
+    padding-top: 2px !important;
+    margin-top: 2px !important;
+    width: 100% !important;
+    overflow: visible !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute .attribute-footer input {
+    color: #7a7060 !important;
+    font-size: 0.74rem !important;
+    text-align: center !important;
+    width: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    height: auto !important;
+}
+form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute select {
+    background: rgba(12,9,7,0.9) !important;
+    border: 1px solid rgba(201,167,106,0.2) !important;
+    border-radius: 2px !important;
+    color: #c0b49a !important;
+    font-size: 0.72rem !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
 `;
 
 // ── JS Enhancements ───────────────────────────────────────────────────────────
