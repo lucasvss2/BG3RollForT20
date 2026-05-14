@@ -27,6 +27,37 @@ https://raw.githubusercontent.com/lucasvss2/T20ThemeOverhaul/master/module.json
 
 ## Funcionalidades
 
+### Tema visual escuro (BG3-inspired)
+
+Redesign completo das fichas do Tormenta20 com paleta escura e dourada inspirada em Baldur's Gate 3.
+
+#### Ficha de Personagem (Jogador)
+
+- Fundo escuro em todas as abas com tipografia `Cinzel` nos títulos
+- **Barras de vitalidade** para PV, PM e Defesa com segmentos separados para PV/PM temporários (barra mais escura sobreposta)
+- Inputs e selects com borda dourada sutil e fundo semitransparente
+- Abas estilizadas com destaque ativo dourado
+- Janelas de edição de itens, poderes e magias com tema consistente
+
+#### Ficha Ameaça (NPC)
+
+- Aba de **Inventário**: containers de moeda com fundo escuro (sem pergaminho), separadores de coluna com bordas douradas sutis, headers de seção com gradiente
+- Aba de **Perícias**: linhas uniformemente escuras sem alternância pergaminho/parchment do sistema base
+- Aba de **Efeitos**: botão de criar em linha (`+` e texto lado a lado)
+
+#### Base (Personagem de suporte)
+
+- Header com blocos de atributo (`Segurança`, `Porte`, `Manutenção`) de altura automática — sem corte de conteúdo
+- Separadores do header substituídos por bordas douradas temáticas
+- Botão de criar efeitos em linha
+
+#### Personagem do Mestre (Simple)
+
+- Inventário embutido na aba de atributos: mesmo tratamento visual da ficha de ameaça
+- Botão de criar efeitos em linha
+
+---
+
 ### Overlay cinemático de dados
 
 Toda rolagem T20 interceptada exibe um overlay full-screen escuro com o resultado em destaque. O overlay fecha automaticamente após 3 segundos ou ao clicar.
@@ -154,6 +185,8 @@ src/
 │   └── chatStyles.ts             Chat cards estilizados
 ├── dialogs/
 │   └── bg3-dialog.ts             Estilização de diálogos do Foundry
+├── sheet/
+│   └── index.ts                  Tema visual completo de todas as fichas T20
 ├── hidden-test/
 │   ├── index.ts                  Setup: toolbar, socket, hooks e estilos
 │   ├── HiddenTestGMDialog.ts     Modal do GM (multi-alvo)
@@ -163,6 +196,8 @@ src/
 ├── auto-damage/
 │   ├── index.ts                  Hook, socket, prompt e aplicação de HP/PM
 │   └── types.ts                  Interfaces de dano automático e reroll
+├── utils/
+│   └── logging.ts                Utilitários de log com prefixo do módulo
 └── types/
     └── global.d.ts               Tipos ambientes para Foundry VTT v13
 ```
@@ -182,8 +217,8 @@ Em modo standalone (sem Aeris BG3 Rolls), o hook `createChatMessage` gerencia o 
 As releases são criadas automaticamente pelo GitHub Actions ao criar uma tag `vX.Y.Z`:
 
 ```sh
-git tag v1.4.1
-git push origin v1.4.1
+git tag v1.6.2
+git push origin v1.6.2
 ```
 
 O workflow executa typecheck, testes, build, monta o ZIP e publica a release no GitHub.
@@ -202,5 +237,6 @@ O workflow executa typecheck, testes, build, monta o ZIP e publica a release no 
 | Dano aplicado sem prompt                      | Não ocorre — o módulo sempre aguarda confirmação antes de alterar PV                 |
 | Rerolar dano não funciona                     | Atacante desconectou após o ataque; sem atacante ativo, o reroll não pode ser enviado|
 | Resultados duplicados de overlay              | Uma versão do aeris-bg3-rolls adicionou suporte nativo ao T20 — desative este módulo |
+| Tema visual não aplicado                      | Módulo desativado ou cache do browser — force reload com Ctrl+F5                     |
 
 Abra o console do navegador e filtre por `[aeris-bg3-rolls-t20]` para diagnóstico.
