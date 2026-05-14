@@ -76,6 +76,19 @@ const HIDDEN_TEST_STYLES = `
     font-size: 0.78rem;
     letter-spacing: 0.04em;
 }
+.aeris-hidden-test-card .htc-dice-result {
+    color: #c8b88a;
+    font-family: monospace;
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+}
+.aeris-hidden-test-card .htc-dice-dropped {
+    color: #7a6a4a;
+    font-size: 0.80rem;
+    font-weight: 400;
+}
 .aeris-hidden-test-card .htc-total {
     color: #f0ebe0;
     font-size: 3.2rem;

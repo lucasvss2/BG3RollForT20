@@ -96,6 +96,14 @@ function buildHiddenTestCardHtml(
     const total = roll.total ?? 0;
     const formula = roll.formula ?? "1d20";
 
+    // Individual d20 result(s)
+    const dieResults = roll.dice[0]?.results ?? [];
+    const active = dieResults.find((r) => r.active)?.result ?? 0;
+    const dropped = dieResults.filter((r) => !r.active).map((r) => r.result);
+    const diceDisplay = dropped.length > 0
+        ? `d20: ${active} <span class="htc-dice-dropped">(${[active, ...dropped].sort((a, b) => b - a).join(", ")})</span>`
+        : `d20: ${active}`;
+
     const outcomeLabel: Record<TestOutcome, string> = {
         critico:       "SUCESSO CRÍTICO",
         sucesso:       "SUCESSO",
@@ -126,6 +134,7 @@ function buildHiddenTestCardHtml(
             <div class="htc-divider"></div>
             <div class="htc-body">
                 <div class="htc-formula">${esc(formula)}</div>
+                <div class="htc-dice-result">${diceDisplay}</div>
                 <div class="htc-total ${outcomeCss[outcome]}">${total}</div>
                 <div class="htc-outcome ${outcomeCss[outcome]}">${outcomeLabel[outcome]}</div>
             </div>
