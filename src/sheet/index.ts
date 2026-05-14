@@ -679,6 +679,9 @@ form.tormenta20.tabbed .tab.effects .effects-list {
 }
 form.tormenta20.tabbed .tab.effects .effects-list > .items-header {
     background: linear-gradient(to right, rgba(201,167,106,0.16), transparent) !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
     border-bottom: 1px solid rgba(201,167,106,0.28) !important;
     padding: 4px 8px !important; align-items: center !important;
 }
