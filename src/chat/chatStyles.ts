@@ -401,7 +401,7 @@ const CHAT_STYLES = `
     box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75) !important;
     padding: 4px 12px 10px !important;
 }
-.bg3-resistance-roll .flavor-text {
+.bg3-resistance-roll .dice-flavor {
     color: #8ab4e8 !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.78rem !important;
@@ -468,18 +468,24 @@ const CHAT_STYLES = `
 .bg3-resistance-roll .dice-tooltip .roll.die.min { color: #cc4444 !important; border-color: rgba(204,68,68,0.5) !important; }
 
 /* ── T20 condition-card descendants (class added by JS) ──────────────────── */
-/* The background is overridden via JS setProperty to handle DOMPurify        */
-/* normalization. CSS here themes only descendant text content.               */
+/* JS may fail to find the inner div (DOMPurify normalises the inline style   */
+/* or the check fails).  The outer message gets the dark background as        */
+/* primary fallback; JS overrides the inner div for additional styling.       */
 
 .bg3-t20-condition-message {
-    background: transparent !important;
-    border-color: rgba(106, 78, 24, 0.3) !important;
-    box-shadow: none !important;
+    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    border: 1px solid rgba(106, 78, 24, 0.45) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0, 0, 0, 0.75) !important;
+    padding: 2px 0 !important;
 }
 .bg3-t20-condition-message .message-header {
     background: transparent !important;
     border: none !important;
     padding: 1px 6px !important;
+}
+.bg3-t20-condition-message .message-content {
+    padding: 0 !important;
 }
 .bg3-t20-condition-message .message-sender {
     color: #d4c4a0 !important;
@@ -565,31 +571,62 @@ const CHAT_STYLES = `
  * via `element.style.setProperty(…, 'important')`, which is the only reliable
  * way to beat an inline style in JavaScript.
  */
-function applyConditionCardTheme(root: HTMLElement): void {
+function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void {
+    // Skip T20 spell/item cards — they have their own theme
+    const t20Flags = message.flags?.["tormenta20"] as Record<string, unknown> | undefined;
+    if (t20Flags?.["itemData"]) return;
+
+    // Skip resistance roll messages — already themed via bg3-resistance-roll
+    if (message.getFlag(MODULE_ID, "resistanceRoll")) return;
+
     const msgContent = root.querySelector(".message-content");
     if (!msgContent) return;
 
-    // Walk direct children (and one level deeper for safety) looking for the
-    // T20 condition card div.  Identifying markers:
-    //   • style contains "ddd9d5" (original or normalised)
-    //   • style contains "margin-left:-7px" (T20-specific negative bleed margin)
+    // Skip messages that already have a styled T20 card, a dice roll, or our
+    // hidden-test card — they are not condition notification cards
+    if (msgContent.querySelector(".tormenta20.chat-card, .dice-roll, .aeris-hidden-test-card")) return;
+
+    let targetEl: HTMLElement | null = null;
+
+    // ── Strategy 1: style-attribute detection ─────────────────────────────────
+    // T20 injects:  style="position:relative; background: #ddd9d5; margin-left:-7px; …"
+    // DOMPurify may normalise #ddd9d5 → rgb(221, 217, 213) and add spaces around colons.
     const candidates = msgContent.querySelectorAll<HTMLElement>("div[style]");
     for (const el of Array.from(candidates)) {
         const s = (el.getAttribute("style") ?? "").toLowerCase();
-        if (!s.includes("ddd9d5") && !s.includes("margin-left:-7px")) continue;
-
-        // Direct style override — setProperty with 'important' beats inline styles
-        el.style.setProperty("background", "radial-gradient(ellipse at top, #1c1209 0%, #090604 100%)", "important");
-        el.style.setProperty("border",        "1px solid rgba(106, 78, 24, 0.45)", "important");
-        el.style.setProperty("border-radius", "4px",                               "important");
-        el.style.setProperty("box-shadow",    "0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75)", "important");
-        el.style.setProperty("color",         "#c0b49a",                           "important");
-
-        // CSS class for descendant text styling (no !important needed there)
-        el.classList.add("bg3-t20-condition-card");
-        root.classList.add("bg3-t20-condition-message");
-        break; // only one condition card per message
+        if (
+            s.includes("ddd9d5") ||
+            s.includes("margin-left:-7px") ||
+            s.includes("margin-left: -7px")
+        ) {
+            targetEl = el;
+            break;
+        }
     }
+
+    // ── Strategy 2: structural detection ─────────────────────────────────────
+    // Fallback when the inline style was fully stripped or normalised beyond
+    // recognition.  A condition card is the first direct-child div that contains
+    // a heading (h1/h2) — journal page HTML always has an <h1> title.
+    if (!targetEl) {
+        const firstDiv = msgContent.querySelector<HTMLElement>(":scope > div");
+        if (firstDiv && firstDiv.querySelector("h1, h2")) {
+            targetEl = firstDiv;
+        }
+    }
+
+    if (!targetEl) return;
+
+    // Direct style override — setProperty with 'important' beats inline styles
+    targetEl.style.setProperty("background", "radial-gradient(ellipse at top, #1c1209 0%, #090604 100%)", "important");
+    targetEl.style.setProperty("border",        "1px solid rgba(106, 78, 24, 0.45)", "important");
+    targetEl.style.setProperty("border-radius", "4px",                               "important");
+    targetEl.style.setProperty("box-shadow",    "0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75)", "important");
+    targetEl.style.setProperty("color",         "#c0b49a",                           "important");
+
+    // CSS class for descendant text styling
+    targetEl.classList.add("bg3-t20-condition-card");
+    root.classList.add("bg3-t20-condition-message");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -691,7 +728,7 @@ export function setupChatStyling(): void {
         }
 
         // T20 condition notification cards — override inline style via JS
-        applyConditionCardTheme(root);
+        applyConditionCardTheme(message, root);
 
         fixEmptyItemName(message, root);
     });
