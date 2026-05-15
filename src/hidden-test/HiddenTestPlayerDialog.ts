@@ -11,6 +11,8 @@ function esc(s: string): string {
 export interface ActivatableItem {
     id: string;
     name: string;
+    /** Tipo do item de origem, ex: "poder", "tesouro", "equipamento" */
+    itemType: string;
     pm: number;
     bonusFormula: string;  // "+9", "kh" (advantage), or ""
     bonusLabel: string;    // "+9 CAR", "Vantagem", etc.
@@ -26,7 +28,10 @@ export function getActivatableItems(actor: FoundryActor, skillLabel: string): Ac
         for (const effect of effects) {
             const t20 = (effect.flags?.["tormenta20"] ?? {}) as Record<string, unknown>;
             if (!t20["onuse"] || !t20["skill"]) continue;
-            if (effect.disabled) continue;
+
+            // Efeitos com requisito de nível ainda não atingido têm "(Xº nível)" no nome
+            // Ex: "Vindicação Refletir Magia (11º nível)" — ignora estes
+            if (/\(\d+º\s*n[íi]vel\)/i.test(effect.name)) continue;
 
             // Skill filter: semicolon-separated labels like "Fortitude;Reflexos;Vontade"
             const itemsFilter = ((t20["items"] as string) ?? "").trim();
@@ -74,6 +79,7 @@ export function getActivatableItems(actor: FoundryActor, skillLabel: string): Ac
             result.push({
                 id: `${item.id}::${effect.id}`,
                 name: effect.name || item.name,
+                itemType: item.type,
                 pm,
                 bonusFormula: formula,
                 bonusLabel: label,

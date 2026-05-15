@@ -619,9 +619,11 @@ function openSpellResistPreRollDialog(preReq: SpellResistPreRollRequest): void {
 
     // Poderes ativáveis: busca pelo label da perícia (ex: "Fortitude")
     // items=="" em poderes como Audácia → aparece em qualquer perícia
-    const powers: ActivatableItem[] = targetActor
+    // Filtra itens de tipo "tesouro": são objetos físicos (ex: Lupa), não habilidades de resistência
+    const powers: ActivatableItem[] = (targetActor
         ? getActivatableItems(targetActor, skillLabel)
-        : [];
+        : []
+    ).filter(p => p.itemType !== "tesouro");
 
     const pmActual = targetActor?.system?.attributes?.pm?.value ?? 0;
 
