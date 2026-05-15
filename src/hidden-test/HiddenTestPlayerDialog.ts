@@ -26,6 +26,7 @@ export function getActivatableItems(actor: FoundryActor, skillLabel: string): Ac
         for (const effect of effects) {
             const t20 = (effect.flags?.["tormenta20"] ?? {}) as Record<string, unknown>;
             if (!t20["onuse"] || !t20["skill"]) continue;
+            if (effect.disabled) continue;
 
             // Skill filter: semicolon-separated labels like "Fortitude;Reflexos;Vontade"
             const itemsFilter = ((t20["items"] as string) ?? "").trim();
