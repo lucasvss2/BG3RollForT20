@@ -308,7 +308,9 @@ function extractSpellName(message: ChatMessage): string {
 function extractConditions(message: ChatMessage): SpellConditionData[] {
     type RawEffect = {
         name?: string;
+        disabled?: boolean;
         duration?: { rounds?: number | null; seconds?: number | null };
+        flags?: { tormenta20?: Record<string, unknown> };
     };
     type StatusEntry = { id: string; name: string };
 
@@ -322,38 +324,61 @@ function extractConditions(message: ChatMessage): SpellConditionData[] {
     const conditions: SpellConditionData[] = [];
     const seen = new Set<string>();
 
-    for (const effArray of effects) {
-        if (!Array.isArray(effArray)) continue;
-        for (const eff of effArray) {
-            if (!eff.name) continue;
-            const condMatch = eff.name.match(/\(([^)]+)\)/);
-            if (!condMatch) continue;
-            const condLabel = condMatch[1].trim();
-            if (seen.has(condLabel.toLowerCase())) continue;
-            seen.add(condLabel.toLowerCase());
-
-            let statusEntry = statusEffects.find(
-                (e) => e.name?.toLowerCase() === condLabel.toLowerCase(),
-            );
-            if (!statusEntry) {
-                const guessedId = condLabel
-                    .toLowerCase()
-                    .normalize("NFD")
-                    .replace(/[̀-ͯ]/g, "")
-                    .replace(/\s+/g, "");
-                statusEntry = statusEffects.find((e) => e.id === guessedId);
-            }
-            const statusId = statusEntry?.id ?? condLabel
+    function resolveStatus(label: string): { statusId: string; resolvedLabel: string } {
+        let statusEntry = statusEffects.find((e) => e.name?.toLowerCase() === label.toLowerCase());
+        if (!statusEntry) {
+            const guessedId = label
                 .toLowerCase()
                 .normalize("NFD")
                 .replace(/[̀-ͯ]/g, "")
                 .replace(/\s+/g, "");
+            statusEntry = statusEffects.find((e) => e.id === guessedId);
+        }
+        return {
+            statusId:      statusEntry?.id ?? label.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, ""),
+            resolvedLabel: statusEntry?.name ?? label,
+        };
+    }
 
+    for (const effArray of effects) {
+        if (!Array.isArray(effArray)) continue;
+        for (const eff of effArray) {
+            if (!eff.name) continue;
+
+            const t20 = (eff.flags?.tormenta20 ?? {}) as Record<string, unknown>;
+
+            // Caso 1 — padrão "NomeMagia (NomeCondição)": extrai o que está entre parênteses
+            const condMatch = eff.name.match(/\(([^)]+)\)/);
+            if (condMatch) {
+                const condLabel = condMatch[1].trim();
+                if (seen.has(condLabel.toLowerCase())) continue;
+                seen.add(condLabel.toLowerCase());
+                const { statusId, resolvedLabel } = resolveStatus(condLabel);
+                conditions.push({
+                    statusId,
+                    label:           resolvedLabel,
+                    durationRounds:  eff.duration?.rounds  != null ? eff.duration.rounds  : undefined,
+                    durationSeconds: eff.duration?.seconds != null ? eff.duration.seconds : undefined,
+                });
+                continue;
+            }
+
+            // Caso 2 — efeito direto sem parênteses (ex: "Sono"):
+            // deve estar ativo (disabled: false) e não ser um efeito de uso manual (onuse: false)
+            // nem uma melhoria de lançamento (self: true costuma indicar aumenta do lançador)
+            if (eff.disabled) continue;
+            if (t20["onuse"] || t20["self"]) continue;
+
+            const label = eff.name.trim();
+            if (seen.has(label.toLowerCase())) continue;
+            seen.add(label.toLowerCase());
+
+            const { statusId, resolvedLabel } = resolveStatus(label);
             conditions.push({
                 statusId,
-                label: statusEntry?.name ?? condLabel,
-                durationRounds:  (eff.duration?.rounds  != null ? eff.duration.rounds  : undefined),
-                durationSeconds: (eff.duration?.seconds != null ? eff.duration.seconds : undefined),
+                label:           resolvedLabel,
+                durationRounds:  eff.duration?.rounds  != null ? eff.duration.rounds  : undefined,
+                durationSeconds: eff.duration?.seconds != null ? eff.duration.seconds : undefined,
             });
         }
     }
@@ -415,6 +440,9 @@ function openSpellResistDialog(req: SpellResistRequest): void {
     const targetName  = targetActor?.name ?? "Alvo";
     const halfDmg     = Math.floor(req.damageTotal / 2);
 
+    // Magia de puro status: sem roll de dano (damageTotal === 0)
+    const isConditionOnly = !req.isHeal && req.damageTotal === 0;
+
     // Seção de resistência
     let resistSection = "";
     if (!req.isHeal && req.resistSkill && req.cd > 0) {
@@ -425,7 +453,7 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         const outcomeLabel =
             req.resistOutcome === "anula"   ? "anula todo o efeito" :
             req.resistOutcome === "metade"  ? "reduz dano à metade" :
-            req.resistOutcome === "parcial" ? "reduz dano à metade e evita condições" :
+            req.resistOutcome === "parcial" ? (isConditionOnly ? "evita as condições" : "reduz dano à metade e evita condições") :
             "veja texto da magia";
 
         const powersHtml = req.appliedPowerLabels.length > 0 ? `
@@ -460,13 +488,13 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         `;
     }
 
-    // Seção de dano / cura
+    // Seção de dano / cura — omitida para magias de puro status (damageTotal === 0)
     const dmgClass  = req.isHeal ? "srd-heal" : "srd-dmg";
     const dmgLabel  = req.isHeal ? "CURA" :
                       req.passed && req.resistOutcome !== "anula" ? `DANO  (metade: ${halfDmg})` :
                       "DANO";
 
-    const valueSection = `
+    const valueSection = isConditionOnly ? "" : `
         <div class="srd-divider"></div>
         <div class="srd-damage-display">
             <div class="srd-label-sm">${dmgLabel}</div>
@@ -525,6 +553,19 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             },
         };
         buttons.cancel = { icon: '<i class="fas fa-ban"></i>', label: "Não Aplicar", callback: () => { /**/ } };
+    } else if (isConditionOnly) {
+        // Magia de puro status — sem dano para aplicar
+        const hasConditions = req.conditions.length > 0;
+        // Se passou na resistência com outcome que anula ou parcial, o efeito é evitado
+        const effectAvoided = req.passed && (req.resistOutcome === "anula" || req.resistOutcome === "parcial");
+        if (!effectAvoided || req.resistOutcome === "texto") {
+            buttons.apply = {
+                icon:  '<i class="fas fa-check-circle"></i>',
+                label: hasConditions ? "Aplicar Condições" : "Confirmar Efeito",
+                callback: ($html: JQuery) => { applyCheckedConditions($html, req.targetActorId); },
+            };
+        }
+        buttons.none = { icon: '<i class="fas fa-ban"></i>', label: "Sem Efeito", callback: () => { /**/ } };
     } else {
         const showFull = !req.resistSkill || !req.passed || req.resistOutcome === "texto";
         const showHalf = req.resistSkill != null &&
@@ -558,9 +599,13 @@ function openSpellResistDialog(req: SpellResistRequest): void {
     }
 
     let defaultBtn: string =
-        req.isHeal ? "heal" :
-        req.passed && req.resistOutcome === "anula" ? "none" :
-        req.passed ? "half" :
+        req.isHeal                                           ? "heal" :
+        isConditionOnly && req.passed &&
+            (req.resistOutcome === "anula" ||
+             req.resistOutcome === "parcial")               ? "none" :
+        isConditionOnly                                      ? "apply" :
+        req.passed && req.resistOutcome === "anula"          ? "none" :
+        req.passed                                           ? "half" :
         "full";
     if (!buttons[defaultBtn]) defaultBtn = Object.keys(buttons)[0] ?? "none";
 
@@ -863,18 +908,18 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const tipo = itemData["tipo"] as string | undefined;
     if (!tipo || !(SPELL_TIPOS as readonly string[]).includes(tipo)) return;
 
-    const rolls = message.rolls;
-    if (!rolls?.length) return;
+    const rolls = message.rolls ?? [];
 
     // Ignora se tiver roll de ataque (tratado pelo auto-damage)
     if (rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "attack")) return;
 
     const damageRoll = rolls.find(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
-    if (!damageRoll) return;
 
-    const isHeal   = (damageRoll.formula ?? "").includes("curapv");
+    // Magias de puro status não têm roll de dano — ainda precisam do dialog de resistência
+    const isHeal    = damageRoll != null && (damageRoll.formula ?? "").includes("curapv");
     const resistTxt = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim();
 
+    // Precisa ter resistência (ou ser cura) para prosseguir
     if (!isHeal && !resistTxt) return;
 
     const { skill: resistSkill, outcome: resistOutcome } = parseResistance(resistTxt);
@@ -883,8 +928,9 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const targets = game.user?.targets;
     if (!targets?.size) return;
 
-    const damageTotal   = damageRoll.total ?? 0;
-    const damageFormula = damageRoll.formula ?? "";
+    // damageTotal = 0 para magias de puro status (sem roll de dano)
+    const damageTotal   = damageRoll?.total ?? 0;
+    const damageFormula = damageRoll?.formula ?? "";
     const casterName    = message.speaker?.alias ?? "Lançador";
     const casterUserId  = game.user?.id ?? "";
     const spellName     = extractSpellName(message);
