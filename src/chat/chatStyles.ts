@@ -511,6 +511,15 @@ const CHAT_STYLES = `
     margin: 0 0 2px !important;
     padding: 0 !important;
 }
+/* T20 uses <label class="titulo"> for the condition name (not <h1>) */
+.bg3-t20-condition-card label.titulo {
+    color: #c8a96e !important;
+    background: transparent !important;
+}
+/* Plain <label> = subtitle (e.g. "Condição de Fadiga") */
+.bg3-t20-condition-card label:not(.titulo) {
+    color: #b8ad9a !important;
+}
 .bg3-t20-condition-card p {
     color: #b8ad9a !important;
     font-family: "Palatino Linotype", "Book Antiqua", serif !important;
@@ -589,8 +598,8 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
     let targetEl: HTMLElement | null = null;
 
     // ── Strategy 1: style-attribute detection ─────────────────────────────────
-    // T20 injects:  style="position:relative; background: #ddd9d5; margin-left:-7px; …"
-    // DOMPurify may normalise #ddd9d5 → rgb(221, 217, 213) and add spaces around colons.
+    // Older T20 versions injected:  style="background:#ddd9d5; margin-left:-7px; …"
+    // DOMPurify may normalise the colour → rgb(221,217,213) and add spaces.
     const candidates = msgContent.querySelectorAll<HTMLElement>("div[style]");
     for (const el of Array.from(candidates)) {
         const s = (el.getAttribute("style") ?? "").toLowerCase();
@@ -604,13 +613,14 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
         }
     }
 
-    // ── Strategy 2: structural detection ─────────────────────────────────────
-    // Fallback when the inline style was fully stripped or normalised beyond
-    // recognition.  A condition card is the first direct-child div that contains
-    // a heading (h1/h2) — journal page HTML always has an <h1> title.
+    // ── Strategy 2: structural detection (label.titulo) ───────────────────────
+    // Current T20 renders condition cards as plain <div> (no inline style) whose
+    // first descendant heading is <label class="titulo">, NOT <h1>/<h2>.
+    // Match: the sole direct-child div of .message-content that contains a
+    // label.titulo element.
     if (!targetEl) {
         const firstDiv = msgContent.querySelector<HTMLElement>(":scope > div");
-        if (firstDiv && firstDiv.querySelector("h1, h2")) {
+        if (firstDiv && firstDiv.querySelector("label.titulo, h1, h2")) {
             targetEl = firstDiv;
         }
     }
@@ -633,11 +643,23 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
     // background).  CSS !important in a stylesheet normally beats non-!important
     // inline styles, but a more-specific T20 stylesheet rule can still win.
     // The only 100 % reliable approach is JS setProperty(..., 'important').
+    //
+    // NOTE: T20 condition cards use <label class="titulo"> (NOT <h1>) for the
+    //       condition name, and a plain <label> for the subtitle.
     targetEl.querySelectorAll<HTMLElement>("h1, h2, h3, h4").forEach(el => {
         el.style.setProperty("color",       "#c8a96e", "important");
         el.style.setProperty("border",      "none",    "important");
         el.style.setProperty("background",  "transparent", "important");
         el.style.setProperty("text-shadow", "none",    "important");
+    });
+    // label.titulo  → condition name (large, gold)
+    targetEl.querySelectorAll<HTMLElement>("label.titulo").forEach(el => {
+        el.style.setProperty("color",      "#c8a96e", "important");
+        el.style.setProperty("background", "transparent", "important");
+    });
+    // plain <label> → condition subtitle (e.g. "Condição de Fadiga"), beige
+    targetEl.querySelectorAll<HTMLElement>("label:not(.titulo)").forEach(el => {
+        el.style.setProperty("color", "#b8ad9a", "important");
     });
     targetEl.querySelectorAll<HTMLElement>("p, li, span:not(.content-link)").forEach(el => {
         el.style.setProperty("color", "#b8ad9a", "important");
