@@ -199,6 +199,7 @@ const DIALOG_STYLES = `
 
 .window-app.bg3-dialog input[type="text"],
 .window-app.bg3-dialog input[type="number"],
+.window-app.bg3-dialog input:not([type]),
 .window-app.bg3-dialog select {
     background: rgba(0, 0, 0, 0.55) !important;
     border: 1px solid #3a2a0e !important;
@@ -209,6 +210,32 @@ const DIALOG_STYLES = `
     padding: 3px 8px !important;
     transition: border-color 0.2s, box-shadow 0.2s !important;
     flex: 1 1 auto;
+}
+
+/* AbilityUseDialog "Custo de Mana Total" + similar T20 readouts.
+   T20 ships these inputs/outputs with dark inline colours.  Override broadly. */
+.window-app.ability-use-form input,
+.window-app.ability-use-form output,
+.window-app.ability-use-form progress,
+.window-app.ability-use-form meter {
+    color: #f0e0b0 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 4px rgba(0,0,0,0.6) !important;
+    background-color: rgba(0, 0, 0, 0.55) !important;
+}
+.window-app.ability-use-form input[readonly],
+.window-app.ability-use-form output {
+    background: linear-gradient(to right, rgba(106,78,24,0.18), rgba(0,0,0,0.45)) !important;
+    border: 1px solid rgba(106, 78, 24, 0.5) !important;
+    border-radius: 3px !important;
+}
+/* T20 progress-bar style total-cost display (a styled <input> or <progress>) */
+.window-app.ability-use-form progress::-webkit-progress-bar,
+.window-app.ability-use-form progress::-moz-progress-bar {
+    background: rgba(0,0,0,0.55) !important;
+}
+.window-app.ability-use-form progress::-webkit-progress-value {
+    background: linear-gradient(to right, #5c3a10, #c8a96e) !important;
 }
 
 .window-app.bg3-dialog input:focus,
@@ -808,6 +835,20 @@ export function setupDialogStyling(): void {
             // Sync after layout settles so offsetHeight is final
             const el = appEl;
             requestAnimationFrame(() => syncContentHeight(el));
+
+            // Force-override inline colours on T20's "Custo de Mana Total" and
+            // every other readout/input.  T20 ships these with dark text colours
+            // that are illegible on our dark gradient.  setProperty(...,'important')
+            // is the only way to reliably beat T20's inline styles.
+            requestAnimationFrame(() => {
+                el.querySelectorAll<HTMLElement>(
+                    "input, output, progress, meter"
+                ).forEach((field) => {
+                    field.style.setProperty("color", "#f0e0b0", "important");
+                    field.style.setProperty("font-weight", "700", "important");
+                    field.style.setProperty("text-shadow", "0 0 4px rgba(0,0,0,0.6)", "important");
+                });
+            });
         }
 
         stylizeDialog(
