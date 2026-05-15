@@ -37,6 +37,10 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     const effectGroups = message.getFlag("tormenta20", "effects") as EffectData[][] | undefined;
     if (!effectGroups?.length) return;
 
+    // Spells with MULTIPLE buttons (e.g. Oração: Bônus + Penalidade, Concentração de
+    // Combate) require the GM to choose which button to press — skip auto-apply.
+    if (effectGroups.length !== 1) return;
+
     // Must have T-targeted tokens
     const targets = game.user?.targets;
     if (!targets?.size) return;
@@ -53,13 +57,27 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
         if (hasDamageRoll) return;
     }
 
-    const targetArray = Array.from(targets);
+    const allTargets = Array.from(targets);
+
+    // For non-GM users (e.g. a player casting a self-buff), only apply effects to
+    // actors the player owns (level 3 = OWNER). Unowned targets still have the
+    // manual chat button as fallback.
+    const effectTargets = game.user?.isGM
+        ? allTargets
+        : allTargets.filter(token => {
+            const actor = token.actor;
+            if (!actor) return false;
+            const ownershipLevel = (actor.ownership as Record<string, number>)[game.user!.id] ?? 0;
+            return ownershipLevel >= 3;
+        });
+    if (!effectTargets.length) return;
+
     let appliedCount = 0;
 
     for (const effectGroup of effectGroups) {
         if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
 
-        for (const token of targetArray) {
+        for (const token of effectTargets) {
             const actor = token.actor;
             if (!actor) continue;
 
@@ -88,7 +106,7 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     }
 
     if (appliedCount > 0) {
-        const names = targetArray
+        const names = effectTargets
             .filter(t => t.actor)
             .map(t => t.actor!.name)
             .join(", ");

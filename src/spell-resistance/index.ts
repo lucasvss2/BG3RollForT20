@@ -976,6 +976,7 @@ async function executeSpellResistRoll(
         rolls:   [roll.toJSON()],
         type:    5,
         speaker: ChatMessage.getSpeaker({ actor: actor ?? null }),
+        flags:   { [MODULE_ID]: { resistanceRoll: true } },
     });
 
     // Abre o dialog de resultado

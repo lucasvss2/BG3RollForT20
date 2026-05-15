@@ -3,6 +3,7 @@
  * Injects CSS and fixes missing attribute labels via renderChatMessage hook.
  */
 
+import { MODULE_ID } from "@/constants";
 import { parseT20 } from "@/parser/t20";
 import { resolveFlavorText } from "@/integration/index";
 import { log } from "@/utils/logging";
@@ -356,65 +357,240 @@ const CHAT_STYLES = `
     color: #c8a96e !important;
 }
 
-/* ── T20 condition notification cards (msgFromJournal) ───────────────────── */
-/* These are plain ChatMessages with a <div style="background: #ddd9d5; ..."> */
-/* We must use !important to override inline styles.                          */
+/* ── Resistance roll messages (flag: MODULE_ID.resistanceRoll) ───────────── */
+/* Class added by renderChatMessage hook when flag is present.               */
 
-.chat-message:has(.message-content > div[style*="background: #ddd9d5"]) {
+.bg3-resistance-roll {
+    background: transparent !important;
+    border-color: rgba(106, 78, 24, 0.3) !important;
+    box-shadow: none !important;
+    padding: 2px 0 !important;
+}
+.bg3-resistance-roll .message-header {
+    background: transparent !important;
+    border: none !important;
+    padding: 1px 6px !important;
+}
+.bg3-resistance-roll .message-sender {
+    color: #d4c4a0 !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    text-shadow:
+        -1px -1px 0 rgba(0,0,0,0.85),
+         1px -1px 0 rgba(0,0,0,0.85),
+        -1px  1px 0 rgba(0,0,0,0.85),
+         1px  1px 0 rgba(0,0,0,0.85),
+        0 0 6px rgba(0,0,0,0.9) !important;
+}
+.bg3-resistance-roll .message-metadata,
+.bg3-resistance-roll .message-timestamp,
+.bg3-resistance-roll .message-delete {
+    color: #3a2e22 !important;
+    font-size: 0.62rem !important;
+}
+.bg3-resistance-roll .message-delete:hover { color: #cc4444 !important; }
+.bg3-resistance-roll .message-content {
+    padding: 0 !important;
+}
+.bg3-resistance-roll .dice-roll {
+    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    border: 1px solid rgba(106, 78, 24, 0.45) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75) !important;
+    padding: 4px 12px 10px !important;
+}
+.bg3-resistance-roll .flavor-text {
+    color: #8ab4e8 !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.06em !important;
+    text-align: center !important;
+    margin: 4px 0 8px !important;
+    padding: 0 !important;
+    border: none !important;
+}
+.bg3-resistance-roll .dice-result {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 2px !important;
+}
+.bg3-resistance-roll .dice-formula {
+    color: #c8b896 !important;
+    font-family: monospace !important;
+    font-size: 0.78rem !important;
+    background: rgba(0,0,0,0.3) !important;
+    border: 1px solid rgba(106,78,24,0.25) !important;
+    border-radius: 3px !important;
+    padding: 2px 10px !important;
+    text-align: center !important;
+}
+.bg3-resistance-roll .dice-total {
+    color: #f0ebe0 !important;
+    background: transparent !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 2.4rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    text-shadow: 0 0 20px rgba(255,255,255,0.08) !important;
+    border: none !important;
+    padding: 4px 8px 2px !important;
+    margin: 0 !important;
+}
+.bg3-resistance-roll .dice-tooltip {
+    background: rgba(10,6,2,0.85) !important;
+    border-top: 1px solid rgba(106,78,24,0.25) !important;
+    margin-top: 4px !important;
+    padding: 6px 0 4px !important;
+}
+.bg3-resistance-roll .dice-tooltip .part-header {
+    background: rgba(106,78,24,0.12) !important;
+    border-bottom: 1px solid rgba(106,78,24,0.2) !important;
+    padding: 3px 8px !important;
+}
+.bg3-resistance-roll .dice-tooltip .part-formula { color: #a89880 !important; font-family: monospace !important; font-size: 0.72rem !important; }
+.bg3-resistance-roll .dice-tooltip .part-total  { color: #e8e0d0 !important; background: rgba(0,0,0,0.3) !important; font-weight: 700 !important; font-size: 0.78rem !important; }
+.bg3-resistance-roll .dice-tooltip .dice-rolls  { list-style: none !important; padding: 2px 8px 4px !important; margin: 0 !important; display: flex !important; flex-wrap: wrap !important; gap: 4px !important; }
+.bg3-resistance-roll .dice-tooltip .roll.die {
+    color: #e8e0d0 !important;
+    background: rgba(30,20,8,0.9) !important;
+    border: 1px solid rgba(106,78,24,0.4) !important;
+    border-radius: 3px !important;
+    padding: 2px 6px !important;
+    font-size: 0.78rem !important;
+    min-width: 22px !important;
+    text-align: center !important;
+}
+.bg3-resistance-roll .dice-tooltip .roll.die.max { color: #6ecf7a !important; border-color: rgba(110,207,122,0.5) !important; }
+.bg3-resistance-roll .dice-tooltip .roll.die.min { color: #cc4444 !important; border-color: rgba(204,68,68,0.5) !important; }
+
+/* ── T20 condition-card descendants (class added by JS) ──────────────────── */
+/* The background is overridden via JS setProperty to handle DOMPurify        */
+/* normalization. CSS here themes only descendant text content.               */
+
+.bg3-t20-condition-message {
     background: transparent !important;
     border-color: rgba(106, 78, 24, 0.3) !important;
     box-shadow: none !important;
 }
-.chat-message:has(.message-content > div[style*="background: #ddd9d5"]) .message-header {
+.bg3-t20-condition-message .message-header {
     background: transparent !important;
     border: none !important;
+    padding: 1px 6px !important;
 }
-
-.message-content > div[style*="background: #ddd9d5"] {
-    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
-    border: 1px solid rgba(106, 78, 24, 0.45) !important;
-    border-radius: 4px !important;
-    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0, 0, 0, 0.75) !important;
-    color: #c0b49a !important;
+.bg3-t20-condition-message .message-sender {
+    color: #d4c4a0 !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    text-shadow: -1px -1px 0 rgba(0,0,0,0.85), 1px -1px 0 rgba(0,0,0,0.85),
+                 -1px  1px 0 rgba(0,0,0,0.85), 1px  1px 0 rgba(0,0,0,0.85),
+                 0 0 6px rgba(0,0,0,0.9) !important;
 }
-.message-content > div[style*="background: #ddd9d5"] h1,
-.message-content > div[style*="background: #ddd9d5"] h2,
-.message-content > div[style*="background: #ddd9d5"] h3,
-.message-content > div[style*="background: #ddd9d5"] h4 {
+.bg3-t20-condition-card h1,
+.bg3-t20-condition-card h2,
+.bg3-t20-condition-card h3,
+.bg3-t20-condition-card h4 {
     color: #c8a96e !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
-    font-size: 0.95rem !important;
+    font-size: 1.0rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.08em !important;
     text-transform: uppercase !important;
     border: none !important;
-    margin-bottom: 4px !important;
+    margin: 0 0 2px !important;
     padding: 0 !important;
 }
-.message-content > div[style*="background: #ddd9d5"] p {
+.bg3-t20-condition-card p {
     color: #b8ad9a !important;
     font-family: "Palatino Linotype", "Book Antiqua", serif !important;
     font-size: 0.76rem !important;
     line-height: 1.55 !important;
     margin: 0 0 4px !important;
 }
-.message-content > div[style*="background: #ddd9d5"] b,
-.message-content > div[style*="background: #ddd9d5"] strong {
-    color: #c8a96e !important;
+.bg3-t20-condition-card li {
+    color: #b8ad9a !important;
+    font-family: "Palatino Linotype", "Book Antiqua", serif !important;
+    font-size: 0.76rem !important;
+    line-height: 1.5 !important;
 }
-.message-content > div[style*="background: #ddd9d5"] em,
-.message-content > div[style*="background: #ddd9d5"] i {
-    color: #9a8e7a !important;
+.bg3-t20-condition-card ul,
+.bg3-t20-condition-card ol {
+    margin: 2px 0 4px !important;
+    padding-left: 18px !important;
 }
-.message-content > div[style*="background: #ddd9d5"] a {
-    color: #c8a96e !important;
+.bg3-t20-condition-card b,
+.bg3-t20-condition-card strong { color: #c8a96e !important; }
+.bg3-t20-condition-card em,
+.bg3-t20-condition-card i     { color: #9a8e7a !important; }
+.bg3-t20-condition-card hr {
+    border: none !important;
+    border-top: 1px solid rgba(106, 78, 24, 0.4) !important;
+    margin: 4px 0 !important;
+}
+/* Journal content-link buttons inside condition cards */
+.bg3-t20-condition-card .content-link {
+    background: rgba(138,180,232,0.1) !important;
+    border: 1px solid rgba(138,180,232,0.35) !important;
+    color: #8ab4e8 !important;
+    border-radius: 3px !important;
+    padding: 1px 5px !important;
+    font-family: "Modesto Condensed", serif !important;
+    font-size: 0.76rem !important;
+}
+.bg3-t20-condition-card .content-link:hover { background: rgba(138,180,232,0.2) !important; }
+.bg3-t20-condition-card a {
+    color: #8ab4e8 !important;
     text-decoration: none !important;
 }
-.message-content > div[style*="background: #ddd9d5"] a:hover {
-    color: #e8c87a !important;
-    text-decoration: underline !important;
-}
+.bg3-t20-condition-card a:hover { color: #aacdf0 !important; text-decoration: underline !important; }
 `;
+
+// ── Condition-card theme (JS override) ───────────────────────────────────────
+
+/**
+ * T20 calls `game.tormenta20.macros.msgFromJournal()` whenever a condition is
+ * applied.  It creates a ChatMessage whose content is:
+ *   <div style="position:relative; background: #ddd9d5; margin-left:-7px; ...">
+ *     [journal page HTML]
+ *   </div>
+ *
+ * CSS attribute selectors are unreliable here because DOMPurify may normalise
+ * the colour string (`#ddd9d5` → `rgb(221,217,213)`).  We instead detect the
+ * card in the `renderChatMessage` hook and override the inline style directly
+ * via `element.style.setProperty(…, 'important')`, which is the only reliable
+ * way to beat an inline style in JavaScript.
+ */
+function applyConditionCardTheme(root: HTMLElement): void {
+    const msgContent = root.querySelector(".message-content");
+    if (!msgContent) return;
+
+    // Walk direct children (and one level deeper for safety) looking for the
+    // T20 condition card div.  Identifying markers:
+    //   • style contains "ddd9d5" (original or normalised)
+    //   • style contains "margin-left:-7px" (T20-specific negative bleed margin)
+    const candidates = msgContent.querySelectorAll<HTMLElement>("div[style]");
+    for (const el of Array.from(candidates)) {
+        const s = (el.getAttribute("style") ?? "").toLowerCase();
+        if (!s.includes("ddd9d5") && !s.includes("margin-left:-7px")) continue;
+
+        // Direct style override — setProperty with 'important' beats inline styles
+        el.style.setProperty("background", "radial-gradient(ellipse at top, #1c1209 0%, #090604 100%)", "important");
+        el.style.setProperty("border",        "1px solid rgba(106, 78, 24, 0.45)", "important");
+        el.style.setProperty("border-radius", "4px",                               "important");
+        el.style.setProperty("box-shadow",    "0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75)", "important");
+        el.style.setProperty("color",         "#c0b49a",                           "important");
+
+        // CSS class for descendant text styling (no !important needed there)
+        el.classList.add("bg3-t20-condition-card");
+        root.classList.add("bg3-t20-condition-message");
+        break; // only one condition card per message
+    }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -508,6 +684,15 @@ export function setupChatStyling(): void {
             root = (htmlArg as Record<string, unknown>)[0] as HTMLElement | undefined;
         }
         if (!root) return;
+
+        // Resistance roll messages — add class for CSS theming
+        if (message.getFlag(MODULE_ID, "resistanceRoll")) {
+            root.classList.add("bg3-resistance-roll");
+        }
+
+        // T20 condition notification cards — override inline style via JS
+        applyConditionCardTheme(root);
+
         fixEmptyItemName(message, root);
     });
 
