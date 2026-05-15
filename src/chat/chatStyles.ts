@@ -622,11 +622,45 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
     targetEl.style.setProperty("border",        "1px solid rgba(106, 78, 24, 0.45)", "important");
     targetEl.style.setProperty("border-radius", "4px",                               "important");
     targetEl.style.setProperty("box-shadow",    "0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75)", "important");
-    targetEl.style.setProperty("color",         "#c0b49a",                           "important");
+    targetEl.style.setProperty("color",         "#b8ad9a",                           "important");
 
     // CSS class for descendant text styling
     targetEl.classList.add("bg3-t20-condition-card");
     root.classList.add("bg3-t20-condition-message");
+
+    // Inline-style override for every text descendant.
+    // T20 journal HTML embeds dark inline colours (designed for its light beige
+    // background).  CSS !important in a stylesheet normally beats non-!important
+    // inline styles, but a more-specific T20 stylesheet rule can still win.
+    // The only 100 % reliable approach is JS setProperty(..., 'important').
+    targetEl.querySelectorAll<HTMLElement>("h1, h2, h3, h4").forEach(el => {
+        el.style.setProperty("color",       "#c8a96e", "important");
+        el.style.setProperty("border",      "none",    "important");
+        el.style.setProperty("background",  "transparent", "important");
+        el.style.setProperty("text-shadow", "none",    "important");
+    });
+    targetEl.querySelectorAll<HTMLElement>("p, li, span:not(.content-link)").forEach(el => {
+        el.style.setProperty("color", "#b8ad9a", "important");
+    });
+    targetEl.querySelectorAll<HTMLElement>("b, strong").forEach(el => {
+        el.style.setProperty("color", "#c8a96e", "important");
+    });
+    targetEl.querySelectorAll<HTMLElement>("em, i").forEach(el => {
+        el.style.setProperty("color", "#9a8e7a", "important");
+    });
+    targetEl.querySelectorAll<HTMLElement>("a, .content-link").forEach(el => {
+        el.style.setProperty("color",             "#8ab4e8", "important");
+        el.style.setProperty("background",        "rgba(138,180,232,0.1)", "important");
+        el.style.setProperty("border",            "1px solid rgba(138,180,232,0.35)", "important");
+        el.style.setProperty("border-radius",     "3px",    "important");
+        el.style.setProperty("padding",           "1px 5px","important");
+        el.style.setProperty("text-decoration",   "none",   "important");
+    });
+    targetEl.querySelectorAll<HTMLElement>("hr").forEach(el => {
+        el.style.setProperty("border",     "none",                                  "important");
+        el.style.setProperty("border-top", "1px solid rgba(106, 78, 24, 0.4)",     "important");
+        el.style.setProperty("margin",     "4px 0",                                "important");
+    });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
