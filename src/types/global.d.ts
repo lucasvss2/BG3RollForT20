@@ -238,6 +238,12 @@ declare interface DiceTerm extends RollTerm {
 
 // ── UI ───────────────────────────────────────────────────────────────────────
 
+declare const canvas: {
+    tokens?: {
+        controlled?: FoundryToken[];
+    };
+} | undefined;
+
 declare const ui: {
     notifications: {
         info(msg: string, options?: { permanent?: boolean }): void;

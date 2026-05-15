@@ -1078,8 +1078,24 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const { skill: resistSkill, outcome: resistOutcome } = parseResistance(resistTxt);
     if (!isHeal && resistOutcome === "none") return;
 
-    const targets = game.user?.targets;
-    if (!targets?.size) return;
+    // ── Resolver alvos ───────────────────────────────────────────────────────
+    // Prioridade 1: tokens T-marcados explicitamente pelo jogador.
+    // Prioridade 2: tokens selecionados no canvas (excluindo o próprio lançador),
+    //              como fallback para quem esqueceu de pressionar T antes de lançar.
+    const tTargets = Array.from(game.user?.targets ?? []);
+    const casterActorId = message.speaker?.actor ?? "";
+    let effectiveTargets: FoundryToken[];
+
+    if (tTargets.length > 0) {
+        effectiveTargets = tTargets;
+    } else {
+        const cvs = canvas as unknown as { tokens?: { controlled?: FoundryToken[] } };
+        const controlled = cvs.tokens?.controlled ?? [];
+        effectiveTargets = controlled.filter(
+            t => t.actor != null && t.actor.id !== casterActorId,
+        );
+        if (effectiveTargets.length === 0) return;
+    }
 
     // damageTotal = 0 para magias de puro status (sem roll de dano)
     const damageTotal   = damageRoll?.total ?? 0;
@@ -1090,7 +1106,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const cd            = isHeal ? 0 : extractCD(message);
     const { conditions, customEffectNames } = extractConditions(message);
 
-    for (const token of targets) {
+    for (const token of effectiveTargets) {
         const targetActor = token.actor;
         if (!targetActor) continue;
 
