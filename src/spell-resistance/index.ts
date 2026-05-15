@@ -224,18 +224,7 @@ const SPELL_RESIST_STYLES = `
     font-style: italic;
     line-height: 1.4;
 }
-.srd-conditions { padding: 4px 16px 8px; }
-.srd-condition-list { margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
-.srd-condition-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.85rem;
-    color: #e8d8a8;
-    cursor: pointer;
-    user-select: none;
-}
-.srd-condition-item input[type="checkbox"] { accent-color: #8ab4e8; width: 13px; height: 13px; }
+
 .srd-dialog .dialog-buttons,
 .srd-dialog footer.form-footer {
     display: flex;
@@ -522,19 +511,14 @@ async function applyCondition(actorId: string, statusId: string): Promise<void> 
     await actor.toggleStatusEffect(statusId, { active: true });
 }
 
-function applyCheckedConditions($html: JQuery, actorId: string): void {
-    $html.find('input[type="checkbox"][data-status-id]:checked').each((_, el) => {
-        const statusId = (el as HTMLInputElement).dataset["statusId"];
-        if (statusId) void applyCondition(actorId, statusId);
-    });
-}
 
 // ── Status picker dialog ──────────────────────────────────────────────────────
 
 function openStatusPickerDialog(
-    actorId:          string,
-    spellName:        string,
+    actorId:           string,
+    spellName:         string,
     customEffectNames: string[],
+    preSelected:       string[] = [],
 ): void {
     ensureStyles();
 
@@ -545,21 +529,25 @@ function openStatusPickerDialog(
 
     // Ordena alfabeticamente pelo nome
     const sorted = [...allStatuses].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    const preSelectedSet = new Set(preSelected);
 
     const itemsHtml = sorted.map(s => `
         <label class="sp-item" data-name="${esc(s.name.toLowerCase())}">
-            <input type="checkbox" value="${esc(s.id)}" />
+            <input type="checkbox" value="${esc(s.id)}" ${preSelectedSet.has(s.id) ? "checked" : ""} />
             ${esc(s.name)}
         </label>
     `).join("");
 
-    const effLabel = customEffectNames.map(esc).join(", ");
+    // Linha informativa: efeito personalizado ou status pré-selecionados
+    const infoLine = customEffectNames.length > 0
+        ? `Efeito da magia: <strong>${esc(spellName)}</strong> → <em>${customEffectNames.map(esc).join(", ")}</em>`
+        : preSelected.length > 0
+            ? `Status sugeridos para <strong>${esc(spellName)}</strong> já marcados — ajuste conforme o resultado`
+            : `Selecione os status a aplicar ao alvo de <strong>${esc(spellName)}</strong>`;
 
     const content = `
         <div class="sp-body">
-            <div class="sp-spell-info">
-                Efeito da magia: <strong>${esc(spellName)}</strong> → <em>${effLabel}</em>
-            </div>
+            <div class="sp-spell-info">${infoLine}</div>
             <div class="sp-search">
                 <input type="text" id="sp-filter" placeholder="Filtrar status..." autocomplete="off" />
             </div>
@@ -674,37 +662,27 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         </div>
     `;
 
-    // Seção de efeitos personalizados (sem status padrão equivalente)
-    const customSection = req.customEffectNames.length > 0 ? `
+    // Seção de status — picker universal para todas as magias
+    // Condições resolvíveis são pré-selecionadas como sugestão; customEffects mostram o nome da magia
+    const hasKnownConditions = req.conditions.length > 0 || req.customEffectNames.length > 0;
+    let pickerInfoHtml = "";
+    if (req.customEffectNames.length > 0) {
+        pickerInfoHtml = `<div class="srd-custom-effect-names">${req.customEffectNames.map(esc).join(" · ")}</div>`;
+    } else if (req.conditions.length > 0) {
+        const condNames = req.conditions.map(c => esc(c.label)).join(", ");
+        pickerInfoHtml = `<div class="srd-custom-effect-names">${condNames}</div>`;
+    }
+    const statusPickerSection = `
         <div class="srd-divider"></div>
         <div class="srd-custom-effects">
-            <div class="srd-label-sm">EFEITO PERSONALIZADO DA MAGIA</div>
-            <div class="srd-custom-effect-names">${req.customEffectNames.map(esc).join(" · ")}</div>
+            ${hasKnownConditions
+                ? `<div class="srd-label-sm">CONDIÇÕES DA MAGIA</div>${pickerInfoHtml}`
+                : ""}
             <button class="srd-pick-status-btn" id="srd-pick-status">
-                <i class="fas fa-list-check"></i> Escolher Status a Aplicar...
+                <i class="fas fa-list-check"></i> Aplicar Status ao Alvo...
             </button>
         </div>
-    ` : "";
-
-    // Seção de condições
-    const condDefault = req.isHeal ? true : !req.passed;
-    const conditionsSection = req.conditions.length > 0 ? `
-        <div class="srd-divider"></div>
-        <div class="srd-conditions">
-            <div class="srd-label-sm">CONDIÇÕES A APLICAR</div>
-            <div class="srd-condition-list">
-                ${req.conditions.map((c, i) => `
-                    <label class="srd-condition-item">
-                        <input type="checkbox" name="cond-${i}"
-                               data-status-id="${esc(c.statusId)}"
-                               ${condDefault ? "checked" : ""} />
-                        ${esc(c.label)}
-                        ${c.durationRounds != null ? `<span style="color:#8a7450;font-size:0.75rem;">(${c.durationRounds}r)</span>` : ""}
-                    </label>
-                `).join("")}
-            </div>
-        </div>
-    ` : "";
+    `;
 
     const content = `
         <div class="srd-body">
@@ -720,8 +698,7 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             </div>
             ${resistSection}
             ${valueSection}
-            ${customSection}
-            ${conditionsSection}
+            ${statusPickerSection}
         </div>
     `;
 
@@ -732,25 +709,12 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         buttons.heal = {
             icon:  '<i class="fas fa-heart"></i>',
             label: `Curar (${req.damageTotal})`,
-            callback: ($html: JQuery) => {
-                void applySpellHeal(req.targetActorId, req.damageTotal);
-                applyCheckedConditions($html, req.targetActorId);
-            },
+            callback: () => { void applySpellHeal(req.targetActorId, req.damageTotal); },
         };
         buttons.cancel = { icon: '<i class="fas fa-ban"></i>', label: "Não Aplicar", callback: () => { /**/ } };
     } else if (isConditionOnly) {
-        // Magia de puro status — sem dano para aplicar
-        const hasConditions = req.conditions.length > 0;
-        // Se passou na resistência com outcome que anula ou parcial, o efeito é evitado
-        const effectAvoided = req.passed && (req.resistOutcome === "anula" || req.resistOutcome === "parcial");
-        if (!effectAvoided || req.resistOutcome === "texto") {
-            buttons.apply = {
-                icon:  '<i class="fas fa-check-circle"></i>',
-                label: hasConditions ? "Aplicar Condições" : "Confirmar Efeito",
-                callback: ($html: JQuery) => { applyCheckedConditions($html, req.targetActorId); },
-            };
-        }
-        buttons.none = { icon: '<i class="fas fa-ban"></i>', label: "Sem Efeito", callback: () => { /**/ } };
+        // Magia de puro status — status aplicados via picker, botões apenas fecham o dialog
+        buttons.none = { icon: '<i class="fas fa-times"></i>', label: "Fechar", callback: () => { /**/ } };
     } else {
         const showFull = !req.resistSkill || !req.passed || req.resistOutcome === "texto";
         const showHalf = req.resistSkill != null &&
@@ -762,20 +726,14 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             buttons.full = {
                 icon:  '<i class="fas fa-bolt"></i>',
                 label: `Aplicar Dano Integral (${req.damageTotal})`,
-                callback: ($html: JQuery) => {
-                    void applySpellDamage(req.targetActorId, req.damageTotal);
-                    applyCheckedConditions($html, req.targetActorId);
-                },
+                callback: () => { void applySpellDamage(req.targetActorId, req.damageTotal); },
             };
         }
         if (showHalf) {
             buttons.half = {
                 icon:  '<i class="fas fa-shield-halved"></i>',
                 label: `Aplicar Metade (${halfDmg})`,
-                callback: ($html: JQuery) => {
-                    void applySpellDamage(req.targetActorId, halfDmg);
-                    applyCheckedConditions($html, req.targetActorId);
-                },
+                callback: () => { void applySpellDamage(req.targetActorId, halfDmg); },
             };
         }
         if (showNone || !req.resistSkill) {
@@ -784,13 +742,10 @@ function openSpellResistDialog(req: SpellResistRequest): void {
     }
 
     let defaultBtn: string =
-        req.isHeal                                           ? "heal" :
-        isConditionOnly && req.passed &&
-            (req.resistOutcome === "anula" ||
-             req.resistOutcome === "parcial")               ? "none" :
-        isConditionOnly                                      ? "apply" :
-        req.passed && req.resistOutcome === "anula"          ? "none" :
-        req.passed                                           ? "half" :
+        req.isHeal                                  ? "heal" :
+        isConditionOnly                             ? "none" :
+        req.passed && req.resistOutcome === "anula" ? "none" :
+        req.passed                                  ? "half" :
         "full";
     if (!buttons[defaultBtn]) defaultBtn = Object.keys(buttons)[0] ?? "none";
 
@@ -801,11 +756,14 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             buttons,
             default: defaultBtn,
             render: ($html: JQuery) => {
-                if (req.customEffectNames.length > 0) {
-                    $html.find("#srd-pick-status").on("click", () => {
-                        openStatusPickerDialog(req.targetActorId, req.spellName, req.customEffectNames);
-                    });
-                }
+                $html.find("#srd-pick-status").on("click", () => {
+                    openStatusPickerDialog(
+                        req.targetActorId,
+                        req.spellName,
+                        req.customEffectNames,
+                        req.conditions.map(c => c.statusId),
+                    );
+                });
             },
         },
         { classes: ["bg3-dialog", "srd-dialog"], width: 420, id: `spell-resist-${req.requestId}` },
