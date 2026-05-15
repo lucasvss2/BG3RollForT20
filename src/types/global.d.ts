@@ -106,6 +106,15 @@ declare interface FoundryActor {
     effects?: { contents: FoundryItemEffect[] };
     update(data: Record<string, unknown>): Promise<void>;
     /**
+     * Create embedded child documents (e.g. ActiveEffect) on this actor.
+     * `toChat: true` triggers the T20 status notification card in chat.
+     */
+    createEmbeddedDocuments(
+        type: string,
+        data: Record<string, unknown>[],
+        options?: Record<string, unknown>,
+    ): Promise<unknown[]>;
+    /**
      * Toggle a status effect on the actor.
      * Pass `{ active: true }` to force-enable without toggling off.
      */

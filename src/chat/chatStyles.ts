@@ -355,6 +355,65 @@ const CHAT_STYLES = `
     background: rgba(106, 78, 24, 0.35) !important;
     color: #c8a96e !important;
 }
+
+/* ── T20 condition notification cards (msgFromJournal) ───────────────────── */
+/* These are plain ChatMessages with a <div style="background: #ddd9d5; ..."> */
+/* We must use !important to override inline styles.                          */
+
+.chat-message:has(.message-content > div[style*="background: #ddd9d5"]) {
+    background: transparent !important;
+    border-color: rgba(106, 78, 24, 0.3) !important;
+    box-shadow: none !important;
+}
+.chat-message:has(.message-content > div[style*="background: #ddd9d5"]) .message-header {
+    background: transparent !important;
+    border: none !important;
+}
+
+.message-content > div[style*="background: #ddd9d5"] {
+    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    border: 1px solid rgba(106, 78, 24, 0.45) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0, 0, 0, 0.75) !important;
+    color: #c0b49a !important;
+}
+.message-content > div[style*="background: #ddd9d5"] h1,
+.message-content > div[style*="background: #ddd9d5"] h2,
+.message-content > div[style*="background: #ddd9d5"] h3,
+.message-content > div[style*="background: #ddd9d5"] h4 {
+    color: #c8a96e !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    border: none !important;
+    margin-bottom: 4px !important;
+    padding: 0 !important;
+}
+.message-content > div[style*="background: #ddd9d5"] p {
+    color: #b8ad9a !important;
+    font-family: "Palatino Linotype", "Book Antiqua", serif !important;
+    font-size: 0.76rem !important;
+    line-height: 1.55 !important;
+    margin: 0 0 4px !important;
+}
+.message-content > div[style*="background: #ddd9d5"] b,
+.message-content > div[style*="background: #ddd9d5"] strong {
+    color: #c8a96e !important;
+}
+.message-content > div[style*="background: #ddd9d5"] em,
+.message-content > div[style*="background: #ddd9d5"] i {
+    color: #9a8e7a !important;
+}
+.message-content > div[style*="background: #ddd9d5"] a {
+    color: #c8a96e !important;
+    text-decoration: none !important;
+}
+.message-content > div[style*="background: #ddd9d5"] a:hover {
+    color: #e8c87a !important;
+    text-decoration: underline !important;
+}
 `;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
