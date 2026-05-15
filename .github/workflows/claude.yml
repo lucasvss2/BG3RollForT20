@@ -1,0 +1,36 @@
+name: Claude Agent
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    # Only run when @claude is mentioned or issue is assigned to claude[bot]
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && github.event.action == 'assigned' && github.event.assignee.login == 'claude[bot]')
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Permite que Claude rode os scripts do projeto para validar mudanças
+          allowed_tools: "Bash,Edit,Write,Read,Glob,Grep"
+          custom_instructions: |
+            Este repositório é um módulo Foundry VTT para o sistema Tormenta20.
+            Antes de qualquer commit, sempre execute: npm run typecheck && npm test
+            Siga as instruções detalhadas no arquivo CLAUDE.md na raiz do projeto.
+            Nunca faça push de tag sem typecheck passando localmente.

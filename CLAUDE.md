@@ -1,0 +1,216 @@
+# CLAUDE.md — t20-theme-overhaul
+
+## Project Overview
+
+Foundry VTT module for the **Tormenta20** system (`game.system.id = "tormenta20"`). Adds a BG3-inspired dark theme: cinematic roll overlay, restyled dialogs, chat cards, hidden skill tests, auto damage prompts, and a character sheet redesign.
+
+- **Module ID:** `t20-theme-overhaul`
+- **Foundry:** v13.351+
+- **Repo:** https://github.com/lucasvss2/T20ThemeOverhaul
+- **Local module path:** `C:\Users\lucas\AppData\Local\FoundryVTT\Data\modules\aeris-bg3-rolls-t20\`
+
+---
+
+## Development Workflow
+
+### Commands
+
+```bash
+npm run typecheck   # tsc --noEmit — must pass before any commit/tag
+npm test            # vitest run — 150 tests must pass
+npm run build       # Vite → dist/main.bundle.js
+npm run dev         # watch mode
+npm run lint        # eslint src
+```
+
+### Before every commit
+
+Run `npm test`. If any test fails, fix the source (not the test) and re-run. Only commit when `npm test` exits 0.
+
+### Feature → Deploy (mandatory)
+
+**Every completed feature or fix must trigger the full deploy flow below.** There is no "push code only" — shipping code without a release means Foundry users stay on the old version.
+
+Version scheme: `MAJOR.MINOR.PATCH`
+- New feature → bump MINOR, reset PATCH (`1.6.4` → `1.7.0`)
+- Bug fix → bump PATCH (`1.6.4` → `1.6.5`)
+
+### Full deploy flow
+
+```
+1.  npm run typecheck && npm test && npm run build   ← all must pass
+2.  Bump "version" in module.json  (e.g. "1.7.0")
+3.  git add module.json
+4.  git commit -m "chore: bump version to X.Y.Z"    ← or squash with feature commit
+5.  git tag vX.Y.Z
+6.  git push origin master && git push origin vX.Y.Z
+        ↳ triggers .github/workflows/release.yml
+          • runs typecheck + test + build on CI
+          • patches module.json version + download URL
+          • creates aeris-bg3-rolls-t20.zip
+          • publishes GitHub Release (what Foundry reads)
+7.  Copy dist/main.bundle.js + module.json → local AppData module folder
+        C:\Users\lucas\AppData\Local\FoundryVTT\Data\modules\aeris-bg3-rolls-t20\
+8.  Check GitHub Actions tab — wait for release workflow green ✓
+```
+
+**Rules:**
+- Never push a tag without `npm run typecheck` passing locally first.
+- Never report a deploy as done before step 8 (green CI).
+- If CI fails post-push: fix → push new commit → re-tag:
+  ```bash
+  git tag -d vX.Y.Z
+  git push origin --delete vX.Y.Z
+  # fix code, commit, then re-tag and push
+  ```
+- Do NOT create GitHub releases manually via `gh release create` unless CI is definitively broken.
+
+---
+
+## Source File Map
+
+```
+src/
+  main.ts                      — Hooks init/setup/ready; registers all sub-systems
+  constants.ts                 — MODULE_ID, SYSTEM_ID, hook name strings
+  types/global.d.ts            — Minimal ambient Foundry types (incl. CONFIG, toggleStatusEffect)
+  utils/logging.ts             — log() / warn() helpers prefixed with [MODULE_ID]
+  parser/t20.ts                — parseT20(): flavor string → RollMeta | null
+  integration/index.ts         — createChatMessage hook → overlay
+  overlay/BG3Overlay.ts        — Full-screen cinematic overlay singleton
+  dialogs/bg3-dialog.ts        — BG3-style restyling for AbilityUseDialog
+  chat/chatStyles.ts           — BG3-style restyling for T20 chat roll cards
+  hidden-test/index.ts         — Secret skill test: GM rolls for multiple targets
+  auto-damage/index.ts         — Auto damage application prompt (attack-based weapons)
+  spell-resistance/index.ts    — Automatic saving throw + damage dialog for spells
+  spell-resistance/types.ts    — SpellResistRequest, SpellConditionData, ResistSkill
+  sheet/index.ts               — Character sheet redesign (BG3 aesthetic)
+  tests/
+    parser/t20.test.ts         — Vitest unit tests for parseT20 (150 tests)
+    setup.ts                   — Test environment setup
+```
+
+---
+
+## Systems
+
+| #   | File                          | Hook                | Notes                                                                                   |
+| --- | ----------------------------- | ------------------- | --------------------------------------------------------------------------------------- |
+| 1   | `overlay/BG3Overlay.ts`       | `createChatMessage` | 1 000 ms delay, auto-dismiss 3 000 ms, CSS id `bg3-t20-styles`                          |
+| 2   | `dialogs/bg3-dialog.ts`       | `renderApplication` | Detects `.ability-use-form` / `.attribute-use-form`, CSS id `bg3-t20-dialog-styles`     |
+| 3   | `chat/chatStyles.ts`          | `renderChatMessage` | Target: `.tormenta20.chat-card.item-card` in `#chat-log`, CSS id `bg3-t20-chat-styles`  |
+| 4   | `integration/index.ts`        | `createChatMessage` | `resolveFlavorText` → `parseT20` → `BG3Overlay.show`                                    |
+| 5   | `hidden-test/index.ts`        | socket              | GM emits per-target; each player sees only their own result                             |
+| 6   | `auto-damage/index.ts`        | `createChatMessage` | Triggers on attack+damage rolls (weapons). Skips spells (no attack roll).               |
+| 7   | `spell-resistance/index.ts`   | `createChatMessage` | Triggers on spell rolls (tipo arc/div/uni, damage only, no attack). Rolls saving throw, sends dialog via socket. |
+| 8   | `sheet/index.ts`              | —                   | Character sheet redesign                                                                |
+
+### Spell Resistance System (v1.6.5+)
+
+Detects spell chat messages and auto-rolls saving throws for targeted tokens.
+
+**Detection:** `itemData.tipo ∈ ['arc','div','uni']` + damage roll present + **no** attack roll + author == current user.
+
+**Resistance text parsing** (`resistencia.txt`):
+- `"Vontade parcial"` → skill=`vont`, outcome=`parcial` (half dmg + no condition on pass)
+- `"Reflexos reduz à metade"` → skill=`refl`, outcome=`metade`
+- `"Fortitude (veja texto)"` → skill=`fort`, outcome=`texto` (shows all options)
+- `"Reflexos anula"` → skill=`refl`, outcome=`anula` (no effect on pass)
+- `""` / `"nenhuma"` → no resistance; heals (curapv) proceed without a test
+
+**CD extraction:** `message.content.match(/CD\s*(\d+)/)` — parses from rendered HTML, which includes all power bonuses (e.g. Fortalecimento Arcano). Do NOT use `itemData.resistencia.cd` — it reflects only the stored value, not runtime bonuses.
+
+**Conditions:** Extracted from `message.flags.tormenta20.effects` effect names in format `"SpellName (ConditionName)"`. Matched against `CONFIG.statusEffects` by name; applied via `actor.toggleStatusEffect(id, { active: true })`.
+
+**Heal detection:** `damageRoll.formula.includes('curapv')` → shows green heal dialog, applies PV directly.
+
+---
+
+## Foundry v13 Gotchas
+
+### Rolls in createChatMessage
+
+`message._source.rolls[0]` is a **JSON string** in v13. Always use `message.rolls` for Roll instances:
+
+```typescript
+// CORRECT
+const rolls = message.rolls as Roll[] | undefined;
+const roll = rolls?.[0]; // already a Roll instance
+
+// WRONG — throws in v13
+Roll.fromData((message as any)._source.rolls[0]);
+```
+
+### renderChatMessage args
+
+`args[1]` is a direct `HTMLElement` in v13, NOT a jQuery array.
+
+---
+
+## T20 Data Structures
+
+```typescript
+// Actor
+actor.system.atributos.des.value; // modifier (not score)
+actor.system.pericias.fort.value; // total Fortitude bonus
+actor.system.pericias.refl.value; // total Reflexos bonus
+actor.system.pericias.vont.value; // total Vontade bonus
+actor.system.attributes.pv; // { value, max, temp }
+actor.system.nivel.value; // character level
+
+// Spell item (from message.getFlag("tormenta20","itemData"))
+itemData.type; // "magia"
+itemData.system.escola; // "evo"|"nec"|"con"|"tra"|"abj"|"enc"|"ilu"|"adv"
+itemData.system.circulo; // 1–5
+itemData.system.resistencia.txt; // "Vontade parcial (CD 18)"
+itemData.system.resistencia.cd; // may be 0 — parse from txt as fallback
+
+// Roll object
+roll.formula / roll.total;
+roll.dice[0].faces; // 20
+roll.dice[0].results[0].result; // natural die result
+roll.options.type; // "attack"|"damage"|"initiative"|"skill"|"save"
+```
+
+### Saves
+
+| Save      | key    | Atributo |
+| --------- | ------ | -------- |
+| Fortitude | `fort` | CON      |
+| Reflexos  | `refl` | DEX      |
+| Vontade   | `vont` | WIS      |
+
+---
+
+## Socket Pattern
+
+```typescript
+// Sender
+game.socket?.emit(`module.${MODULE_ID}`, payload);
+
+// Receiver
+game.socket?.on(`module.${MODULE_ID}`, (raw) => {
+  if (raw.targetUserId !== game.user?.id) return;
+  // handle
+});
+```
+
+**GM routing:** (1) online non-GM player owning target (`ownership >= 3`) → (2) active GM who is NOT the sender → (3) any active GM.
+
+**Warning:** `game.user.targets` must be populated before `createChatMessage` fires. If empty, show `ui.notifications.warn`.
+
+---
+
+## Color Palette
+
+| Role            | Hex       |
+| --------------- | --------- |
+| Gold accent     | `#c8a96e` |
+| Gold glow       | `#6a4e18` |
+| Text primary    | `#f0ebe0` |
+| Text secondary  | `#e8e0d0` |
+| Text muted      | `#9a8e7a` |
+| Background dark | `#090604` |
+| Background mid  | `#1c1209` |
+| Crit green      | `#6ecf7a` |
+| Fumble red      | `#cc4444` |
