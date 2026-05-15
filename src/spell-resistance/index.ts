@@ -363,17 +363,24 @@ function extractConditions(message: ChatMessage): SpellConditionData[] {
                 continue;
             }
 
-            // Caso 2 — efeito direto sem parênteses (ex: "Sono"):
-            // deve estar ativo (disabled: false) e não ser um efeito de uso manual (onuse: false)
-            // nem uma melhoria de lançamento (self: true costuma indicar aumenta do lançador)
+            // Caso 2 — efeito direto sem parênteses (ex: "Abalado", "Atordoado"):
+            // só adiciona se o nome bater EXATAMENTE com um status de CONFIG.statusEffects.
+            // O T20 nomeia muitos efeitos com o nome da magia (ex: "Sono", "Amedrontado")
+            // que NÃO existem como status — esses são ignorados para não tentar aplicar algo inválido.
             if (eff.disabled) continue;
             if (t20["onuse"] || t20["self"]) continue;
 
             const label = eff.name.trim();
             if (seen.has(label.toLowerCase())) continue;
-            seen.add(label.toLowerCase());
 
             const { statusId, resolvedLabel } = resolveStatus(label);
+            // statusId resolve para o ID normalizado; só prossegue se realmente encontrou na lista
+            const matched = statusEffects.find(
+                (e) => e.id === statusId || e.name?.toLowerCase() === label.toLowerCase(),
+            );
+            if (!matched) continue;  // nome personalizado do T20, não é um status padrão → pula
+
+            seen.add(label.toLowerCase());
             conditions.push({
                 statusId,
                 label:           resolvedLabel,
