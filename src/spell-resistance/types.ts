@@ -34,8 +34,16 @@ export interface SpellResistPreRollRequest {
     targetUserId: string;
     /** ID do usuário lançador da magia */
     casterUserId: string;
-    /** ID do ator alvo */
+    /** ID do ator alvo (prototype) */
     targetActorId: string;
+    /**
+     * UUID completo do ator do token alvo, ex:
+     *   "Scene.{sceneId}.Token.{tokenId}.Actor.{actorId}" (unlinked)
+     *   "Actor.{id}" (linked/world)
+     * Necessário para resolver corretamente o ator sintético de tokens unlinked,
+     * já que `game.actors.get(targetActorId)` retorna sempre o protótipo.
+     */
+    targetActorUuid: string;
     casterName: string;
     spellName: string;
     /** Texto original de resistência, ex: "Vontade parcial" */
@@ -72,6 +80,8 @@ export interface SpellResistRequest {
     targetUserId: string;
     casterUserId: string;
     targetActorId: string;
+    /** UUID completo do ator do token (vide SpellResistPreRollRequest) */
+    targetActorUuid: string;
     casterName: string;
     spellName: string;
     resistTxt: string;

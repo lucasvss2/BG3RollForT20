@@ -32,6 +32,7 @@ declare const game: {
     };
     user: {
         id: string;
+        name: string;
         isGM: boolean;
         targets: Set<FoundryToken>;
     } | null;
@@ -94,6 +95,12 @@ declare interface FoundryItem {
 
 declare interface FoundryActor {
     id: string;
+    /**
+     * Full UUID, e.g.
+     *  - "Actor.{id}" for world actors
+     *  - "Scene.{sceneId}.Token.{tokenId}.Actor.{id}" for token-synthetic actors
+     */
+    uuid: string;
     name: string;
     type?: string;
     img?: string;
@@ -209,6 +216,8 @@ declare class Dialog {
 
 declare function mergeObject<T extends object, U extends object>(original: T, other: U): T & U;
 declare function randomID(length?: number): string;
+/** Synchronously resolve a document by its UUID (Foundry v11+) */
+declare function fromUuidSync(uuid: string): FoundryActor | null;
 
 // ── Roll ─────────────────────────────────────────────────────────────────────
 

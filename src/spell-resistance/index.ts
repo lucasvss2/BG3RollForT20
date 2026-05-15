@@ -474,10 +474,27 @@ function extractConditions(message: ChatMessage): ExtractResult {
 
 // ── Aplicação de dano / cura / condição ──────────────────────────────────────
 
-async function applySpellDamage(actorId: string, amount: number): Promise<void> {
-    const actor = game.actors?.get(actorId);
+/**
+ * Resolve the target actor by UUID first (handles token-synthetic actors for
+ * unlinked tokens correctly), falling back to actorId lookup for backwards
+ * compatibility with older socket payloads.
+ *
+ * For unlinked tokens, `game.actors.get(id)` returns the PROTOTYPE actor whose
+ * PV/PM/HP do NOT reflect the actual token-on-canvas state. The synthetic actor
+ * (via UUID `Scene.X.Token.Y.Actor.Z` or `token.actor`) has the real data.
+ */
+function resolveTargetActor(uuid: string | undefined, fallbackId: string): FoundryActor | null {
+    if (uuid) {
+        const a = fromUuidSync(uuid);
+        if (a) return a;
+    }
+    return game.actors?.get(fallbackId) ?? null;
+}
+
+async function applySpellDamage(actorUuid: string, actorId: string, amount: number): Promise<void> {
+    const actor = resolveTargetActor(actorUuid, actorId);
     if (!actor) return;
-    const pv         = actor.system?.attributes?.pv;
+    const pv          = actor.system?.attributes?.pv;
     const currentTemp = pv?.temp  ?? 0;
     const currentHp   = pv?.value ?? 0;
     let remaining = Math.max(0, amount);
@@ -493,8 +510,8 @@ async function applySpellDamage(actorId: string, amount: number): Promise<void> 
     });
 }
 
-async function applySpellHeal(actorId: string, amount: number): Promise<void> {
-    const actor = game.actors?.get(actorId);
+async function applySpellHeal(actorUuid: string, actorId: string, amount: number): Promise<void> {
+    const actor = resolveTargetActor(actorUuid, actorId);
     if (!actor) return;
     const pv  = actor.system?.attributes?.pv;
     const cur = pv?.value ?? 0;
@@ -502,11 +519,11 @@ async function applySpellHeal(actorId: string, amount: number): Promise<void> {
     await actor.update({ "system.attributes.pv.value": Math.min(max, cur + amount) });
 }
 
-async function applyCondition(actorId: string, statusId: string): Promise<void> {
+async function applyCondition(actorUuid: string, actorId: string, statusId: string): Promise<void> {
     type ActorWithToggle = FoundryActor & {
         toggleStatusEffect(id: string, opts?: Record<string, unknown>): Promise<void>;
     };
-    const actor = game.actors?.get(actorId) as ActorWithToggle | undefined;
+    const actor = resolveTargetActor(actorUuid, actorId) as ActorWithToggle | null;
     if (!actor?.toggleStatusEffect) return;
     await actor.toggleStatusEffect(statusId, { active: true });
 }
@@ -515,6 +532,7 @@ async function applyCondition(actorId: string, statusId: string): Promise<void> 
 // ── Status picker dialog ──────────────────────────────────────────────────────
 
 function openStatusPickerDialog(
+    actorUuid:         string,
     actorId:           string,
     spellName:         string,
     customEffectNames: string[],
@@ -566,7 +584,7 @@ function openStatusPickerDialog(
                     callback: ($html: JQuery) => {
                         $html.find(".sp-item input:checked").each((_, el) => {
                             const statusId = (el as HTMLInputElement).value;
-                            if (statusId) void applyCondition(actorId, statusId);
+                            if (statusId) void applyCondition(actorUuid, actorId, statusId);
                         });
                     },
                 },
@@ -709,7 +727,7 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         buttons.heal = {
             icon:  '<i class="fas fa-heart"></i>',
             label: `Curar (${req.damageTotal})`,
-            callback: () => { void applySpellHeal(req.targetActorId, req.damageTotal); },
+            callback: () => { void applySpellHeal(req.targetActorUuid, req.targetActorId, req.damageTotal); },
         };
         buttons.cancel = { icon: '<i class="fas fa-ban"></i>', label: "Não Aplicar", callback: () => { /**/ } };
     } else if (isConditionOnly) {
@@ -726,14 +744,14 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             buttons.full = {
                 icon:  '<i class="fas fa-bolt"></i>',
                 label: `Aplicar Dano Integral (${req.damageTotal})`,
-                callback: () => { void applySpellDamage(req.targetActorId, req.damageTotal); },
+                callback: () => { void applySpellDamage(req.targetActorUuid, req.targetActorId, req.damageTotal); },
             };
         }
         if (showHalf) {
             buttons.half = {
                 icon:  '<i class="fas fa-shield-halved"></i>',
                 label: `Aplicar Metade (${halfDmg})`,
-                callback: () => { void applySpellDamage(req.targetActorId, halfDmg); },
+                callback: () => { void applySpellDamage(req.targetActorUuid, req.targetActorId, halfDmg); },
             };
         }
         if (showNone || !req.resistSkill) {
@@ -758,6 +776,7 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             render: ($html: JQuery) => {
                 $html.find("#srd-pick-status").on("click", () => {
                     openStatusPickerDialog(
+                        req.targetActorUuid,
                         req.targetActorId,
                         req.spellName,
                         req.customEffectNames,
@@ -786,6 +805,7 @@ function openSpellResistPreRollDialog(preReq: SpellResistPreRollRequest): void {
             targetUserId:      preReq.targetUserId,
             casterUserId:      preReq.casterUserId,
             targetActorId:     preReq.targetActorId,
+            targetActorUuid:   preReq.targetActorUuid,
             casterName:        preReq.casterName,
             spellName:         preReq.spellName,
             resistTxt:         "",
@@ -986,6 +1006,7 @@ async function executeSpellResistRoll(
         targetUserId:      preReq.targetUserId,
         casterUserId:      preReq.casterUserId,
         targetActorId:     preReq.targetActorId,
+        targetActorUuid:   preReq.targetActorUuid,
         casterName:        preReq.casterName,
         spellName:         preReq.spellName,
         resistTxt:         preReq.resistTxt,
@@ -1080,8 +1101,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
 
     // ── Resolver alvos ───────────────────────────────────────────────────────
     // Prioridade 1: tokens T-marcados explicitamente pelo jogador.
-    // Prioridade 2: tokens selecionados no canvas (excluindo o próprio lançador),
-    //              como fallback para quem esqueceu de pressionar T antes de lançar.
+    // Prioridade 2: tokens selecionados no canvas (excluindo o próprio lançador).
     const tTargets = Array.from(game.user?.targets ?? []);
     const casterActorId = message.speaker?.actor ?? "";
     let effectiveTargets: FoundryToken[];
@@ -1117,15 +1137,16 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
         }
 
         const preReq: SpellResistPreRollRequest = {
-            type:          "spell-resist-preroll",
-            requestId:     randomID(),
+            type:            "spell-resist-preroll",
+            requestId:       randomID(),
             targetUserId,
             casterUserId,
-            targetActorId: targetActor.id,
+            targetActorId:   targetActor.id,
+            targetActorUuid: targetActor.uuid,
             casterName,
             spellName,
             resistTxt,
-            resistSkill:   resistSkill ?? null,
+            resistSkill:     resistSkill ?? null,
             resistOutcome,
             cd,
             damageTotal,
