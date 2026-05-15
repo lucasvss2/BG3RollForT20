@@ -613,15 +613,25 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
         }
     }
 
-    // ── Strategy 2: structural detection (label.titulo) ───────────────────────
-    // Current T20 renders condition cards as plain <div> (no inline style) whose
-    // first descendant heading is <label class="titulo">, NOT <h1>/<h2>.
-    // Match: the sole direct-child div of .message-content that contains a
-    // label.titulo element.
+    // ── Strategy 2: structural detection ─────────────────────────────────────
+    // Current T20 renders condition cards as a plain <div> (no inline style)
+    // containing several T20-specific children:
+    //   • <label class="titulo"> — condition name heading (TYPE 1)
+    //   • <div style="position:absolute; top:0; right:0; …linear-gradient…#b02b2e…">
+    //       — decorative corner triangle present in ALL condition journal cards
+    //   • <h1>/<h2> fallback for edge cases
+    // We use the corner triangle as the main discriminator because it is present
+    // in both TYPE 1 (label.titulo) and TYPE 2 (text-only) cards.
     if (!targetEl) {
         const firstDiv = msgContent.querySelector<HTMLElement>(":scope > div");
-        if (firstDiv && firstDiv.querySelector("label.titulo, h1, h2")) {
-            targetEl = firstDiv;
+        if (firstDiv) {
+            const isConditionCard =
+                !!firstDiv.querySelector("label.titulo, h1, h2") ||
+                // T20 corner-triangle: position:absolute div with b02b2e gradient
+                !!firstDiv.querySelector("div[style*='absolute']");
+            if (isConditionCard) {
+                targetEl = firstDiv;
+            }
         }
     }
 
@@ -663,6 +673,13 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
     });
     targetEl.querySelectorAll<HTMLElement>("p, li, span:not(.content-link)").forEach(el => {
         el.style.setProperty("color", "#b8ad9a", "important");
+    });
+    // T20's internal horizontal separator (height:5px divider above the text body).
+    // Clear its background so it doesn't swallow the card's dark gradient.
+    targetEl.querySelectorAll<HTMLElement>("div[style*='height: 5px'], div[style*='height:5px']").forEach(el => {
+        el.style.setProperty("background", "transparent", "important");
+        el.style.setProperty("border",     "none",        "important");
+        el.style.setProperty("box-shadow", "none",        "important");
     });
     targetEl.querySelectorAll<HTMLElement>("b, strong").forEach(el => {
         el.style.setProperty("color", "#c8a96e", "important");
