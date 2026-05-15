@@ -8,7 +8,7 @@ function esc(s: string): string {
 
 // ── Activatable items via T20 ActiveEffect system ─────────────────────────────
 
-interface ActivatableItem {
+export interface ActivatableItem {
     id: string;
     name: string;
     pm: number;
@@ -17,7 +17,7 @@ interface ActivatableItem {
     isAdvantage: boolean;
 }
 
-function getActivatableItems(actor: FoundryActor, skillLabel: string): ActivatableItem[] {
+export function getActivatableItems(actor: FoundryActor, skillLabel: string): ActivatableItem[] {
     const items = actor.items?.contents ?? [];
     const result: ActivatableItem[] = [];
 

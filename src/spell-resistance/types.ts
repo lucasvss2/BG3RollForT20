@@ -22,11 +22,15 @@ export interface SpellConditionData {
     durationSeconds?: number;
 }
 
-/** Enviado do cliente do lançador para o cliente do alvo via socket */
-export interface SpellResistRequest {
-    type: "spell-resist-request";
+/**
+ * Fase 1 — enviado do lançador ao controlador do alvo ANTES do roll.
+ * Permite que o alvo escolha poderes para boostar sua resistência.
+ * Para magias de cura (isHeal=true) não há roll; o dialog de cura abre diretamente.
+ */
+export interface SpellResistPreRollRequest {
+    type: "spell-resist-preroll";
     requestId: string;
-    /** ID do usuário controlador do alvo (recebe o socket e abre o dialog) */
+    /** ID do usuário controlador do alvo */
     targetUserId: string;
     /** ID do usuário lançador da magia */
     casterUserId: string;
@@ -42,24 +46,47 @@ export interface SpellResistRequest {
     resistOutcome: ResistOutcome;
     /** CD do teste (extraído do HTML do card, inclui todos os bônus) */
     cd: number;
-    /** Total do teste de resistência rolado (1d20 + bônus) */
-    resistRollTotal: number;
-    /** Bônus do alvo na perícia de resistência */
-    resistBonus: number;
-    /** Fórmula usada no teste, ex: "1d20 + 8" */
-    resistFormula: string;
-    /** Resultado apenas do d20 (para exibição) */
-    d20Result: number;
-    /** Total do roll de dano ou cura */
+    /** Total do roll de dano */
     damageTotal: number;
-    /** Fórmula do roll de dano ou cura */
+    /** Fórmula do roll de dano */
     damageFormula: string;
-    /** true se a magia cura (curapv) */
+    /** true se a magia cura (curapv) — nesse caso vai direto para result dialog */
     isHeal: boolean;
     /** Condições de status a aplicar (extraídas dos effects do chat) */
     conditions: SpellConditionData[];
-    /** true se o alvo passou no teste (resistRollTotal >= cd) */
+}
+
+/**
+ * Fase 2 — resultado pós-roll; gerado no cliente do alvo após ele rolar.
+ * Abre o dialog de confirmação com opções de aplicar dano/cura/condições.
+ */
+export interface SpellResistRequest {
+    type: "spell-resist-request";
+    requestId: string;
+    targetUserId: string;
+    casterUserId: string;
+    targetActorId: string;
+    casterName: string;
+    spellName: string;
+    resistTxt: string;
+    resistSkill: ResistSkill | null;
+    resistOutcome: ResistOutcome;
+    cd: number;
+    /** Total do teste de resistência rolado (1d20 + bônus + poderes) */
+    resistRollTotal: number;
+    /** Bônus base da perícia (sem poderes) */
+    resistBonus: number;
+    /** Fórmula completa usada no teste */
+    resistFormula: string;
+    /** Resultado apenas do d20 */
+    d20Result: number;
+    /** Labels dos poderes ativados, ex: ["+7 CAR · Audácia (2 PM)"] */
+    appliedPowerLabels: string[];
+    damageTotal: number;
+    damageFormula: string;
+    isHeal: boolean;
+    conditions: SpellConditionData[];
     passed: boolean;
 }
 
-export type SpellResistSocketData = SpellResistRequest;
+export type SpellResistSocketData = SpellResistPreRollRequest | SpellResistRequest;
