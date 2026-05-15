@@ -98,8 +98,21 @@ declare interface FoundryActor {
     type?: string;
     img?: string;
     ownership: Record<string, number>;
-    items?: { contents: FoundryItem[] };
+    items?: {
+        contents: FoundryItem[];
+        /** Look up a single item by id */
+        get(id: string): FoundryItem | null;
+    };
+    effects?: { contents: FoundryItemEffect[] };
     update(data: Record<string, unknown>): Promise<void>;
+    /**
+     * Toggle a status effect on the actor.
+     * Pass `{ active: true }` to force-enable without toggling off.
+     */
+    toggleStatusEffect(
+        statusId: string,
+        opts?: { active?: boolean; overlay?: boolean },
+    ): Promise<void>;
     system?: {
         pericias?: Record<string, {
             total?: number; label?: string; value?: number;
@@ -274,6 +287,21 @@ declare interface GroupRollConfig {
     dc?: number;
     actors?: string[];
 }
+
+// ── Foundry CONFIG (partial — only what this module uses) ────────────────────
+
+declare const CONFIG: {
+    statusEffects: Array<{
+        id: string;
+        name: string;
+        icon?: string;
+        /** Status IDs this effect applies (usually just [id]) */
+        statuses?: string[];
+        duration?: { rounds?: number };
+        flags?: Record<string, Record<string, unknown>>;
+    }>;
+    [key: string]: unknown;
+};
 
 // ── jQuery (provided by Foundry) ──────────────────────────────────────────────
 declare const $: JQueryStatic;

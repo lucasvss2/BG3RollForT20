@@ -15,6 +15,7 @@ import { setupDialogStyling } from "./dialogs/bg3-dialog";
 import { setupChatStyling } from "./chat/chatStyles";
 import { setupHiddenTest } from "./hidden-test/index";
 import { setupAutoDamage } from "./auto-damage/index";
+import { setupSpellResistance } from "./spell-resistance/index";
 import { setupSheetRedesign } from "./sheet/index";
 import { log, warn } from "./utils/logging";
 
@@ -42,6 +43,7 @@ Hooks.once("setup", () => {
     setupChatStyling();
     setupHiddenTest();
     setupAutoDamage();
+    setupSpellResistance();
     setupSheetRedesign();
 });
 
