@@ -54,6 +54,12 @@ export interface SpellResistPreRollRequest {
     isHeal: boolean;
     /** Condições de status a aplicar (extraídas dos effects do chat) */
     conditions: SpellConditionData[];
+    /**
+     * Nomes de efeitos personalizados da magia que NÃO batem com um status de
+     * CONFIG.statusEffects (ex: "Amedrontado", "Sono"). São exibidos no dialog
+     * de resultado para o GM escolher o status equivalente manualmente.
+     */
+    customEffectNames: string[];
 }
 
 /**
@@ -86,6 +92,8 @@ export interface SpellResistRequest {
     damageFormula: string;
     isHeal: boolean;
     conditions: SpellConditionData[];
+    /** Efeitos personalizados da magia sem status equivalente (para seleção manual pelo GM) */
+    customEffectNames: string[];
     passed: boolean;
 }
 

@@ -242,7 +242,82 @@ const SPELL_RESIST_STYLES = `
     flex-direction: column;
     gap: 8px;
 }
+
+/* ── Seção de efeitos personalizados no dialog de resultado ─────────────── */
+.srd-custom-effects {
+    padding: 4px 16px 8px;
+}
+.srd-custom-effect-names {
+    color: #c8a96e;
+    font-size: 0.85rem;
+    font-style: italic;
+    margin-bottom: 6px;
+}
+.srd-pick-status-btn {
+    background: rgba(138,180,232,0.12);
+    border: 1px solid rgba(138,180,232,0.4);
+    border-radius: 3px;
+    color: #8ab4e8;
+    cursor: pointer;
+    font-family: "Modesto Condensed", serif;
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    padding: 3px 12px;
+    text-transform: uppercase;
+    transition: background 0.15s;
+}
+.srd-pick-status-btn:hover { background: rgba(138,180,232,0.22); }
+
+/* ── Status picker dialog ───────────────────────────────────────────────── */
+.sp-body {
+    padding: 4px 0 2px;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+}
+.sp-spell-info {
+    color: #c8a96e;
+    font-size: 0.82rem;
+    font-style: italic;
+    padding: 4px 14px 6px;
+    text-align: center;
+}
+.sp-search {
+    padding: 2px 14px 6px;
+}
+.sp-search input {
+    width: 100%;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(200,169,110,0.35);
+    border-radius: 3px;
+    color: #e8d8a8;
+    font-family: "Modesto Condensed", monospace;
+    font-size: 0.9rem;
+    padding: 3px 8px;
+}
+.sp-search input:focus { outline: none; border-color: rgba(138,180,232,0.6); }
+.sp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 2px 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 2px 14px 6px;
+}
+.sp-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.85rem;
+    color: #e8d8a8;
+    cursor: pointer;
+    padding: 2px 3px;
+    border-radius: 2px;
+    user-select: none;
+}
+.sp-item:hover { background: rgba(138,180,232,0.08); }
+.sp-item input { accent-color: #8ab4e8; width: 12px; height: 12px; cursor: pointer; }
+.sp-item.sp-hidden { display: none; }
 `;
+
 
 function ensureStyles(): void {
     if (!document.getElementById(SPELL_RESIST_STYLES_ID)) {
@@ -305,7 +380,13 @@ function extractSpellName(message: ChatMessage): string {
     return titleMatch?.[1] ?? "Magia";
 }
 
-function extractConditions(message: ChatMessage): SpellConditionData[] {
+interface ExtractResult {
+    conditions: SpellConditionData[];
+    /** Nomes de efeitos personalizados que não batem com nenhum status padrão */
+    customEffectNames: string[];
+}
+
+function extractConditions(message: ChatMessage): ExtractResult {
     type RawEffect = {
         name?: string;
         disabled?: boolean;
@@ -315,16 +396,18 @@ function extractConditions(message: ChatMessage): SpellConditionData[] {
     type StatusEntry = { id: string; name: string };
 
     const effects = message.getFlag("tormenta20", "effects") as RawEffect[][] | undefined;
-    if (!effects?.length) return [];
+    if (!effects?.length) return { conditions: [], customEffectNames: [] };
 
     const statusEffects = (
         (typeof CONFIG !== "undefined" ? (CONFIG as Record<string, unknown>).statusEffects : undefined) as StatusEntry[] | undefined
     ) ?? [];
 
     const conditions: SpellConditionData[] = [];
+    const customEffectNames: string[] = [];
     const seen = new Set<string>();
+    const seenCustom = new Set<string>();
 
-    function resolveStatus(label: string): { statusId: string; resolvedLabel: string } {
+    function resolveStatus(label: string): { statusId: string; resolvedLabel: string; matched: boolean } {
         let statusEntry = statusEffects.find((e) => e.name?.toLowerCase() === label.toLowerCase());
         if (!statusEntry) {
             const guessedId = label
@@ -337,6 +420,7 @@ function extractConditions(message: ChatMessage): SpellConditionData[] {
         return {
             statusId:      statusEntry?.id ?? label.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, ""),
             resolvedLabel: statusEntry?.name ?? label,
+            matched:       statusEntry != null,
         };
     }
 
@@ -353,43 +437,50 @@ function extractConditions(message: ChatMessage): SpellConditionData[] {
                 const condLabel = condMatch[1].trim();
                 if (seen.has(condLabel.toLowerCase())) continue;
                 seen.add(condLabel.toLowerCase());
-                const { statusId, resolvedLabel } = resolveStatus(condLabel);
+                const { statusId, resolvedLabel, matched } = resolveStatus(condLabel);
+                if (matched) {
+                    conditions.push({
+                        statusId,
+                        label:           resolvedLabel,
+                        durationRounds:  eff.duration?.rounds  != null ? eff.duration.rounds  : undefined,
+                        durationSeconds: eff.duration?.seconds != null ? eff.duration.seconds : undefined,
+                    });
+                } else if (!seenCustom.has(condLabel.toLowerCase())) {
+                    // Condição nomeada em parênteses mas sem status padrão → seleção manual
+                    seenCustom.add(condLabel.toLowerCase());
+                    customEffectNames.push(condLabel);
+                }
+                continue;
+            }
+
+            // Caso 2 — efeito direto sem parênteses (ex: "Atordoado", "Em Chamas"):
+            // O T20 nomeia muitos efeitos com o nome da magia (ex: "Sono", "Amedrontado")
+            // que NÃO existem como status. Se bater → checkbox auto-aplicável.
+            // Se não bater → efeito personalizado, vai para seleção manual.
+            if (eff.disabled) continue;
+            if (t20["onuse"] || t20["self"]) continue;
+
+            const label = eff.name.trim();
+            const { statusId, resolvedLabel, matched } = resolveStatus(label);
+
+            if (matched) {
+                if (seen.has(label.toLowerCase())) continue;
+                seen.add(label.toLowerCase());
                 conditions.push({
                     statusId,
                     label:           resolvedLabel,
                     durationRounds:  eff.duration?.rounds  != null ? eff.duration.rounds  : undefined,
                     durationSeconds: eff.duration?.seconds != null ? eff.duration.seconds : undefined,
                 });
-                continue;
+            } else {
+                // Efeito personalizado do T20 sem status padrão equivalente
+                if (seenCustom.has(label.toLowerCase())) continue;
+                seenCustom.add(label.toLowerCase());
+                customEffectNames.push(label);
             }
-
-            // Caso 2 — efeito direto sem parênteses (ex: "Abalado", "Atordoado"):
-            // só adiciona se o nome bater EXATAMENTE com um status de CONFIG.statusEffects.
-            // O T20 nomeia muitos efeitos com o nome da magia (ex: "Sono", "Amedrontado")
-            // que NÃO existem como status — esses são ignorados para não tentar aplicar algo inválido.
-            if (eff.disabled) continue;
-            if (t20["onuse"] || t20["self"]) continue;
-
-            const label = eff.name.trim();
-            if (seen.has(label.toLowerCase())) continue;
-
-            const { statusId, resolvedLabel } = resolveStatus(label);
-            // statusId resolve para o ID normalizado; só prossegue se realmente encontrou na lista
-            const matched = statusEffects.find(
-                (e) => e.id === statusId || e.name?.toLowerCase() === label.toLowerCase(),
-            );
-            if (!matched) continue;  // nome personalizado do T20, não é um status padrão → pula
-
-            seen.add(label.toLowerCase());
-            conditions.push({
-                statusId,
-                label:           resolvedLabel,
-                durationRounds:  eff.duration?.rounds  != null ? eff.duration.rounds  : undefined,
-                durationSeconds: eff.duration?.seconds != null ? eff.duration.seconds : undefined,
-            });
         }
     }
-    return conditions;
+    return { conditions, customEffectNames };
 }
 
 // ── Aplicação de dano / cura / condição ──────────────────────────────────────
@@ -436,6 +527,80 @@ function applyCheckedConditions($html: JQuery, actorId: string): void {
         const statusId = (el as HTMLInputElement).dataset["statusId"];
         if (statusId) void applyCondition(actorId, statusId);
     });
+}
+
+// ── Status picker dialog ──────────────────────────────────────────────────────
+
+function openStatusPickerDialog(
+    actorId:          string,
+    spellName:        string,
+    customEffectNames: string[],
+): void {
+    ensureStyles();
+
+    type StatusEntry = { id: string; name: string };
+    const allStatuses = (
+        (typeof CONFIG !== "undefined" ? (CONFIG as Record<string, unknown>).statusEffects : undefined) as StatusEntry[] | undefined
+    ) ?? [];
+
+    // Ordena alfabeticamente pelo nome
+    const sorted = [...allStatuses].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+    const itemsHtml = sorted.map(s => `
+        <label class="sp-item" data-name="${esc(s.name.toLowerCase())}">
+            <input type="checkbox" value="${esc(s.id)}" />
+            ${esc(s.name)}
+        </label>
+    `).join("");
+
+    const effLabel = customEffectNames.map(esc).join(", ");
+
+    const content = `
+        <div class="sp-body">
+            <div class="sp-spell-info">
+                Efeito da magia: <strong>${esc(spellName)}</strong> → <em>${effLabel}</em>
+            </div>
+            <div class="sp-search">
+                <input type="text" id="sp-filter" placeholder="Filtrar status..." autocomplete="off" />
+            </div>
+            <div class="sp-grid">${itemsHtml}</div>
+        </div>
+    `;
+
+    new Dialog(
+        {
+            title:   `Aplicar Status — ${spellName}`,
+            content,
+            buttons: {
+                apply: {
+                    icon:  '<i class="fas fa-check-circle"></i>',
+                    label: "Aplicar Selecionados",
+                    callback: ($html: JQuery) => {
+                        $html.find(".sp-item input:checked").each((_, el) => {
+                            const statusId = (el as HTMLInputElement).value;
+                            if (statusId) void applyCondition(actorId, statusId);
+                        });
+                    },
+                },
+                cancel: {
+                    icon:  '<i class="fas fa-ban"></i>',
+                    label: "Cancelar",
+                    callback: () => { /**/ },
+                },
+            },
+            default: "apply",
+            render: ($html: JQuery) => {
+                $html.find("#sp-filter").on("input", function () {
+                    const q = ($(this).val() as string).toLowerCase().trim();
+                    $html.find(".sp-item").each((_, el) => {
+                        const name = (el as HTMLElement).dataset["name"] ?? "";
+                        $(el).toggleClass("sp-hidden", q.length > 0 && !name.includes(q));
+                    });
+                });
+            },
+        },
+        { classes: ["bg3-dialog"], width: 460, id: `status-picker-${actorId}` },
+    ).render(true);
 }
 
 // ── Dialog de resultado (pós-roll) ────────────────────────────────────────────
@@ -509,6 +674,18 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         </div>
     `;
 
+    // Seção de efeitos personalizados (sem status padrão equivalente)
+    const customSection = req.customEffectNames.length > 0 ? `
+        <div class="srd-divider"></div>
+        <div class="srd-custom-effects">
+            <div class="srd-label-sm">EFEITO PERSONALIZADO DA MAGIA</div>
+            <div class="srd-custom-effect-names">${req.customEffectNames.map(esc).join(" · ")}</div>
+            <button class="srd-pick-status-btn" id="srd-pick-status">
+                <i class="fas fa-list-check"></i> Escolher Status a Aplicar...
+            </button>
+        </div>
+    ` : "";
+
     // Seção de condições
     const condDefault = req.isHeal ? true : !req.passed;
     const conditionsSection = req.conditions.length > 0 ? `
@@ -543,6 +720,7 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             </div>
             ${resistSection}
             ${valueSection}
+            ${customSection}
             ${conditionsSection}
         </div>
     `;
@@ -622,6 +800,13 @@ function openSpellResistDialog(req: SpellResistRequest): void {
             content,
             buttons,
             default: defaultBtn,
+            render: ($html: JQuery) => {
+                if (req.customEffectNames.length > 0) {
+                    $html.find("#srd-pick-status").on("click", () => {
+                        openStatusPickerDialog(req.targetActorId, req.spellName, req.customEffectNames);
+                    });
+                }
+            },
         },
         { classes: ["bg3-dialog", "srd-dialog"], width: 420, id: `spell-resist-${req.requestId}` },
     ).render(true);
@@ -658,6 +843,7 @@ function openSpellResistPreRollDialog(preReq: SpellResistPreRollRequest): void {
             damageFormula:     preReq.damageFormula,
             isHeal:            true,
             conditions:        preReq.conditions,
+            customEffectNames: preReq.customEffectNames,
             passed:            true,
         };
         openSpellResistDialog(req);
@@ -776,12 +962,12 @@ function openSpellResistPreRollDialog(preReq: SpellResistPreRollRequest): void {
 // ── Execução do roll de resistência ──────────────────────────────────────────
 
 async function executeSpellResistRoll(
-    preReq:   SpellResistPreRollRequest,
-    actor:    FoundryActor | undefined,
-    actorName: string,
-    baseBonus: number,
+    preReq:     SpellResistPreRollRequest,
+    actor:      FoundryActor | undefined,
+    actorName:  string,
+    baseBonus:  number,
     extraBonus: string,
-    selected: Array<{ pm: number; bonus: string; advantage: boolean; bonusLabel: string; name: string }>,
+    selected:   Array<{ pm: number; bonus: string; advantage: boolean; bonusLabel: string; name: string }>,
 ): Promise<void> {
     const hasAdvantage = selected.some(p => p.advantage);
 
@@ -856,6 +1042,7 @@ async function executeSpellResistRoll(
         damageFormula:     preReq.damageFormula,
         isHeal:            false,
         conditions:        preReq.conditions,
+        customEffectNames: preReq.customEffectNames,
         passed,
     };
 
@@ -942,7 +1129,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterUserId  = game.user?.id ?? "";
     const spellName     = extractSpellName(message);
     const cd            = isHeal ? 0 : extractCD(message);
-    const conditions    = extractConditions(message);
+    const { conditions, customEffectNames } = extractConditions(message);
 
     for (const token of targets) {
         const targetActor = token.actor;
@@ -970,6 +1157,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
             damageFormula,
             isHeal,
             conditions,
+            customEffectNames,
         };
 
         if (targetUserId === game.user?.id) {
