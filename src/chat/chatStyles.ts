@@ -513,22 +513,23 @@ const CHAT_STYLES = `
 }
 /* T20 uses <label class="titulo"> for the condition name (not <h1>) */
 .bg3-t20-condition-card label.titulo {
-    color: #c8a96e !important;
+    color: #b02b2e !important;
     background: transparent !important;
+    text-shadow: 0 0 8px rgba(176,43,46,0.35) !important;
 }
 /* Plain <label> = subtitle (e.g. "Condição de Fadiga") */
 .bg3-t20-condition-card label:not(.titulo) {
-    color: #b8ad9a !important;
+    color: #c8a96e !important;
 }
 .bg3-t20-condition-card p {
-    color: #b8ad9a !important;
+    color: #7a6e5a !important;
     font-family: "Palatino Linotype", "Book Antiqua", serif !important;
     font-size: 0.76rem !important;
     line-height: 1.55 !important;
     margin: 0 0 4px !important;
 }
 .bg3-t20-condition-card li {
-    color: #b8ad9a !important;
+    color: #7a6e5a !important;
     font-family: "Palatino Linotype", "Book Antiqua", serif !important;
     font-size: 0.76rem !important;
     line-height: 1.5 !important;
@@ -541,7 +542,7 @@ const CHAT_STYLES = `
 .bg3-t20-condition-card b,
 .bg3-t20-condition-card strong { color: #c8a96e !important; }
 .bg3-t20-condition-card em,
-.bg3-t20-condition-card i     { color: #9a8e7a !important; }
+.bg3-t20-condition-card i     { color: #7a6e5a !important; }
 .bg3-t20-condition-card hr {
     border: none !important;
     border-top: 1px solid rgba(106, 78, 24, 0.4) !important;
@@ -549,20 +550,20 @@ const CHAT_STYLES = `
 }
 /* Journal content-link buttons inside condition cards */
 .bg3-t20-condition-card .content-link {
-    background: rgba(138,180,232,0.1) !important;
-    border: 1px solid rgba(138,180,232,0.35) !important;
-    color: #8ab4e8 !important;
+    background: rgba(200,169,110,0.12) !important;
+    border: 1px solid rgba(200,169,110,0.4) !important;
+    color: #c8a96e !important;
     border-radius: 3px !important;
     padding: 1px 5px !important;
     font-family: "Modesto Condensed", serif !important;
     font-size: 0.76rem !important;
 }
-.bg3-t20-condition-card .content-link:hover { background: rgba(138,180,232,0.2) !important; }
+.bg3-t20-condition-card .content-link:hover { background: rgba(200,169,110,0.22) !important; }
 .bg3-t20-condition-card a {
-    color: #8ab4e8 !important;
+    color: #c8a96e !important;
     text-decoration: none !important;
 }
-.bg3-t20-condition-card a:hover { color: #aacdf0 !important; text-decoration: underline !important; }
+.bg3-t20-condition-card a:hover { color: #e0c489 !important; text-decoration: underline !important; }
 `;
 
 // ── Condition-card theme (JS override) ───────────────────────────────────────
@@ -595,110 +596,89 @@ function applyConditionCardTheme(message: ChatMessage, root: HTMLElement): void 
     // hidden-test card — they are not condition notification cards
     if (msgContent.querySelector(".tormenta20.chat-card, .dice-roll, .aeris-hidden-test-card")) return;
 
-    let targetEl: HTMLElement | null = null;
+    // ── Detection ─────────────────────────────────────────────────────────────
+    // A T20 condition journal card has at least one of:
+    //   • <label class="titulo">  — condition name heading (TYPE 1 cards)
+    //   • <div style="position:absolute; …">  — decorative red corner triangle
+    //                                            (present in every card)
+    // We detect against msgContent so that messages with deep nesting still match.
+    const hasT20Title  = !!msgContent.querySelector("label.titulo");
+    const hasT20Corner = !!msgContent.querySelector("div[style*='absolute']");
+    if (!hasT20Title && !hasT20Corner) return;
 
-    // ── Strategy 1: style-attribute detection ─────────────────────────────────
-    // Older T20 versions injected:  style="background:#ddd9d5; margin-left:-7px; …"
-    // DOMPurify may normalise the colour → rgb(221,217,213) and add spaces.
-    const candidates = msgContent.querySelectorAll<HTMLElement>("div[style]");
-    for (const el of Array.from(candidates)) {
-        const s = (el.getAttribute("style") ?? "").toLowerCase();
-        if (
-            s.includes("ddd9d5") ||
-            s.includes("margin-left:-7px") ||
-            s.includes("margin-left: -7px")
-        ) {
-            targetEl = el;
-            break;
-        }
+    // The outer wrapper for the dark-theme background is the first direct child
+    // <div> of .message-content.  If that doesn't exist, we still apply
+    // colour overrides to msgContent's descendants so the text is readable.
+    const wrapper = msgContent.querySelector<HTMLElement>(":scope > div");
+    if (wrapper) {
+        wrapper.style.setProperty("background",    "radial-gradient(ellipse at top, #1c1209 0%, #090604 100%)", "important");
+        wrapper.style.setProperty("border",        "1px solid rgba(106, 78, 24, 0.45)", "important");
+        wrapper.style.setProperty("border-radius", "4px",                               "important");
+        wrapper.style.setProperty("box-shadow",    "0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75)", "important");
+        wrapper.style.setProperty("color",         "#7a6e5a",                           "important");
+        wrapper.style.setProperty("padding",       "8px 12px",                          "important");
+        wrapper.classList.add("bg3-t20-condition-card");
     }
-
-    // ── Strategy 2: structural detection ─────────────────────────────────────
-    // Current T20 renders condition cards as a plain <div> (no inline style)
-    // containing several T20-specific children:
-    //   • <label class="titulo"> — condition name heading (TYPE 1)
-    //   • <div style="position:absolute; top:0; right:0; …linear-gradient…#b02b2e…">
-    //       — decorative corner triangle present in ALL condition journal cards
-    //   • <h1>/<h2> fallback for edge cases
-    // We use the corner triangle as the main discriminator because it is present
-    // in both TYPE 1 (label.titulo) and TYPE 2 (text-only) cards.
-    if (!targetEl) {
-        const firstDiv = msgContent.querySelector<HTMLElement>(":scope > div");
-        if (firstDiv) {
-            const isConditionCard =
-                !!firstDiv.querySelector("label.titulo, h1, h2") ||
-                // T20 corner-triangle: position:absolute div with b02b2e gradient
-                !!firstDiv.querySelector("div[style*='absolute']");
-            if (isConditionCard) {
-                targetEl = firstDiv;
-            }
-        }
-    }
-
-    if (!targetEl) return;
-
-    // Direct style override — setProperty with 'important' beats inline styles
-    targetEl.style.setProperty("background", "radial-gradient(ellipse at top, #1c1209 0%, #090604 100%)", "important");
-    targetEl.style.setProperty("border",        "1px solid rgba(106, 78, 24, 0.45)", "important");
-    targetEl.style.setProperty("border-radius", "4px",                               "important");
-    targetEl.style.setProperty("box-shadow",    "0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75)", "important");
-    targetEl.style.setProperty("color",         "#b8ad9a",                           "important");
-
-    // CSS class for descendant text styling
-    targetEl.classList.add("bg3-t20-condition-card");
     root.classList.add("bg3-t20-condition-message");
 
-    // Inline-style override for every text descendant.
-    // T20 journal HTML embeds dark inline colours (designed for its light beige
-    // background).  CSS !important in a stylesheet normally beats non-!important
-    // inline styles, but a more-specific T20 stylesheet rule can still win.
-    // The only 100 % reliable approach is JS setProperty(..., 'important').
+    // ── Force-override colours on every text descendant ──────────────────────
+    // We scope to msgContent (not wrapper) — this guarantees the overrides hit
+    // every element, even when the wrapper detection grabs the wrong inner div.
     //
-    // NOTE: T20 condition cards use <label class="titulo"> (NOT <h1>) for the
-    //       condition name, and a plain <label> for the subtitle.
-    targetEl.querySelectorAll<HTMLElement>("h1, h2, h3, h4").forEach(el => {
+    // T20 condition cards use:
+    //   <label class="titulo">  ← condition name      → keep T20 red  (#b02b2e)
+    //   <label> (no class)      ← subtitle            → gold          (#c8a96e)
+    //   <p>, <li>               ← body text           → muted brown   (#7a6e5a)
+
+    // Title — force T20 red (iconic + good contrast on dark)
+    msgContent.querySelectorAll<HTMLElement>("label.titulo").forEach(el => {
+        el.style.setProperty("color",      "#b02b2e", "important");
+        el.style.setProperty("background", "transparent", "important");
+        el.style.setProperty("text-shadow", "0 0 8px rgba(176,43,46,0.35)", "important");
+    });
+    // Subtitle (plain <label>) — gold
+    msgContent.querySelectorAll<HTMLElement>("label:not(.titulo)").forEach(el => {
+        el.style.setProperty("color",      "#c8a96e", "important");
+        el.style.setProperty("background", "transparent", "important");
+    });
+    // Body text & list items — muted brown
+    msgContent.querySelectorAll<HTMLElement>("p, li, span:not(.content-link)").forEach(el => {
+        el.style.setProperty("color", "#7a6e5a", "important");
+    });
+    // Headings (fallback for non-T20-styled cards) — gold
+    msgContent.querySelectorAll<HTMLElement>("h1, h2, h3, h4").forEach(el => {
         el.style.setProperty("color",       "#c8a96e", "important");
         el.style.setProperty("border",      "none",    "important");
         el.style.setProperty("background",  "transparent", "important");
         el.style.setProperty("text-shadow", "none",    "important");
     });
-    // label.titulo  → condition name (large, gold)
-    targetEl.querySelectorAll<HTMLElement>("label.titulo").forEach(el => {
-        el.style.setProperty("color",      "#c8a96e", "important");
-        el.style.setProperty("background", "transparent", "important");
+    // Bold / strong accents — gold
+    msgContent.querySelectorAll<HTMLElement>("b, strong").forEach(el => {
+        el.style.setProperty("color", "#c8a96e", "important");
     });
-    // plain <label> → condition subtitle (e.g. "Condição de Fadiga"), beige
-    targetEl.querySelectorAll<HTMLElement>("label:not(.titulo)").forEach(el => {
-        el.style.setProperty("color", "#b8ad9a", "important");
+    // Italic emphasis — keep body colour
+    msgContent.querySelectorAll<HTMLElement>("em, i").forEach(el => {
+        el.style.setProperty("color", "#7a6e5a", "important");
     });
-    targetEl.querySelectorAll<HTMLElement>("p, li, span:not(.content-link)").forEach(el => {
-        el.style.setProperty("color", "#b8ad9a", "important");
+    // Inline links (journal content-link buttons) — gold
+    msgContent.querySelectorAll<HTMLElement>("a, .content-link").forEach(el => {
+        el.style.setProperty("color",           "#c8a96e", "important");
+        el.style.setProperty("background",      "rgba(200,169,110,0.12)", "important");
+        el.style.setProperty("border",          "1px solid rgba(200,169,110,0.4)", "important");
+        el.style.setProperty("border-radius",   "3px",     "important");
+        el.style.setProperty("padding",         "1px 5px", "important");
+        el.style.setProperty("text-decoration", "none",    "important");
     });
-    // T20's internal horizontal separator (height:5px divider above the text body).
-    // Clear its background so it doesn't swallow the card's dark gradient.
-    targetEl.querySelectorAll<HTMLElement>("div[style*='height: 5px'], div[style*='height:5px']").forEach(el => {
+    msgContent.querySelectorAll<HTMLElement>("hr").forEach(el => {
+        el.style.setProperty("border",     "none",                              "important");
+        el.style.setProperty("border-top", "1px solid rgba(106, 78, 24, 0.4)", "important");
+        el.style.setProperty("margin",     "4px 0",                            "important");
+    });
+    // T20's internal 5px horizontal separator — make transparent
+    msgContent.querySelectorAll<HTMLElement>("div[style*='height: 5px'], div[style*='height:5px']").forEach(el => {
         el.style.setProperty("background", "transparent", "important");
         el.style.setProperty("border",     "none",        "important");
         el.style.setProperty("box-shadow", "none",        "important");
-    });
-    targetEl.querySelectorAll<HTMLElement>("b, strong").forEach(el => {
-        el.style.setProperty("color", "#c8a96e", "important");
-    });
-    targetEl.querySelectorAll<HTMLElement>("em, i").forEach(el => {
-        el.style.setProperty("color", "#9a8e7a", "important");
-    });
-    targetEl.querySelectorAll<HTMLElement>("a, .content-link").forEach(el => {
-        el.style.setProperty("color",             "#8ab4e8", "important");
-        el.style.setProperty("background",        "rgba(138,180,232,0.1)", "important");
-        el.style.setProperty("border",            "1px solid rgba(138,180,232,0.35)", "important");
-        el.style.setProperty("border-radius",     "3px",    "important");
-        el.style.setProperty("padding",           "1px 5px","important");
-        el.style.setProperty("text-decoration",   "none",   "important");
-    });
-    targetEl.querySelectorAll<HTMLElement>("hr").forEach(el => {
-        el.style.setProperty("border",     "none",                                  "important");
-        el.style.setProperty("border-top", "1px solid rgba(106, 78, 24, 0.4)",     "important");
-        el.style.setProperty("margin",     "4px 0",                                "important");
     });
 }
 
