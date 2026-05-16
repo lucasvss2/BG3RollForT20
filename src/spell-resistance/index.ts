@@ -1113,17 +1113,27 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     }
 
     // ── Guarda contra buffs (Santuário, Refúgio, etc.) ───────────────────────
-    // Quando todos os alvos efetivos são amigáveis ao lançador (ou o próprio
-    // lançador), a magia é um buff e a `resistencia.txt` se refere a atacantes
-    // futuros, não ao alvo do buff.  Não dispara dialog de resistência.
-    // (Magias de cura ignoram esta guarda — `isHeal` passa direto.)
+    // Só ignora quando o LANÇADOR também é amigável (disposition >= 1).
+    // Se o lançador é inimigo (disposition < 1) ou desconhecido, a magia é
+    // ofensiva mesmo que os alvos sejam PCs (disposition = 1).
+    // Magias de cura ignoram esta guarda — `isHeal` passa direto.
     if (!isHeal) {
-        const allFriendly = effectiveTargets.every(token => {
-            if (token.actor?.id === casterActorId) return true;
-            const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
-            return (tDoc?.disposition ?? 0) >= 1;
-        });
-        if (allFriendly) return;
+        const casterTokenId = (message.speaker as Record<string, unknown>)["token"] as string | undefined ?? "";
+        const cvs = canvas as unknown as { tokens?: { get(id: string): { document?: { disposition?: number } } | undefined } };
+        const casterTokenDoc = cvs.tokens?.get(casterTokenId);
+        const casterDisp = (casterTokenDoc as unknown as { document?: { disposition?: number } })?.document?.disposition;
+        const casterIsFriendly = casterDisp != null && casterDisp >= 1;
+
+        if (casterIsFriendly) {
+            // Lançador friendly: só pula se todos os alvos também forem friendly (ex: Santuário num aliado)
+            const allTargetsFriendly = effectiveTargets.every(token => {
+                if (token.actor?.id === casterActorId) return true;
+                const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
+                return (tDoc?.disposition ?? 0) >= 1;
+            });
+            if (allTargetsFriendly) return;
+        }
+        // Lançador inimigo ou desconhecido → magia ofensiva, prossegue normalmente
     }
 
     // damageTotal = 0 para magias de puro status (sem roll de dano)
