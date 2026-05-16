@@ -640,27 +640,16 @@ form.tormenta20.tabbed .tab.inventory header .item-controls a {
 }
 form.tormenta20.tabbed .tab.inventory header .item-controls a:hover { background: rgba(201,167,106,0.22) !important; }
 
-/* Encumbrance (carga) ─────────────────────────────────────────────────── */
-form.tormenta20.tabbed .encumbrance {
-    margin-top: 8px !important;
-    padding: 5px 10px !important;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0.65)) !important;
-    border: 1px solid rgba(201,167,106,0.32) !important;
-    border-radius: 4px !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 10px !important;
-    position: relative !important;
-}
+/* Encumbrance (carga) — preserva o layout original (labels sobrepostos
+   na barra) e só melhora cores/contraste. */
+form.tormenta20.tabbed .encumbrance { margin-top: 8px !important; }
+
 form.tormenta20.tabbed .encumbrance-bar,
 form.tormenta20.tabbed .encumbrance .bar-track {
     background: linear-gradient(to bottom, #050302, #14100a) !important;
     border: 1px solid rgba(201,167,106,0.45) !important;
     border-radius: 3px !important;
-    height: 14px !important;
     overflow: hidden !important;
-    position: relative !important;
-    flex: 1 1 auto !important;
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.7) !important;
 }
 form.tormenta20.tabbed .encumbrance-bar .bar,
@@ -670,31 +659,37 @@ form.tormenta20.tabbed .encumbrance .bar-fill {
     height: 100% !important;
     transition: width 0.25s ease !important;
 }
-/* When over capacity, fill goes red */
+/* Quando em sobrecarga, fill vermelho */
 form.tormenta20.tabbed .encumbrance.encumbered .bar,
 form.tormenta20.tabbed .encumbrance.over .bar,
 form.tormenta20.tabbed .encumbrance-bar .bar.overload {
     background: linear-gradient(90deg, #6a1a1a 0%, #cc4444 60%, #ff6666 100%) !important;
     box-shadow: 0 0 8px rgba(204,68,68,0.5), inset 0 1px rgba(255,150,150,0.3) !important;
 }
-/* Threshold marker (T20 sobrecarga indicator) */
+/* Marcador do limite de sobrecarga (triângulo do T20) */
 form.tormenta20.tabbed .encumbrance-bar .marker,
 form.tormenta20.tabbed .encumbrance-bar .breakpoint {
     background: rgba(255,255,255,0.85) !important;
     width: 2px !important;
     box-shadow: 0 0 4px rgba(255,255,255,0.6) !important;
 }
+/* Labels (Carga / Sobrecarga / Limite) — sobrepostos na barra.
+   Texto creme com sombra preta forte garante legibilidade tanto sobre a
+   parte preenchida (dourada) quanto sobre o vazio (escuro). */
 form.tormenta20.tabbed .encumbrance span,
 form.tormenta20.tabbed .encumbrance label,
 form.tormenta20.tabbed .encumbrance .encumbrance-label {
-    color: #c8a96e !important;
+    color: #f0e0b0 !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.78rem !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     letter-spacing: 0.06em !important;
-    text-shadow: 0 0 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9) !important;
-    white-space: nowrap !important;
-    flex: 0 0 auto !important;
+    text-shadow:
+        -1px -1px 0 rgba(0,0,0,0.95),
+         1px -1px 0 rgba(0,0,0,0.95),
+        -1px  1px 0 rgba(0,0,0,0.95),
+         1px  1px 0 rgba(0,0,0,0.95),
+        0 0 4px rgba(0,0,0,0.9) !important;
 }
 
 /* ── Spells Tab ───────────────────────────────────────────────────────────── */
