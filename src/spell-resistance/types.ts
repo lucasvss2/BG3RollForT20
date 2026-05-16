@@ -54,6 +54,8 @@ export interface SpellResistPreRollRequest {
     resistOutcome: ResistOutcome;
     /** CD do teste (extraído do HTML do card, inclui todos os bônus) */
     cd: number;
+    /** ID da ChatMessage original — necessário para acessar os efeitos de buff */
+    messageId: string;
     /** Total do roll de dano */
     damageTotal: number;
     /** Fórmula do roll de dano */
