@@ -45,19 +45,43 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     const targets = game.user?.targets;
     if (!targets?.size) return;
 
-    // Skip spells already handled by the spell-resistance dialog
+    const allTargets = Array.from(targets);
+
+    // Determine if every T-target is friendly (or is the caster itself).
+    // Self/ally buffs like Santuário carry a `resistencia.txt` (e.g. "Vontade
+    // anula") that refers to ATTACKERS testing against the protected target —
+    // it is not a resistance the target of the buff makes.  We use disposition
+    // to differentiate: when all targets are friendly to the caster, auto-apply
+    // regardless of resistTxt.  For hostile/mixed targets, fall back to the
+    // spell-resistance pipeline.
+    const casterActorId = message.speaker?.actor ?? "";
+    const allTargetsFriendly = allTargets.every(token => {
+        if (token.actor?.id === casterActorId) return true;        // self-cast
+        const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
+        return (tDoc?.disposition ?? 0) >= 1;                       // friendly
+    });
+
+    // Skip spells already handled by the spell-resistance / auto-damage dialogs
     const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
     if (itemData) {
-        const resistTxt = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim();
-        if (resistTxt) return;
-
+        // Always skip damaging or attacking spells (handled elsewhere)
         const hasDamageRoll = (message.rolls ?? []).some(
             r => (r.options as Record<string, unknown>)?.["type"] === "damage",
         );
         if (hasDamageRoll) return;
-    }
+        const hasAttackRoll = (message.rolls ?? []).some(
+            r => (r.options as Record<string, unknown>)?.["type"] === "attack",
+        );
+        if (hasAttackRoll) return;
 
-    const allTargets = Array.from(targets);
+        // Only skip on resistTxt when at least one target is NOT friendly.
+        // For Santuário-style ally buffs, resistTxt refers to attackers, not the
+        // buff's target — proceed with auto-apply.
+        if (!allTargetsFriendly) {
+            const resistTxt = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim();
+            if (resistTxt) return;
+        }
+    }
 
     // For non-GM users (e.g. a player casting a self-buff), only apply effects to
     // actors the player owns (level 3 = OWNER). Unowned targets still have the
