@@ -57,8 +57,16 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     if (!targets?.size) return;
     const allTargets = Array.from(targets);
 
-    // 6. Todos os alvos precisam ser amigáveis (buff de aliado, não ataque)
+    // 5b. Verifica preferência do lançador: se auto-apply de poderes estiver desligado, pula
     const casterActorId = message.speaker?.actor ?? "";
+    const casterActor   = game.actors?.get(casterActorId);
+    type AAFlags = { spells?: boolean; powers?: boolean };
+    type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
+    const aaFlags   = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApply") as AAFlags | undefined;
+    const autoPower = aaFlags?.powers ?? true; // padrão: ligado (retrocompatível)
+    if (!autoPower) return;
+
+    // 6. Todos os alvos precisam ser amigáveis (buff de aliado, não ataque)
     const allTargetsFriendly = allTargets.every(token => {
         if (token.actor?.id === casterActorId) return true; // auto-buff
         const tDoc = (token as unknown as { document?: { disposition?: number } }).document;

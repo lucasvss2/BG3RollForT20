@@ -946,6 +946,59 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const spellName     = extractSpellName(message);
     const cd            = isHeal ? 0 : extractCD(message);
 
+    // ── Auto-apply de buff de magia (se ligado na ficha do lançador) ──────────
+    // Condições: flag autoApply.spells = true + magia pura (sem dano, sem
+    // resistência, não é cura) + tem efeitos + todos os alvos amigáveis.
+    // Para magias com dano ou resistência o modal sempre aparece.
+    const casterActor = game.actors?.get(casterActorId);
+    type AAFlags = { spells?: boolean; powers?: boolean };
+    type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
+    const aaFlags   = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApply") as AAFlags | undefined;
+    const autoSpells = aaFlags?.spells ?? false;
+
+    if (autoSpells && !isHeal && resistSkill === null && damageTotal === 0 && hasMsgEffects) {
+        const allFriendly = effectiveTargets.every(token => {
+            if (token.actor?.id === casterActorId) return true;
+            const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
+            return (tDoc?.disposition ?? 0) >= 1;
+        });
+
+        if (allFriendly) {
+            type EffectData = Record<string, unknown>;
+            const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
+            let appliedCount = 0;
+
+            for (const effectGroup of effectGroups) {
+                if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
+                for (const token of effectiveTargets) {
+                    const tActor = token.actor;
+                    if (!tActor) continue;
+                    const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
+                    const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
+                    if (firstDur?.["seconds"]) {
+                        const g = game as unknown as { time?: { worldTime: number } };
+                        firstDur["startTime"] = g.time?.worldTime ?? 0;
+                    }
+                    try {
+                        await (tActor as FoundryActor & {
+                            createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
+                        }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
+                        appliedCount++;
+                    } catch (err) {
+                        console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
+                    }
+                }
+            }
+
+            if (appliedCount > 0) {
+                const names = effectiveTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
+                ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
+            }
+            return; // Pula o modal
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     for (const token of effectiveTargets) {
         const targetActor = token.actor;
         if (!targetActor) continue;
