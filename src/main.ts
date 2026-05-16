@@ -16,7 +16,8 @@ import { setupChatStyling } from "./chat/chatStyles";
 import { setupHiddenTest } from "./hidden-test/index";
 import { setupAutoDamage } from "./auto-damage/index";
 import { setupSpellResistance } from "./spell-resistance/index";
-import { setupBuffApply } from "./buff-apply/index";
+// setupBuffApply removido em v1.6.33 — substituído pelo modal unificado de magia
+// import { setupBuffApply } from "./buff-apply/index";
 import { setupSheetRedesign } from "./sheet/index";
 import { log, warn } from "./utils/logging";
 
@@ -45,7 +46,7 @@ Hooks.once("setup", () => {
     setupHiddenTest();
     setupAutoDamage();
     setupSpellResistance();
-    setupBuffApply();
+    // setupBuffApply() — desabilitado em v1.6.33; o modal unificado trata buffs
     setupSheetRedesign();
 });
 
