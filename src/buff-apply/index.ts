@@ -1,20 +1,28 @@
 /**
- * Buff auto-apply
+ * Power buff auto-apply
  *
- * When a buff spell/power is cast (one with `chat-apply-ae` effect buttons in the
- * chat card) and the caster already has tokens targeted with T, this module
- * automatically applies all of the spell's ActiveEffect groups to every targeted
- * actor — mirroring exactly what clicking each `chat-apply-ae` button would do.
+ * Quando um PODER (poder/habilidade de classe, talento, etc.) com efeitos de
+ * buff é usado e o lançador tem tokens marcados com T, este módulo aplica
+ * automaticamente TODOS os grupos de ActiveEffect a cada alvo amigável marcado.
  *
- * The manual buttons in the chat card remain untouched so the GM can still apply
- * effects to tokens that were not targeted beforehand.
+ * NÃO se aplica a magias (tipo arc/div/uni) — essas são tratadas pelo modal
+ * unificado em spell-resistance/index.ts.
  *
- * Only runs for the GM (who has permission to apply effects to any actor).
- * Spells already handled by the spell-resistance dialog (those with resistência
- * text or a damage roll) are ignored here.
+ * Requisitos para o auto-apply disparar:
+ *  1. O usuário atual é o autor da mensagem.
+ *  2. O usuário é GM (único com permissão de aplicar efeitos em atores arbitrários).
+ *  3. A mensagem possui ao menos 1 grupo de efeito em flags.tormenta20.effects.
+ *  4. A mensagem tem itemData e NÃO é magia (tipo ≠ arc/div/uni).
+ *  5. Ao menos 1 token T-marcado.
+ *  6. Todos os alvos T são amigáveis (disposition >= 1 ou o próprio lançador).
+ *  7. Sem roll de dano ou ataque (poder ofensivo vai pelo fluxo normal).
  */
 
 import { MODULE_ID } from "@/constants";
+
+// ── Constantes ────────────────────────────────────────────────────────────────
+
+const SPELL_TIPOS = ["arc", "div", "uni"] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -23,93 +31,61 @@ function getMsgAuthorId(message: ChatMessage): string {
     return m.author?.id ?? (typeof m.user === "object" ? m.user?.id : m.user) ?? "";
 }
 
-// ── Core auto-apply logic ─────────────────────────────────────────────────────
+// ── Lógica principal ──────────────────────────────────────────────────────────
 
 async function processBuffMessage(message: ChatMessage): Promise<void> {
-    // Only the message author triggers auto-apply
+    // 1. Somente o autor da mensagem dispara o auto-apply
     if (getMsgAuthorId(message) !== game.user?.id) return;
 
-    // Only the GM can apply effects to arbitrary actors
+    // 2. Somente o GM pode aplicar efeitos a atores arbitrários
     if (!game.user?.isGM) return;
 
-    // Must have T20 effect groups for chat-apply-ae buttons
+    // 3. Deve ter grupos de efeito (botões chat-apply-ae)
     type EffectData = Record<string, unknown>;
     const effectGroups = message.getFlag("tormenta20", "effects") as EffectData[][] | undefined;
     if (!effectGroups?.length) return;
 
-    // Spells with MULTIPLE buttons (e.g. Oração: Bônus + Penalidade, Concentração de
-    // Combate) require the GM to choose which button to press — skip auto-apply.
-    if (effectGroups.length !== 1) return;
+    // 4. Deve ter itemData e NÃO pode ser magia
+    const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
+    if (!itemData) return;
 
-    // Must have T-targeted tokens
+    const tipo = itemData["tipo"] as string | undefined;
+    if (tipo && (SPELL_TIPOS as readonly string[]).includes(tipo)) return; // é magia → modal cuida
+
+    // 5. Deve ter alvos T-marcados
     const targets = game.user?.targets;
     if (!targets?.size) return;
-
     const allTargets = Array.from(targets);
 
-    // Determine if every T-target is friendly (or is the caster itself).
-    // Self/ally buffs like Santuário carry a `resistencia.txt` (e.g. "Vontade
-    // anula") that refers to ATTACKERS testing against the protected target —
-    // it is not a resistance the target of the buff makes.  We use disposition
-    // to differentiate: when all targets are friendly to the caster, auto-apply
-    // regardless of resistTxt.  For hostile/mixed targets, fall back to the
-    // spell-resistance pipeline.
+    // 6. Todos os alvos precisam ser amigáveis (buff de aliado, não ataque)
     const casterActorId = message.speaker?.actor ?? "";
     const allTargetsFriendly = allTargets.every(token => {
-        if (token.actor?.id === casterActorId) return true;        // self-cast
+        if (token.actor?.id === casterActorId) return true; // auto-buff
         const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
-        return (tDoc?.disposition ?? 0) >= 1;                       // friendly
+        return (tDoc?.disposition ?? 0) >= 1;
     });
+    if (!allTargetsFriendly) return;
 
-    // Skip spells already handled by the spell-resistance / auto-damage dialogs
-    const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-    if (itemData) {
-        // Always skip damaging or attacking spells (handled elsewhere)
-        const hasDamageRoll = (message.rolls ?? []).some(
-            r => (r.options as Record<string, unknown>)?.["type"] === "damage",
-        );
-        if (hasDamageRoll) return;
-        const hasAttackRoll = (message.rolls ?? []).some(
-            r => (r.options as Record<string, unknown>)?.["type"] === "attack",
-        );
-        if (hasAttackRoll) return;
+    // 7. Sem roll de dano ou ataque (poder ofensivo → não auto-aplica)
+    const rolls = message.rolls ?? [];
+    const hasDamageRoll = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
+    const hasAttackRoll  = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "attack");
+    if (hasDamageRoll || hasAttackRoll) return;
 
-        // Only skip on resistTxt when at least one target is NOT friendly.
-        // For Santuário-style ally buffs, resistTxt refers to attackers, not the
-        // buff's target — proceed with auto-apply.
-        if (!allTargetsFriendly) {
-            const resistTxt = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim();
-            if (resistTxt) return;
-        }
-    }
-
-    // For non-GM users (e.g. a player casting a self-buff), only apply effects to
-    // actors the player owns (level 3 = OWNER). Unowned targets still have the
-    // manual chat button as fallback.
-    const effectTargets = game.user?.isGM
-        ? allTargets
-        : allTargets.filter(token => {
-            const actor = token.actor;
-            if (!actor) return false;
-            const ownershipLevel = (actor.ownership as Record<string, number>)[game.user!.id] ?? 0;
-            return ownershipLevel >= 3;
-        });
-    if (!effectTargets.length) return;
-
+    // ── Aplica todos os grupos de efeito a todos os alvos ─────────────────────
     let appliedCount = 0;
 
     for (const effectGroup of effectGroups) {
         if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
 
-        for (const token of effectTargets) {
+        for (const token of allTargets) {
             const actor = token.actor;
             if (!actor) continue;
 
-            // Deep-clone so we don't mutate the flags stored on the message
+            // Deep-clone para não mutar os flags da mensagem
             const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
 
-            // Set startTime when effect has a seconds-based duration
-            // (mirrors the T20 _onChatCardApplyEffect handler)
+            // Define startTime para efeitos com duração em segundos
             const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
             if (firstDur?.["seconds"]) {
                 const g = game as unknown as { time?: { worldTime: number } };
@@ -117,28 +93,27 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
             }
 
             try {
-                // Only the very first createEmbeddedDocuments call gets toChat:true
-                // so that exactly one status notification card appears in chat.
+                // Apenas a primeira chamada envia notificação no chat (toChat: true)
                 await actor.createEmbeddedDocuments("ActiveEffect", effectData, {
                     toChat: appliedCount === 0,
                 });
                 appliedCount++;
             } catch (err) {
-                console.warn(`[${MODULE_ID}] Falha ao aplicar buff em ${actor.name}:`, err);
+                console.warn(`[${MODULE_ID}] Falha ao aplicar poder em ${actor.name}:`, err);
             }
         }
     }
 
     if (appliedCount > 0) {
-        const names = effectTargets
+        const names = allTargets
             .filter(t => t.actor)
             .map(t => t.actor!.name)
             .join(", ");
-        ui.notifications?.info(`Buffs aplicados automaticamente: ${names}`);
+        ui.notifications?.info(`Poder aplicado automaticamente: ${names}`);
     }
 }
 
-// ── Public entry point ────────────────────────────────────────────────────────
+// ── Entrada pública ───────────────────────────────────────────────────────────
 
 export function setupBuffApply(): void {
     Hooks.on("createChatMessage", (...args: unknown[]): void => {
