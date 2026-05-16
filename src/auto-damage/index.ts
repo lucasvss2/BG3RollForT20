@@ -417,11 +417,9 @@ function setupCreateChatHook(): void {
     Hooks.on("createChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
 
-        if (getMsgAuthorId(message) !== game.user?.id) return;
-
-        const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-        if (!itemData) return;
-
+        // Require attack + damage rolls — sufficient to identify a weapon attack.
+        // We intentionally do NOT check itemData here: for weapon attacks in T20 v13
+        // the itemData flag may be null or empty even for valid attack messages.
         const rolls = message.rolls;
         if (!rolls?.length) return;
 
@@ -433,12 +431,59 @@ function setupCreateChatHook(): void {
         const damageTotal   = damageRoll.total ?? 0;
         const attackFormula = attackRoll.formula ?? "1d20";
         const damageFormula = damageRoll.formula ?? "";
+        const attackerName  = message.speaker?.alias ?? "Atacante";
+        const rollLabel     = message.flavor || "Ataque";
+
+        // ── GM path ───────────────────────────────────────────────────────────
+        // If the current user is a GM with T-targeted tokens, handle damage
+        // directly — regardless of who authored the attack message.
+        // This covers the common case where the GM marks enemies as targets
+        // while a player (or another GM) rolls the attack.
+        if (game.user?.isGM) {
+            const gmTargets = game.user.targets;
+            if (gmTargets?.size) {
+                for (const token of gmTargets) {
+                    const targetActor = token.actor;
+                    if (!targetActor) continue;
+
+                    const targetDef = getDef(targetActor);
+
+                    if (attackTotal < targetDef) {
+                        ui.notifications.info(
+                            `${attackerName} errou ${targetActor.name}! (${attackTotal} vs DEF ${targetDef})`,
+                        );
+                        continue;
+                    }
+
+                    const payload: AutoDamageRequest = {
+                        type:          "auto-damage-request",
+                        requestId:     randomID(),
+                        targetUserId:  game.user.id,   // open directly on this GM's client
+                        attackerUserId: getMsgAuthorId(message),
+                        targetActorId: targetActor.id,
+                        attackerName,
+                        rollLabel,
+                        attackTotal,
+                        targetDef,
+                        damageTotal,
+                        attackFormula,
+                        damageFormula,
+                    };
+                    openDamagePrompt(payload);
+                }
+                return; // GM handled it — skip player path below
+            }
+        }
+
+        // ── Player/author path ────────────────────────────────────────────────
+        // When the GM has no T-targets, fall back to the original behaviour:
+        // only the message author triggers this path and sends the prompt via
+        // socket to whoever owns the target (or to the active GM for NPCs).
+        if (getMsgAuthorId(message) !== game.user?.id) return;
 
         const targets = game.user?.targets;
         if (!targets?.size) return;
 
-        const attackerName  = message.speaker?.alias ?? "Atacante";
-        const rollLabel     = message.flavor || "Ataque";
         const attackerUserId = game.user?.id ?? "";
 
         for (const token of targets) {
@@ -446,7 +491,12 @@ function setupCreateChatHook(): void {
             if (!targetActor) continue;
 
             const targetDef = getDef(targetActor);
-            if (attackTotal < targetDef) continue;
+            if (attackTotal < targetDef) {
+                ui.notifications.info(
+                    `${attackerName} errou ${targetActor.name}! (${attackTotal} vs DEF ${targetDef})`,
+                );
+                continue;
+            }
 
             const targetUserId = getTargetUserId(targetActor);
             if (!targetUserId) {
