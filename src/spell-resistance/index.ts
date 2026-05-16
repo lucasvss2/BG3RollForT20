@@ -734,29 +734,24 @@ function openSpellResistDialog(req: SpellResistRequest): void {
         // Magia de puro status — status aplicados via picker, botões apenas fecham o dialog
         buttons.none = { icon: '<i class="fas fa-times"></i>', label: "Fechar", callback: () => { /**/ } };
     } else {
-        const showFull = !req.resistSkill || !req.passed || req.resistOutcome === "texto";
-        const showHalf = req.resistSkill != null &&
-                         (req.resistOutcome === "metade" || req.resistOutcome === "parcial" || req.resistOutcome === "texto");
-        const showNone = req.resistSkill != null &&
-                         (req.resistOutcome === "anula"  || req.resistOutcome === "texto");
-
-        if (showFull) {
-            buttons.full = {
-                icon:  '<i class="fas fa-bolt"></i>',
-                label: `Aplicar Dano Integral (${req.damageTotal})`,
-                callback: () => { void applySpellDamage(req.targetActorUuid, req.targetActorId, req.damageTotal); },
-            };
-        }
-        if (showHalf) {
-            buttons.half = {
-                icon:  '<i class="fas fa-shield-halved"></i>',
-                label: `Aplicar Metade (${halfDmg})`,
-                callback: () => { void applySpellDamage(req.targetActorUuid, req.targetActorId, halfDmg); },
-            };
-        }
-        if (showNone || !req.resistSkill) {
-            buttons.none = { icon: '<i class="fas fa-ban"></i>', label: "Não Aplicar", callback: () => { /**/ } };
-        }
+        // Sempre exibe as três opções: o alvo pode ter habilidades (poderes, talentos,
+        // Esquiva Sobrenatural, etc.) que alteram a quantidade de dano recebido
+        // independentemente da resistência descrita na magia.
+        buttons.full = {
+            icon:  '<i class="fas fa-bolt"></i>',
+            label: `Aplicar Dano Integral (${req.damageTotal})`,
+            callback: () => { void applySpellDamage(req.targetActorUuid, req.targetActorId, req.damageTotal); },
+        };
+        buttons.half = {
+            icon:  '<i class="fas fa-shield-halved"></i>',
+            label: `Aplicar Metade (${halfDmg})`,
+            callback: () => { void applySpellDamage(req.targetActorUuid, req.targetActorId, halfDmg); },
+        };
+        buttons.none = {
+            icon:  '<i class="fas fa-ban"></i>',
+            label: "Não Aplicar",
+            callback: () => { /**/ },
+        };
     }
 
     let defaultBtn: string =
