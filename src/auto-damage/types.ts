@@ -4,10 +4,10 @@ export interface AutoDamageRequest {
     targetUserId: string;
     attackerUserId: string;
     targetActorId: string;
-    /** Token-actor UUID (Scene.X.Token.Y.Actor.Z) for unlinked NPC tokens.
-     *  Used by applyDamage to resolve the real token actor via fromUuidSync
-     *  instead of the prototype returned by game.actors.get(actorId). */
-    targetActorUuid: string;
+    /** Canvas TokenDocument ID — used to resolve the real token actor via
+     *  canvas.tokens.get(id).actor, which works for unlinked NPC tokens.
+     *  game.actors.get(actorId) returns the prototype (HP=0), not the token. */
+    targetTokenId: string;
     attackerName: string;
     rollLabel: string;
     attackTotal: number;
@@ -23,7 +23,7 @@ export interface AttackRerollRequest {
     attackerUserId: string;
     targetUserId: string;
     targetActorId: string;
-    targetActorUuid: string;
+    targetTokenId: string;
     attackFormula: string;
     damageFormula: string;
     attackerName: string;

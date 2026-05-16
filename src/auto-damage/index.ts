@@ -174,15 +174,24 @@ function readPmInput($html: JQuery): number {
     return parseInt($html.find('[name="pmCost"]').val() as string, 10) || 0;
 }
 
+// ── Token actor resolution ────────────────────────────────────────────────────
+//
+// game.actors.get(id) returns the PROTOTYPE (pv = 0 base value).
+// For unlinked NPC tokens the real per-token HP lives in the canvas Token.
+// canvas.tokens.get(tokenId).actor is the live synthetic actor whose
+// update() proxies through the TokenDocument — the correct target.
+
+function resolveActor(targetTokenId: string, targetActorId: string): FoundryActor | null {
+    type CanvasTokenLayer = { get(id: string): { actor: FoundryActor | null } | undefined };
+    const layer = (canvas as unknown as { tokens?: CanvasTokenLayer }).tokens;
+    const canvasActor = layer?.get(targetTokenId)?.actor ?? null;
+    return canvasActor ?? game.actors?.get(targetActorId) ?? null;
+}
+
 // ── Damage & PM application ───────────────────────────────────────────────────
 
-async function applyDamage(targetActorUuid: string, targetActorId: string, amount: number, pmCost: number): Promise<void> {
-    // Prefer UUID lookup so unlinked NPC tokens resolve to the real token-actor
-    // (game.actors.get returns the prototype with base HP = 0, not the canvas token).
-    const actor: FoundryActor | null =
-        (targetActorUuid ? (fromUuidSync(targetActorUuid) as FoundryActor | null) : null)
-        ?? game.actors?.get(targetActorId)
-        ?? null;
+async function applyDamage(targetTokenId: string, targetActorId: string, amount: number, pmCost: number): Promise<void> {
+    const actor = resolveActor(targetTokenId, targetActorId);
     if (!actor) return;
 
     const pv         = actor.system?.attributes?.pv;
@@ -267,19 +276,19 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     });
 
     const newPayload: AutoDamageRequest = {
-        type:            "auto-damage-request",
-        requestId:       randomID(),
-        targetUserId:    req.targetUserId,
-        attackerUserId:  game.user?.id ?? "",
-        targetActorId:   req.targetActorId,
-        targetActorUuid: req.targetActorUuid,
-        attackerName:    req.attackerName,
-        rollLabel:       req.rollLabel,
-        attackTotal:     newAttackTotal,
-        targetDef:       req.targetDef,
-        damageTotal:     damageRoll.total ?? 0,
-        attackFormula:   req.attackFormula,
-        damageFormula:   req.damageFormula,
+        type:           "auto-damage-request",
+        requestId:      randomID(),
+        targetUserId:   req.targetUserId,
+        attackerUserId: game.user?.id ?? "",
+        targetActorId:  req.targetActorId,
+        targetTokenId:  req.targetTokenId,
+        attackerName:   req.attackerName,
+        rollLabel:      req.rollLabel,
+        attackTotal:    newAttackTotal,
+        targetDef:      req.targetDef,
+        damageTotal:    damageRoll.total ?? 0,
+        attackFormula:  req.attackFormula,
+        damageFormula:  req.damageFormula,
     };
 
     if (req.targetUserId === game.user?.id) {
@@ -294,10 +303,7 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
 function openDamagePrompt(req: AutoDamageRequest): void {
     ensureStyles();
 
-    const targetActor =
-        (req.targetActorUuid ? (fromUuidSync(req.targetActorUuid) as FoundryActor | null) : null)
-        ?? game.actors?.get(req.targetActorId)
-        ?? null;
+    const targetActor = resolveActor(req.targetTokenId, req.targetActorId);
     const targetName  = targetActor?.name ?? "Alvo";
     const halfDmg     = Math.floor(req.damageTotal / 2);
 
@@ -340,14 +346,14 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                     icon:  '<i class="fas fa-sword"></i>',
                     label: "Aplicar Integral",
                     callback: ($html: JQuery) => {
-                        void applyDamage(req.targetActorUuid, req.targetActorId, req.damageTotal, readPmInput($html));
+                        void applyDamage(req.targetTokenId, req.targetActorId, req.damageTotal, readPmInput($html));
                     },
                 },
                 half: {
                     icon:  '<i class="fas fa-shield-halved"></i>',
                     label: `Aplicar Metade (${halfDmg})`,
                     callback: ($html: JQuery) => {
-                        void applyDamage(req.targetActorUuid, req.targetActorId, halfDmg, readPmInput($html));
+                        void applyDamage(req.targetTokenId, req.targetActorId, halfDmg, readPmInput($html));
                     },
                 },
                 none: {
@@ -355,7 +361,7 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                     label: "Não Aplicar",
                     callback: ($html: JQuery) => {
                         const pm = readPmInput($html);
-                        if (pm > 0) void applyDamage(req.targetActorUuid, req.targetActorId, 0, pm);
+                        if (pm > 0) void applyDamage(req.targetTokenId, req.targetActorId, 0, pm);
                     },
                 },
                 reroll: {
@@ -363,17 +369,17 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                     label: "Forçar Rerolar Ataque",
                     callback: () => {
                         const rerollReq: AttackRerollRequest = {
-                            type:            "attack-reroll-request",
-                            requestId:       req.requestId,
-                            attackerUserId:  req.attackerUserId,
-                            targetUserId:    req.targetUserId,
-                            targetActorId:   req.targetActorId,
-                            targetActorUuid: req.targetActorUuid,
-                            attackFormula:   req.attackFormula,
-                            damageFormula:   req.damageFormula,
-                            attackerName:    req.attackerName,
-                            rollLabel:       req.rollLabel,
-                            targetDef:       req.targetDef,
+                            type:           "attack-reroll-request",
+                            requestId:      req.requestId,
+                            attackerUserId: req.attackerUserId,
+                            targetUserId:   req.targetUserId,
+                            targetActorId:  req.targetActorId,
+                            targetTokenId:  req.targetTokenId,
+                            attackFormula:  req.attackFormula,
+                            damageFormula:  req.damageFormula,
+                            attackerName:   req.attackerName,
+                            rollLabel:      req.rollLabel,
+                            targetDef:      req.targetDef,
                         };
 
                         if (req.attackerUserId === game.user?.id) {
@@ -427,11 +433,9 @@ function setupCreateChatHook(): void {
     Hooks.on("createChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
 
-        if (getMsgAuthorId(message) !== game.user?.id) return;
-
-        const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-        if (!itemData) return;
-
+        // Require attack + damage rolls — sufficient to identify a weapon attack.
+        // We intentionally do NOT check itemData here: for weapon attacks in T20 v13
+        // the itemData flag may be null or empty even for valid attack messages.
         const rolls = message.rolls;
         if (!rolls?.length) return;
 
@@ -443,12 +447,60 @@ function setupCreateChatHook(): void {
         const damageTotal   = damageRoll.total ?? 0;
         const attackFormula = attackRoll.formula ?? "1d20";
         const damageFormula = damageRoll.formula ?? "";
+        const attackerName  = message.speaker?.alias ?? "Atacante";
+        const rollLabel     = message.flavor || "Ataque";
+
+        // ── GM path ───────────────────────────────────────────────────────────
+        // If the current user is a GM with T-targeted tokens, handle damage
+        // directly — regardless of who authored the attack message.
+        // This covers the common case where the GM marks enemies as targets
+        // while a player (or another GM) rolls the attack.
+        if (game.user?.isGM) {
+            const gmTargets = game.user.targets;
+            if (gmTargets?.size) {
+                for (const token of gmTargets) {
+                    const targetActor = token.actor;
+                    if (!targetActor) continue;
+
+                    const targetDef = getDef(targetActor);
+
+                    if (attackTotal < targetDef) {
+                        ui.notifications.info(
+                            `${attackerName} errou ${targetActor.name}! (${attackTotal} vs DEF ${targetDef})`,
+                        );
+                        continue;
+                    }
+
+                    const payload: AutoDamageRequest = {
+                        type:          "auto-damage-request",
+                        requestId:     randomID(),
+                        targetUserId:  game.user.id,   // open directly on this GM's client
+                        attackerUserId: getMsgAuthorId(message),
+                        targetActorId: targetActor.id,
+                        targetTokenId: token.id,
+                        attackerName,
+                        rollLabel,
+                        attackTotal,
+                        targetDef,
+                        damageTotal,
+                        attackFormula,
+                        damageFormula,
+                    };
+                    openDamagePrompt(payload);
+                }
+                return; // GM handled it — skip player path below
+            }
+        }
+
+        // ── Player/author path ────────────────────────────────────────────────
+        // When the GM has no T-targets, fall back to the original behaviour:
+        // only the message author triggers this path and sends the prompt via
+        // socket to whoever owns the target (or to the active GM for NPCs).
+        if (getMsgAuthorId(message) !== game.user?.id) return;
 
         const targets = game.user?.targets;
         if (!targets?.size) return;
 
-        const attackerName  = message.speaker?.alias ?? "Atacante";
-        const rollLabel     = message.flavor || "Ataque";
         const attackerUserId = game.user?.id ?? "";
 
         for (const token of targets) {
@@ -456,7 +508,12 @@ function setupCreateChatHook(): void {
             if (!targetActor) continue;
 
             const targetDef = getDef(targetActor);
-            if (attackTotal < targetDef) continue;
+            if (attackTotal < targetDef) {
+                ui.notifications.info(
+                    `${attackerName} errou ${targetActor.name}! (${attackTotal} vs DEF ${targetDef})`,
+                );
+                continue;
+            }
 
             const targetUserId = getTargetUserId(targetActor);
             if (!targetUserId) {
@@ -467,12 +524,12 @@ function setupCreateChatHook(): void {
             }
 
             const payload: AutoDamageRequest = {
-                type:            "auto-damage-request",
-                requestId:       randomID(),
+                type:          "auto-damage-request",
+                requestId:     randomID(),
                 targetUserId,
                 attackerUserId,
-                targetActorId:   targetActor.id,
-                targetActorUuid: targetActor.uuid,
+                targetActorId: targetActor.id,
+                targetTokenId: token.id,
                 attackerName,
                 rollLabel,
                 attackTotal,
