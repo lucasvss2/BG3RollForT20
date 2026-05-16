@@ -1117,6 +1117,20 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
         if (effectiveTargets.length === 0) return;
     }
 
+    // ── Guarda contra buffs (Santuário, Refúgio, etc.) ───────────────────────
+    // Quando todos os alvos efetivos são amigáveis ao lançador (ou o próprio
+    // lançador), a magia é um buff e a `resistencia.txt` se refere a atacantes
+    // futuros, não ao alvo do buff.  Não dispara dialog de resistência.
+    // (Magias de cura ignoram esta guarda — `isHeal` passa direto.)
+    if (!isHeal) {
+        const allFriendly = effectiveTargets.every(token => {
+            if (token.actor?.id === casterActorId) return true;
+            const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
+            return (tDoc?.disposition ?? 0) >= 1;
+        });
+        if (allFriendly) return;
+    }
+
     // damageTotal = 0 para magias de puro status (sem roll de dano)
     const damageTotal   = damageRoll?.total ?? 0;
     const damageFormula = damageRoll?.formula ?? "";
