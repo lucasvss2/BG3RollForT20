@@ -14,6 +14,7 @@
  *  3. A mensagem possui ao menos 1 grupo de efeito em flags.tormenta20.effects.
  *  4. A mensagem tem itemData e NÃO é magia (tipo ≠ arc/div/uni).
  *  5. Ao menos 1 token T-marcado.
+ *  5b. O item específico tem flag MODULE_ID.autoApply = true (desligado por padrão; GM liga via ⚡ na ficha).
  *  6. Todos os alvos T são amigáveis (disposition >= 1 ou o próprio lançador).
  *  7. Sem roll de dano ou ataque (poder ofensivo vai pelo fluxo normal).
  */
@@ -57,14 +58,14 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     if (!targets?.size) return;
     const allTargets = Array.from(targets);
 
-    // 5b. Verifica preferência do lançador: se auto-apply de poderes estiver desligado, pula
+    // 5b. Verifica flag de auto-apply no item específico (por item, não por ator)
     const casterActorId = message.speaker?.actor ?? "";
     const casterActor   = game.actors?.get(casterActorId);
-    type AAFlags = { spells?: boolean; powers?: boolean };
-    type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
-    const aaFlags   = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApply") as AAFlags | undefined;
-    const autoPower = aaFlags?.powers ?? true; // padrão: ligado (retrocompatível)
-    if (!autoPower) return;
+    const itemId        = itemData["_id"] as string | undefined;
+    type ItemWithFlags  = FoundryItem & { getFlag(scope: string, key: string): unknown };
+    const item          = itemId ? (casterActor?.items?.get(itemId) as ItemWithFlags | undefined) : undefined;
+    const autoApply     = (item?.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+    if (!autoApply) return;
 
     // 6. Todos os alvos precisam ser amigáveis (buff de aliado, não ataque)
     const allTargetsFriendly = allTargets.every(token => {

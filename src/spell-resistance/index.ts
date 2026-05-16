@@ -946,15 +946,15 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const spellName     = extractSpellName(message);
     const cd            = isHeal ? 0 : extractCD(message);
 
-    // ── Auto-apply de buff de magia (se ligado na ficha do lançador) ──────────
-    // Condições: flag autoApply.spells = true + magia pura (sem dano, sem
-    // resistência, não é cura) + tem efeitos + todos os alvos amigáveis.
-    // Para magias com dano ou resistência o modal sempre aparece.
+    // ── Auto-apply de buff de magia (se ligado no item específico) ───────────
+    // Condições: item.flags[MODULE_ID].autoApply = true + magia pura (sem
+    // dano, sem resistência, não é cura) + tem efeitos + todos os alvos
+    // amigáveis. Para magias com dano ou resistência o modal sempre aparece.
     const casterActor = game.actors?.get(casterActorId);
-    type AAFlags = { spells?: boolean; powers?: boolean };
-    type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
-    const aaFlags   = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApply") as AAFlags | undefined;
-    const autoSpells = aaFlags?.spells ?? false;
+    const spellItemId  = itemData["_id"] as string | undefined;
+    type ItemWithFlags = FoundryItem & { getFlag(scope: string, key: string): unknown };
+    const spellItem  = spellItemId ? (casterActor?.items?.get(spellItemId) as ItemWithFlags | undefined) : undefined;
+    const autoSpells = (spellItem?.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
 
     if (autoSpells && !isHeal && resistSkill === null && damageTotal === 0 && hasMsgEffects) {
         const allFriendly = effectiveTargets.every(token => {

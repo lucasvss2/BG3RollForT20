@@ -1878,45 +1878,24 @@ form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute
     cursor: se-resize !important;
 }
 
-/* ── Auto-apply toggles bar (entre nav e sheet-body) ─────────────────────── */
+/* ── Auto-apply toggle por item (botão ⚡ nas rows de magia/poder, GM only) */
 
-.t20-aa-bar {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 3px 12px 3px 10px;
-    background: rgba(0,0,0,0.28);
-    border-bottom: 1px solid rgba(201,167,106,0.14);
-    flex-shrink: 0;
-    font-family: 'EB Garamond', 'Palatino Linotype', serif;
+/* Botão apagado = auto-apply OFF */
+.t20-aa-item-btn {
+    color: #2a2018 !important;
+    opacity: 0.45;
+    transition: color 0.15s, opacity 0.15s, text-shadow 0.15s;
 }
-.t20-aa-label {
-    color: #4a4030;
-    font-size: 0.62rem;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-    flex-shrink: 0;
+.t20-aa-item-btn:hover {
+    color: #8ab4e8 !important;
+    opacity: 1 !important;
 }
-.t20-aa-toggle {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: #5a5040;
-    font-size: 0.72rem;
-    cursor: pointer;
-    user-select: none;
-    transition: color 0.15s;
+/* Botão aceso = auto-apply ON */
+.t20-aa-item-btn.t20-aa-on {
+    color: #8ab4e8 !important;
+    opacity: 1;
+    text-shadow: 0 0 6px rgba(138,180,232,0.55);
 }
-.t20-aa-toggle input[type="checkbox"] {
-    accent-color: #8ab4e8;
-    width: 11px;
-    height: 11px;
-    cursor: pointer;
-    flex-shrink: 0;
-    margin: 0;
-}
-.t20-aa-toggle.t20-aa-on { color: #8ab4e8; }
-.t20-aa-toggle i { font-size: 0.68rem; }
 `;
 
 // ── JS Enhancements ───────────────────────────────────────────────────────────
@@ -2070,57 +2049,64 @@ function enhanceSheet(root: HTMLElement): void {
     adjustNameFontSize(root);
 }
 
-// ── Auto-apply toggles ────────────────────────────────────────────────────────
+// ── Auto-apply per-item toggle buttons (GM only) ─────────────────────────────
 
-type AutoApplyFlags = { spells?: boolean; powers?: boolean };
+type ItemWithFlags = FoundryItem & {
+    getFlag(scope: string, key: string): unknown;
+    setFlag(scope: string, key: string, value: unknown): Promise<unknown>;
+};
 
-function injectAutoApplyToggles(root: HTMLElement, actor: FoundryActor | undefined): void {
+function injectAutoApplyItemButtons(root: HTMLElement, actor: FoundryActor | undefined): void {
+    // Apenas GM pode ver/usar os botões
+    if (!game.user?.isGM) return;
+
     // Apenas fichas de personagem jogador
     if (!actor || (actor as unknown as { type?: string }).type !== "character") return;
 
-    // Evita injeção dupla ao re-renderizar a sheet
-    if (root.querySelector("#t20-aa-bar")) return;
+    // Processa cada linha de item com data-item-id
+    const itemRows = root.querySelectorAll<HTMLElement>("[data-item-id]");
+    itemRows.forEach(row => {
+        const itemId = row.dataset["itemId"];
+        if (!itemId) return;
 
-    type ActorWithFlags = FoundryActor & {
-        getFlag(scope: string, key: string): unknown;
-        setFlag(scope: string, key: string, value: unknown): Promise<unknown>;
-    };
-    const actorF  = actor as ActorWithFlags;
-    const flags   = actorF.getFlag(MODULE_ID, "autoApply") as AutoApplyFlags | undefined;
-    const autoSp  = flags?.spells  ?? false;  // magias: desligado por padrão
-    const autoPow = flags?.powers  ?? true;   // poderes: ligado por padrão (retrocompatível)
+        // Evita injeção dupla
+        if (row.querySelector(".t20-aa-item-btn")) return;
 
-    const bar = document.createElement("div");
-    bar.id = "t20-aa-bar";
-    bar.className = "t20-aa-bar";
-    bar.innerHTML = `
-        <span class="t20-aa-label"><i class="fas fa-bolt-lightning"></i> Auto-Apply Buff</span>
-        <label class="t20-aa-toggle ${autoSp  ? "t20-aa-on" : ""}" title="Se ligado, buffs de magia pura (sem dano/resistência) são aplicados automaticamente aos alvos T amigáveis.">
-            <input type="checkbox" data-aa-type="spells"  ${autoSp  ? "checked" : ""} />
-            <i class="fas fa-wand-magic-sparkles"></i> Magias
-        </label>
-        <label class="t20-aa-toggle ${autoPow ? "t20-aa-on" : ""}" title="Se ligado, buffs de poder são aplicados automaticamente aos alvos T amigáveis.">
-            <input type="checkbox" data-aa-type="powers"  ${autoPow ? "checked" : ""} />
-            <i class="fas fa-star"></i> Poderes
-        </label>
-    `;
+        const item = actor.items?.get(itemId) as ItemWithFlags | undefined;
+        if (!item) return;
 
-    // Injeta entre nav.sheet-tabs e section.sheet-body
-    const sheetBody = root.querySelector("section.sheet-body");
-    if (sheetBody) {
-        sheetBody.insertAdjacentElement("beforebegin", bar);
-    }
+        // Apenas magias e poderes
+        const itype = (item as unknown as { type?: string }).type;
+        if (itype !== "magia" && itype !== "poder") return;
 
-    // Salva a flag ao mudar o checkbox
-    bar.querySelectorAll<HTMLInputElement>("input[data-aa-type]").forEach(input => {
-        input.addEventListener("change", () => {
-            const type    = input.dataset["aaType"] as keyof AutoApplyFlags;
-            const newVal  = input.checked;
-            const current = (actorF.getFlag(MODULE_ID, "autoApply") as AutoApplyFlags | undefined) ?? {};
-            void actorF.setFlag(MODULE_ID, "autoApply", { ...current, [type]: newVal });
-            const label = input.closest(".t20-aa-toggle") as HTMLElement | null;
-            label?.classList.toggle("t20-aa-on", newVal);
+        const isOn = (item.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+
+        const btn = document.createElement("a");
+        btn.className = `t20-aa-item-btn${isOn ? " t20-aa-on" : ""}`;
+        btn.dataset["itemId"] = itemId;
+        btn.title = isOn
+            ? "Auto-apply buff: LIGADO (clique para desligar)"
+            : "Auto-apply buff: DESLIGADO (clique para ligar)";
+        btn.innerHTML = `<i class="fas fa-bolt-lightning"></i>`;
+
+        btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const current = (item.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+            const next = !current;
+            void item.setFlag(MODULE_ID, "autoApply", next).then(() => {
+                btn.classList.toggle("t20-aa-on", next);
+                btn.title = next
+                    ? "Auto-apply buff: LIGADO (clique para desligar)"
+                    : "Auto-apply buff: DESLIGADO (clique para ligar)";
+            });
         });
+
+        // Injeta no início dos controles do item
+        const controls = row.querySelector(".item-controls");
+        if (controls) {
+            controls.prepend(btn);
+        }
     });
 }
 
@@ -2144,7 +2130,7 @@ export function setupSheetRedesign(): void {
             root = (htmlArg as Record<string, unknown>)[0] as HTMLElement | undefined;
         if (!(root instanceof HTMLElement)) return;
         enhanceSheet(root);
-        injectAutoApplyToggles(root, app?.actor);
+        injectAutoApplyItemButtons(root, app?.actor);
     });
 
     // Spell sheets have many details fields (728px+ of content) so the generic
