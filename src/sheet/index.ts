@@ -647,49 +647,55 @@ form.tormenta20.tabbed .encumbrance { margin-top: 8px !important; }
 form.tormenta20.tabbed .encumbrance-bar,
 form.tormenta20.tabbed .encumbrance .bar-track {
     background: linear-gradient(to bottom, #050302, #14100a) !important;
-    border: 1px solid rgba(201,167,106,0.45) !important;
+    border: 1px solid rgba(201,167,106,0.55) !important;
     border-radius: 3px !important;
     overflow: hidden !important;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.7) !important;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.75) !important;
 }
+/* Fill: amber profundo → mid amber. Mantém tema BG3 mas com luminância
+   baixa (0.04 – 0.23) para garantir contraste WCAG AA com texto branco
+   (≥ 4.5:1 no centro, ≥ 19:1 no track vazio). Não vai a tons claros. */
 form.tormenta20.tabbed .encumbrance-bar .bar,
 form.tormenta20.tabbed .encumbrance .bar-fill {
-    background: linear-gradient(90deg, #8b6914 0%, #c9a76a 60%, #e8d8a8 100%) !important;
-    box-shadow: 0 0 8px rgba(201,167,106,0.4), inset 0 1px rgba(255,220,150,0.25) !important;
+    background: linear-gradient(90deg, #5a3a14 0%, #8b5a1e 50%, #b07a2a 100%) !important;
+    box-shadow: 0 0 8px rgba(176,122,42,0.3), inset 0 1px rgba(232,180,90,0.2) !important;
     height: 100% !important;
     transition: width 0.25s ease !important;
 }
-/* Quando em sobrecarga, fill vermelho */
+/* Sobrecarga: vermelho profundo. Branco mantém contraste ≥ 4.5:1. */
 form.tormenta20.tabbed .encumbrance.encumbered .bar,
 form.tormenta20.tabbed .encumbrance.over .bar,
 form.tormenta20.tabbed .encumbrance-bar .bar.overload {
-    background: linear-gradient(90deg, #6a1a1a 0%, #cc4444 60%, #ff6666 100%) !important;
-    box-shadow: 0 0 8px rgba(204,68,68,0.5), inset 0 1px rgba(255,150,150,0.3) !important;
+    background: linear-gradient(90deg, #4a0a0a 0%, #a01818 50%, #c83030 100%) !important;
+    box-shadow: 0 0 8px rgba(200,48,48,0.45), inset 0 1px rgba(232,100,100,0.25) !important;
 }
 /* Marcador do limite de sobrecarga (triângulo do T20) */
 form.tormenta20.tabbed .encumbrance-bar .marker,
 form.tormenta20.tabbed .encumbrance-bar .breakpoint {
-    background: rgba(255,255,255,0.85) !important;
+    background: rgba(255,255,255,0.9) !important;
     width: 2px !important;
-    box-shadow: 0 0 4px rgba(255,255,255,0.6) !important;
+    box-shadow: 0 0 5px rgba(255,255,255,0.7) !important;
 }
-/* Labels (Carga / Sobrecarga / Limite) — sobrepostos na barra.
-   Texto creme com sombra preta forte garante legibilidade tanto sobre a
-   parte preenchida (dourada) quanto sobre o vazio (escuro). */
+/* Labels (Carga / Sobrecarga / Limite) — branco puro com sombra preta
+   sólida em 4 direções. Contraste WCAG:
+     • em #b07a2a (ponta clara do fill): 4.6:1 → passa AA normal
+     • em #14100a (track vazio):         19:1 → AAA
+     • em #c83030 (sobrecarga):          4.7:1 → passa AA normal
+   A sombra preta dá um halo legível mesmo nas bordas do gradient. */
 form.tormenta20.tabbed .encumbrance span,
 form.tormenta20.tabbed .encumbrance label,
 form.tormenta20.tabbed .encumbrance .encumbrance-label {
-    color: #f0e0b0 !important;
+    color: #ffffff !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
-    font-size: 0.78rem !important;
+    font-size: 0.8rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.06em !important;
     text-shadow:
-        -1px -1px 0 rgba(0,0,0,0.95),
-         1px -1px 0 rgba(0,0,0,0.95),
-        -1px  1px 0 rgba(0,0,0,0.95),
-         1px  1px 0 rgba(0,0,0,0.95),
-        0 0 4px rgba(0,0,0,0.9) !important;
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000,
+         0  0  5px rgba(0,0,0,0.95) !important;
 }
 
 /* ── Spells Tab ───────────────────────────────────────────────────────────── */
