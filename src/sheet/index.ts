@@ -640,19 +640,62 @@ form.tormenta20.tabbed .tab.inventory header .item-controls a {
 }
 form.tormenta20.tabbed .tab.inventory header .item-controls a:hover { background: rgba(201,167,106,0.22) !important; }
 
-/* Encumbrance */
-form.tormenta20.tabbed .encumbrance { margin-top: 8px !important; }
+/* Encumbrance (carga) ─────────────────────────────────────────────────── */
+form.tormenta20.tabbed .encumbrance {
+    margin-top: 8px !important;
+    padding: 5px 10px !important;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0.65)) !important;
+    border: 1px solid rgba(201,167,106,0.32) !important;
+    border-radius: 4px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    position: relative !important;
+}
 form.tormenta20.tabbed .encumbrance-bar,
 form.tormenta20.tabbed .encumbrance .bar-track {
-    background: rgba(255,255,255,0.04) !important; border: 1px solid rgba(201,167,106,0.15) !important;
-    border-radius: 2px !important; height: 5px !important; overflow: hidden !important;
+    background: linear-gradient(to bottom, #050302, #14100a) !important;
+    border: 1px solid rgba(201,167,106,0.45) !important;
+    border-radius: 3px !important;
+    height: 14px !important;
+    overflow: hidden !important;
+    position: relative !important;
+    flex: 1 1 auto !important;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.7) !important;
 }
 form.tormenta20.tabbed .encumbrance-bar .bar,
 form.tormenta20.tabbed .encumbrance .bar-fill {
-    background: linear-gradient(90deg, #6a4a18, #c9a76a) !important; height: 100% !important;
+    background: linear-gradient(90deg, #8b6914 0%, #c9a76a 60%, #e8d8a8 100%) !important;
+    box-shadow: 0 0 8px rgba(201,167,106,0.4), inset 0 1px rgba(255,220,150,0.25) !important;
+    height: 100% !important;
+    transition: width 0.25s ease !important;
+}
+/* When over capacity, fill goes red */
+form.tormenta20.tabbed .encumbrance.encumbered .bar,
+form.tormenta20.tabbed .encumbrance.over .bar,
+form.tormenta20.tabbed .encumbrance-bar .bar.overload {
+    background: linear-gradient(90deg, #6a1a1a 0%, #cc4444 60%, #ff6666 100%) !important;
+    box-shadow: 0 0 8px rgba(204,68,68,0.5), inset 0 1px rgba(255,150,150,0.3) !important;
+}
+/* Threshold marker (T20 sobrecarga indicator) */
+form.tormenta20.tabbed .encumbrance-bar .marker,
+form.tormenta20.tabbed .encumbrance-bar .breakpoint {
+    background: rgba(255,255,255,0.85) !important;
+    width: 2px !important;
+    box-shadow: 0 0 4px rgba(255,255,255,0.6) !important;
 }
 form.tormenta20.tabbed .encumbrance span,
-form.tormenta20.tabbed .encumbrance label { color: #5a5040 !important; font-size: 0.7rem !important; }
+form.tormenta20.tabbed .encumbrance label,
+form.tormenta20.tabbed .encumbrance .encumbrance-label {
+    color: #c8a96e !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.06em !important;
+    text-shadow: 0 0 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9) !important;
+    white-space: nowrap !important;
+    flex: 0 0 auto !important;
+}
 
 /* ── Spells Tab ───────────────────────────────────────────────────────────── */
 form.tormenta20.tabbed .tab.spells label { color: #8a7e6a !important; font-size: 0.78rem !important; }
