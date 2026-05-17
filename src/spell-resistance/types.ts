@@ -66,6 +66,12 @@ export interface SpellResistPreRollRequest {
     maxHealValue: number;
     /** true se Curar Ferimentos foi castada com o aprimoramento de remover fadiga (+2 PM) */
     removeFadiga?: boolean;
+    /**
+     * true se Curar Ferimentos foi castada com o aprimoramento "Truque" — vira
+     * 1d8 de dano de luz vs morto-vivo (Vontade reduz à metade). damageTotal e
+     * maxHealValue já estarão sobrescritos com o roll do d8.
+     */
+    truqueAtivo?: boolean;
     /** Condições de status a aplicar (extraídas dos effects do chat) */
     conditions: SpellConditionData[];
     /**

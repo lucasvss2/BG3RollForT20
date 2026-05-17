@@ -860,8 +860,11 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         ` : "";
         const halfHeal = Math.floor(preReq.damageTotal / 2);
         const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
+        const healHeaderHtml = preReq.truqueAtivo
+            ? `<div class="smf-section-title"><i class="fas fa-bolt"></i> TRUQUE — DANO DE LUZ</div>`
+            : `<div class="smf-section-title"><i class="fas fa-heart"></i> CURA</div>`;
         damageSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-heart"></i> CURA</div>
+            ${healHeaderHtml}
             <div class="smf-heal-number" id="smf-heal-number">${preReq.damageTotal}</div>
             ${consagrarHtml}
             <label class="smf-undead-label" title="Magia de cura causa dano sagrado em mortos-vivos. O alvo rola Vontade ${cdLabel} — passa: metade do dano.">
@@ -1172,6 +1175,17 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     $html.find("#smf-undead-section").toggle($(this).is(":checked"));
                 });
 
+                // ── Truque de Curar Ferimentos: dano de luz vs morto-vivo ─────
+                // Auto-marca Morto-Vivo, esconde checkbox Consagrar e botão Curar.
+                if (preReq.truqueAtivo) {
+                    $html.find("#smf-consagrar").closest(".smf-consagrar-label").hide();
+                    $html.find("#smf-heal-full").hide();
+                    const $mv = $html.find("#smf-morto-vivo");
+                    $mv.prop("checked", true).prop("disabled", true);
+                    $mv.closest(".smf-undead-label").attr("title", "Truque: alvo já é morto-vivo (1d8 dano de luz)");
+                    $html.find("#smf-undead-section").show();
+                }
+
                 // ── Rolar Vontade (resistência do morto-vivo) ─────────────────
                 $html.find("#smf-undead-roll").on("click", function () {
                     const rollBtn  = $(this);
@@ -1442,11 +1456,35 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterUserId  = game.user?.id ?? "";
     const spellName     = extractSpellName(message);
     const cd            = extractCD(message); // sempre extrai, inclusive para curas (usado em dano sagrado vs. mortos-vivos)
-    const maxHealValue  = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
     // Detecta o aprimoramento de Curar Ferimentos "+2 PM: remove uma condição de fadiga do alvo"
     const removeFadiga  = isHeal
         && normalizeCondName(spellName) === "curar ferimentos"
         && /fadiga/i.test(message.content ?? "");
+
+    // Detecta o aprimoramento "Truque" de Curar Ferimentos — vira 1d8 dano de luz vs morto-vivo.
+    // Rolamos um 1d8 separadamente (o T20 já rolou 2d8+2 da cura original, que ignoramos).
+    const truqueAtivo = isHeal
+        && normalizeCondName(spellName) === "curar ferimentos"
+        && /truque/i.test(message.content ?? "")
+        && /1d8/i.test(message.content ?? "");
+
+    let effectiveDamage  = damageTotal;
+    let effectiveMaxHeal = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
+
+    if (truqueAtivo) {
+        const dRoll = new Roll("1d8");
+        await dRoll.evaluate({ async: true } as never);
+        effectiveDamage  = dRoll.total ?? 0;
+        effectiveMaxHeal = 8;
+        await ChatMessage.create({
+            content: await dRoll.render({
+                flavor: `Curar Ferimentos — Truque · Dano de Luz vs Morto-Vivo (Vontade reduz à metade)`,
+            }),
+            rolls:   [dRoll.toJSON()],
+            type:    5,
+            speaker: message.speaker,
+        });
+    }
 
     for (const token of effectiveTargets) {
         const targetActor = token.actor;
@@ -1472,11 +1510,12 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
             resistOutcome,
             cd,
             messageId:       message.id,
-            damageTotal,
-            damageFormula,
+            damageTotal:     effectiveDamage,
+            damageFormula:   truqueAtivo ? "1d8" : damageFormula,
             isHeal,
-            maxHealValue,
+            maxHealValue:    effectiveMaxHeal,
             removeFadiga,
+            truqueAtivo,
             conditions:      [],
             customEffectNames: [],
         };
