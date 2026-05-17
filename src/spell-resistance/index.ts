@@ -926,8 +926,11 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                         const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
                             ?.results?.find(r => r.active)?.result ?? 0;
                         const total  = roll.total ?? 0;
-                        const passed = total >= preReq.cd;
-                        const sl     = skillKey ? SKILL_LABELS[skillKey] : "Resistência";
+                        // d20=1 → falha crítica (sempre falha); d20=20 → sucesso crítico (sempre passa)
+                        const critFail = d20Res === 1;
+                        const critPass = d20Res === 20;
+                        const passed   = critPass || (!critFail && total >= preReq.cd);
+                        const sl       = skillKey ? SKILL_LABELS[skillKey] : "Resistência";
 
                         const appliedLabels: string[] = selected.map(p => {
                             const pmStr = p.pm > 0 ? ` (${p.pm} PM)` : "";
@@ -936,9 +939,10 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                         if (bonusExtra) appliedLabels.push(`${bonusExtra} (manual)`);
 
                         // Publica no chat
+                        const chatBadge = critPass ? "✦ SUCESSO CRÍTICO" : critFail ? "☠ FALHA CRÍTICA" : (passed ? "✓ PASSOU" : "✗ FALHOU");
                         await ChatMessage.create({
                             content: await roll.render({
-                                flavor: `Resistência — ${sl} (${targetName}) vs CD ${preReq.cd} ${passed ? "✓ PASSOU" : "✗ FALHOU"}`,
+                                flavor: `Resistência — ${sl} (${targetName}) vs CD ${preReq.cd} ${chatBadge}`,
                             }),
                             rolls:   [roll.toJSON()],
                             type:    5,
@@ -956,7 +960,9 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
                         const passClass   = passed ? "smf-rr-pass"       : "smf-rr-fail";
                         const badgeClass  = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
-                        const badgeText   = passed ? "PASSOU" : "FALHOU";
+                        const badgeText   = critPass ? "SUCESSO CRÍTICO"
+                                          : critFail ? "FALHA CRÍTICA"
+                                          : (passed ? "PASSOU" : "FALHOU");
 
                         const powersHtmlResult = appliedLabels.length > 0
                             ? `<div class="smf-applied-powers">${appliedLabels.map(l => `<div class="smf-applied-power">✦ ${esc(l)}</div>`).join("")}</div>`
@@ -1014,13 +1020,19 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     void (async () => {
                         const roll = new Roll(`1d20 ${bonusStr}`);
                         await roll.evaluate({ async: true } as never);
+                        const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
+                            ?.results?.find(r => r.active)?.result ?? 0;
                         const total  = roll.total ?? 0;
-                        const passed = preReq.cd > 0 ? total >= preReq.cd : false;
-                        const cdLabel = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
+                        // d20=1 → falha crítica (sempre falha); d20=20 → sucesso crítico (sempre passa)
+                        const critFail = d20Res === 1;
+                        const critPass = d20Res === 20;
+                        const passed   = critPass || (!critFail && preReq.cd > 0 && total >= preReq.cd);
+                        const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
 
+                        const chatBadge = critPass ? "✦ SUCESSO CRÍTICO" : critFail ? "☠ FALHA CRÍTICA" : (passed ? "✓ PASSOU" : "✗ FALHOU");
                         await ChatMessage.create({
                             content: await roll.render({
-                                flavor: `Resistência Vontade (${targetName}) vs ${cdLabel} — ${passed ? "✓ PASSOU" : "✗ FALHOU"}`,
+                                flavor: `Resistência Vontade (${targetName}) vs ${cdLabel} — ${chatBadge}`,
                             }),
                             rolls:   [roll.toJSON()],
                             type:    5,
@@ -1030,6 +1042,9 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
                         const passClass  = passed ? "smf-rr-pass"       : "smf-rr-fail";
                         const badgeClass = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
+                        const badgeText  = critPass ? "SUCESSO CRÍTICO"
+                                         : critFail ? "FALHA CRÍTICA"
+                                         : (passed ? "PASSOU" : "FALHOU");
                         const outcome    = passed ? "Metade do dano (passou)" : "Dano completo (falhou)";
                         $html.find("#smf-undead-result").html(`
                             <div class="smf-rr-row">
@@ -1037,7 +1052,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                                 <span class="${passClass}">${total}</span>
                                 <span class="smf-label-sm">d20 + ${vontBonus}</span>
                                 <span class="smf-label-sm">${cdLabel}</span>
-                                <span class="${badgeClass}">${passed ? "PASSOU" : "FALHOU"}</span>
+                                <span class="${badgeClass}">${badgeText}</span>
                             </div>
                             <div class="smf-rr-outcome">${esc(outcome)}</div>
                         `).show();
