@@ -163,8 +163,86 @@ async function promptCanvasClick(): Promise<{ x: number; y: number } | null> {
 }
 
 // ── Template placement ───────────────────────────────────────────────────────
+//
+// Estratégia (v1.6.65+): NÃO criamos mais um MeasuredTemplate por conta própria.
+// O sistema T20 já cria seu template animado quando a magia é lançada — antes
+// estávamos criando UM SEGUNDO template, daí o usuário via duas áreas. Agora:
+//   1. Detectamos o cast → registramos um "pending"
+//   2. Quando o T20 (ou qualquer outro caminho) cria um MeasuredTemplate pelo
+//      usuário lançador, reclamamos esse template adicionando nossas flags via
+//      doc.update(). A partir desse ponto ele é tratado como template Consagrar.
+//   3. Se nenhum template aparecer em FALLBACK_PROMPT_MS, abrimos NOSSO próprio
+//      prompt manual (placeTemplateManual) — fallback para spells/configurações
+//      em que o T20 não auto-posiciona.
 
-async function placeTemplate(meta: {
+type PendingCast = {
+    casterActorId: string;
+    casterName:    string;
+    undeadPenalty: number;
+    ts:            number;
+    fallbackTimer?: ReturnType<typeof setTimeout>;
+};
+const _pendingCasts      = new Map<string, PendingCast>(); // key: userId
+const PENDING_WINDOW_MS  = 30_000;
+const FALLBACK_PROMPT_MS = 4_000;
+
+function clearPending(uid: string): void {
+    const p = _pendingCasts.get(uid);
+    if (p?.fallbackTimer) clearTimeout(p.fallbackTimer);
+    _pendingCasts.delete(uid);
+}
+
+function registerPendingCast(uid: string, cast: Omit<PendingCast, "ts" | "fallbackTimer">): void {
+    clearPending(uid);
+    const entry: PendingCast = { ...cast, ts: Date.now() };
+    entry.fallbackTimer = setTimeout(() => {
+        // Se ainda está pendente após FALLBACK_PROMPT_MS, o T20 não criou
+        // template; recorremos ao prompt manual.
+        const still = _pendingCasts.get(uid);
+        if (!still || still.ts !== entry.ts) return;
+        _pendingCasts.delete(uid);
+        void placeTemplateManual(entry);
+    }, FALLBACK_PROMPT_MS);
+    _pendingCasts.set(uid, entry);
+}
+
+/** Constrói o objeto de flags Consagrar para um template (criação ou claim). */
+function buildConsagrarFlags(meta: {
+    casterActorId: string; casterName: string; undeadPenalty: number;
+}): Record<string, unknown> {
+    return {
+        [FLAG_SPELL]:       SPELL_KEY,
+        casterActorId:      meta.casterActorId,
+        casterName:         meta.casterName,
+        undeadPenalty:      meta.undeadPenalty,
+        createdAtGameTime:  (game as unknown as { time?: { worldTime?: number } }).time?.worldTime ?? 0,
+        creatorUserId:      game.user?.id ?? "",
+    };
+}
+
+/**
+ * Reclama um template existente (criado pelo T20) adicionando as flags do
+ * Consagrar via doc.update. O `updateMeasuredTemplate` hook se encarrega de
+ * disparar a aplicação dos AEs no cliente GM.
+ */
+async function claimTemplate(
+    tplDoc: { update(data: Record<string, unknown>): Promise<unknown> },
+    pending: PendingCast,
+): Promise<void> {
+    try {
+        await tplDoc.update({ [`flags.${MODULE_ID}`]: buildConsagrarFlags(pending) });
+        ui.notifications?.info(`Consagrar ativada (penalidade undead -${pending.undeadPenalty}).`);
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Consagrar: falha ao reclamar template:`, err);
+    }
+}
+
+/**
+ * Fallback: cria nosso próprio template via prompt manual. Só roda se o T20
+ * não criar um template automaticamente dentro de FALLBACK_PROMPT_MS após o
+ * cast.
+ */
+async function placeTemplateManual(meta: {
     casterActorId: string;
     casterName:    string;
     undeadPenalty: number;
@@ -193,23 +271,12 @@ async function placeTemplate(meta: {
         y: pos.y,
         fillColor: "#ffd86b",
         borderColor: "#c9a76a",
-        flags: {
-            [MODULE_ID]: {
-                [FLAG_SPELL]:       SPELL_KEY,
-                casterActorId:      meta.casterActorId,
-                casterName:         meta.casterName,
-                undeadPenalty:      meta.undeadPenalty,
-                createdAtGameTime:  (game as unknown as { time?: { worldTime?: number } }).time?.worldTime ?? 0,
-                // Quem placeu o template (usado pelo botão de remover área para
-                // saber quem é "dono" — GMs sempre veem o botão para todas as áreas).
-                creatorUserId:      game.user?.id ?? "",
-            },
-        },
+        flags: { [MODULE_ID]: buildConsagrarFlags(meta) },
     };
 
     try {
         await scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
-        ui.notifications?.info(`Consagrar posicionada (${RAIO_METROS}m, penalidade undead -${meta.undeadPenalty})`);
+        ui.notifications?.info(`Consagrar posicionada (fallback, ${RAIO_METROS}m, penalidade undead -${meta.undeadPenalty}).`);
     } catch (err) {
         console.warn(`[${MODULE_ID}] Consagrar: falha ao criar template:`, err);
     }
@@ -719,26 +786,58 @@ export function setupConsagrar(): void {
     // CSS específico dos dialogs Consagrar (complementa o tema bg3-dialog)
     ensureConsagrarStyles();
 
-    // 1. Detecta cast (apenas autor processa para prompt de posicionamento)
+    // 1. Detecta cast → registra "pending" para reclamar o template do T20
+    //    (NÃO mais cria template aqui — antes resultava em 2 áreas no canvas).
     Hooks.on("createChatMessage", (...args: unknown[]) => {
         const message = args[0] as ChatMessage;
-        if (getMsgAuthorId(message) !== game.user?.id) return;
+        const uid = getMsgAuthorId(message);
+        if (uid !== game.user?.id) return;
         if (normalizeCondName(extractSpellName(message)) !== SPELL_KEY) return;
 
-        const casterActorId = message.speaker?.actor ?? "";
-        const casterName    = message.speaker?.alias ?? "Lançador";
-        const undeadPenalty = PENALIDADE_BASE + parseEnhancementBonus(message.content ?? "");
-
-        void placeTemplate({ casterActorId, casterName, undeadPenalty });
+        registerPendingCast(uid, {
+            casterActorId: message.speaker?.actor ?? "",
+            casterName:    message.speaker?.alias ?? "Lançador",
+            undeadPenalty: PENALIDADE_BASE + parseEnhancementBonus(message.content ?? ""),
+        });
     });
 
-    // 2. Template criado → GM aplica AEs nos tokens dentro
+    // 2. Template criado:
+    //    - se foi criado por nós (autor) e há pending → reclamamos via doc.update
+    //      (a aplicação de AEs vem via updateMeasuredTemplate quando o flag chega)
+    //    - se já vem com flag Consagrar (cena recarregada/import) → GM aplica AEs
     Hooks.on("createMeasuredTemplate", (...args: unknown[]) => {
-        const template = args[0] as { flags?: Record<string, Record<string, unknown>> } & {
+        const tplDoc = args[0] as {
             id: string; uuid: string; x: number; y: number; distance: number;
+            user?: string | { id?: string };
+            author?: { id?: string };
+            flags?: Record<string, Record<string, unknown>>;
+            update(data: Record<string, unknown>): Promise<unknown>;
         };
-        if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
-        void applyAEsForTemplate(template);
+        const triggerUserId = typeof args[2] === "string" ? args[2] as string : undefined;
+        const currentUid    = game.user?.id;
+        const hasConsagrar  = tplDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === SPELL_KEY;
+
+        // Claim: só o autor do template tenta reclamar (evita race entre clientes)
+        if (currentUid && !hasConsagrar) {
+            const authorUid =
+                tplDoc.author?.id
+                ?? (typeof tplDoc.user === "string" ? tplDoc.user : tplDoc.user?.id)
+                ?? triggerUserId;
+            if (authorUid === currentUid) {
+                const pending = _pendingCasts.get(currentUid);
+                if (pending && Date.now() - pending.ts < PENDING_WINDOW_MS) {
+                    clearPending(currentUid);
+                    void claimTemplate(tplDoc, pending);
+                    // applyAEs virá via updateMeasuredTemplate quando o flag propagar.
+                    refreshRemoveAreaButton();
+                    return;
+                }
+            }
+        }
+
+        if (hasConsagrar && game.user?.isGM) {
+            void applyAEsForTemplate(tplDoc);
+        }
         refreshRemoveAreaButton();
     });
 
@@ -750,13 +849,14 @@ export function setupConsagrar(): void {
         refreshRemoveAreaButton();
     });
 
-    // 4. FASE 2: Token movido → resincroniza com todos os templates Consagrar
+    // 4. Token atualizado → resincroniza com todos os templates Consagrar.
+    //    NÃO filtramos por changes.x/y porque o sistema de movimento do v13 pode
+    //    reportar a mudança sob outras chaves (_movement, path, etc.). O sync
+    //    sempre lê document.x/y, que JÁ reflete a posição final do movimento,
+    //    então rodar sempre é correto e barato (idempotente + lock por tokenId).
     Hooks.on("updateToken", (...args: unknown[]) => {
-        const tokenDoc = args[0] as { object?: FoundryToken; x?: number; y?: number };
-        const changes  = args[1] as Record<string, unknown>;
-        // Só interessa se posição mudou
-        if (changes["x"] === undefined && changes["y"] === undefined) return;
         if (getConsagrarTemplates().length === 0) return;
+        const tokenDoc = args[0] as { object?: FoundryToken };
         const token = tokenDoc.object;
         if (!token) return;
         void syncTokenWithTemplates(token);
@@ -771,17 +871,28 @@ export function setupConsagrar(): void {
         void syncTokenWithTemplates(token);
     });
 
-    // 6. FASE 2: Template movido/redimensionado → reaplica todos os tokens
+    // 6. Template atualizado:
+    //    a) Flag Consagrar foi recém-adicionado (claim do T20-template) → GM aplica AEs
+    //    b) Posição/tamanho mudou → re-sync de todos os tokens da cena
     Hooks.on("updateMeasuredTemplate", (...args: unknown[]) => {
         const tplDoc  = args[0] as {
             id: string; uuid: string; x: number; y: number; distance: number;
             flags?: Record<string, Record<string, unknown>>;
         };
         const changes = args[1] as Record<string, unknown>;
+
+        // (a) Flag Consagrar acabou de ser adicionada
+        const flagChange = (changes["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
+        if (flagChange && flagChange[FLAG_SPELL] === SPELL_KEY) {
+            if (game.user?.isGM) void applyAEsForTemplate(tplDoc);
+            refreshRemoveAreaButton();
+            return;
+        }
+
+        // (b) Mudança geométrica em template Consagrar já existente
         if (tplDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
         if (changes["x"] === undefined && changes["y"] === undefined && changes["distance"] === undefined) return;
         if (!game.user?.isGM) return;
-        // Re-sync de todos os tokens da cena para esse template
         type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
         const cv = canvas as unknown as CanvasLike;
         const tokens = cv.tokens?.placeables ?? [];
