@@ -255,6 +255,14 @@ const SPELL_RESIST_STYLES = `
 }
 .smf-heal-btn:hover { background: rgba(110,207,122,0.2); }
 .smf-heal-btn.smf-spent { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.smf-consagrar-label {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    color: #e8c46e; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; margin: 0 0 6px; user-select: none;
+}
+.smf-consagrar-label input[type="checkbox"] { accent-color: #e8c46e; width: 14px; height: 14px; }
+.smf-consagrar-label i { color: #e8c46e; }
+.smf-consagrar-max { color: #8a7450; font-size: 0.78rem; font-weight: 400; }
 .smf-feedback {
     font-size: 0.82rem; color: #6ecf7a; text-align: center;
     padding: 3px 0; display: none;
@@ -380,6 +388,21 @@ function extractSpellName(message: ChatMessage): string {
     }
     const titleMatch = message.content?.match(/<img[^>]+title="([^"]+)"/);
     return titleMatch?.[1] ?? "Magia";
+}
+
+// ── Helpers de cálculo ────────────────────────────────────────────────────────
+
+/**
+ * Calcula o valor máximo possível de uma rolagem mantendo os modificadores
+ * constantes intocados. Para 3d6+4 rolando 13: max = 18 + 4 = 22.
+ */
+function computeMaxRoll(roll: Roll): number {
+    type DieLike = { number?: number; faces?: number; total?: number };
+    const dice = (roll.dice ?? []) as unknown as DieLike[];
+    const maxDice    = dice.reduce((s, d) => s + (d.number ?? 0) * (d.faces ?? 0), 0);
+    const actualDice = dice.reduce((s, d) => s + (d.total ?? 0), 0);
+    const constPart  = (roll.total ?? 0) - actualDice;
+    return Math.max(0, maxDice + constPart);
 }
 
 // ── Resolução de ator ─────────────────────────────────────────────────────────
@@ -545,11 +568,20 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
     let damageSectionHtml: string;
 
     if (preReq.isHeal && preReq.damageTotal > 0) {
+        const showConsagrar = preReq.maxHealValue > preReq.damageTotal;
+        const consagrarHtml = showConsagrar ? `
+            <label class="smf-consagrar-label" title="Maximiza o valor da cura com os dados rolados.">
+                <input type="checkbox" id="smf-consagrar" />
+                <i class="fas fa-sun"></i> Consagrar
+                <span class="smf-consagrar-max">(máx: ${preReq.maxHealValue})</span>
+            </label>
+        ` : "";
         damageSectionHtml = `
             <div class="smf-section-title"><i class="fas fa-heart"></i> CURA</div>
-            <div class="smf-heal-number">${preReq.damageTotal}</div>
+            <div class="smf-heal-number" id="smf-heal-number">${preReq.damageTotal}</div>
+            ${consagrarHtml}
             <div class="smf-dmg-btns">
-                <button class="smf-heal-btn" id="smf-heal-full">
+                <button class="smf-heal-btn" id="smf-heal-full" data-heal-base="${preReq.damageTotal}" data-heal-max="${preReq.maxHealValue}">
                     <i class="fas fa-heart"></i> Curar (${preReq.damageTotal})
                 </button>
                 <button class="smf-dmg-btn" id="smf-no-heal">
@@ -650,6 +682,14 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
     `;
 
     // ── Conteúdo final ────────────────────────────────────────────────────────
+    // Para magias de cura: Buff e Condições são omitidos (não fazem sentido)
+
+    const buffAndCondHtml = preReq.isHeal ? "" : `
+            <div class="smf-divider"></div>
+            <div class="smf-section">${buffSectionHtml}</div>
+            <div class="smf-divider"></div>
+            <div class="smf-section">${condSectionHtml}</div>
+    `;
 
     const content = `
         <div class="smf-body">
@@ -663,10 +703,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
             <div class="smf-section">${resistSectionHtml}</div>
             <div class="smf-divider"></div>
             <div class="smf-section">${damageSectionHtml}</div>
-            <div class="smf-divider"></div>
-            <div class="smf-section">${buffSectionHtml}</div>
-            <div class="smf-divider"></div>
-            <div class="smf-section">${condSectionHtml}</div>
+            ${buffAndCondHtml}
         </div>
     `;
 
@@ -791,6 +828,18 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     })();
                 });
 
+                // ── Consagrar (maximiza cura) ─────────────────────────────────
+                $html.find("#smf-consagrar").on("change", function () {
+                    const checked  = $(this).is(":checked");
+                    const healBtn  = $html.find("#smf-heal-full");
+                    const baseVal  = parseInt(healBtn.data("heal-base") as string, 10) || preReq.damageTotal;
+                    const maxVal   = parseInt(healBtn.data("heal-max")  as string, 10) || preReq.damageTotal;
+                    const val      = checked ? maxVal : baseVal;
+                    $html.find("#smf-heal-number").text(String(val));
+                    healBtn.data("heal-current", val);
+                    healBtn.html(`<i class="fas fa-heart"></i> Curar (${val})`);
+                });
+
                 // ── Dano / Cura ───────────────────────────────────────────────
                 $html.find(".smf-dmg-btn, .smf-heal-btn").on("click", async function () {
                     const btn = $(this);
@@ -798,8 +847,11 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     let label = "";
 
                     if (id === "smf-heal-full") {
-                        await applySpellHeal(preReq.targetActorUuid, preReq.targetActorId, preReq.damageTotal);
-                        label = `✓ Cura de ${preReq.damageTotal} aplicada`;
+                        // Usa valor Consagrado se checkbox marcado, senão o total rolado
+                        const healAmt = parseInt(btn.data("heal-current") as string, 10)
+                            || preReq.damageTotal;
+                        await applySpellHeal(preReq.targetActorUuid, preReq.targetActorId, healAmt);
+                        label = `✓ Cura de ${healAmt} aplicada`;
                     } else if (id === "smf-no-heal" || id === "smf-dmg-none") {
                         label = "✓ Não aplicado";
                     } else {
@@ -898,8 +950,7 @@ function getTargetUserId(actor: FoundryActor): string | null {
 // ── createChatMessage hook ────────────────────────────────────────────────────
 
 async function processSpellMessage(message: ChatMessage): Promise<void> {
-    if (getMsgAuthorId(message) !== game.user?.id) return;
-
+    // Parseia dados comuns (sem verificação de autor ainda — o GM também precisa)
     const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
     if (!itemData) return;
 
@@ -926,9 +977,76 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const shouldOpen = isHeal || resistSkill !== null || damageTotal > 0 || hasMsgEffects;
     if (!shouldOpen) return;
 
-    // ── Resolver alvos ────────────────────────────────────────────────────────
-    const tTargets     = Array.from(game.user?.targets ?? []);
     const casterActorId = message.speaker?.actor ?? "";
+    const isPureBuff    = !isHeal && resistSkill === null && damageTotal === 0 && hasMsgEffects;
+
+    // Resolve flag do item (necessário em ambos os paths)
+    const casterActor  = game.actors?.get(casterActorId);
+    const spellItemId  = itemData["_id"] as string | undefined;
+    type ItemWithFlags = FoundryItem & { getFlag(scope: string, key: string): unknown };
+    const spellItem    = spellItemId ? (casterActor?.items?.get(spellItemId) as ItemWithFlags | undefined) : undefined;
+    const autoEnabled  = (spellItem?.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+
+    // ── Path 1: GM auto-apply ─────────────────────────────────────────────────
+    // Roda em todas as mensagens de magia, não só as do próprio GM.
+    // Usa os alvos T do AUTOR da mensagem para não depender dos alvos do GM.
+    if (game.user?.isGM && isPureBuff && autoEnabled) {
+        const authorId      = getMsgAuthorId(message);
+        type UserWithTargets = FoundryUser & { targets?: Set<FoundryToken> };
+        const authorUser    = game.users?.get(authorId) as UserWithTargets | undefined;
+        const authorTargets = Array.from(authorUser?.targets ?? []) as FoundryToken[];
+
+        if (authorTargets.length > 0) {
+            const allFriendly = authorTargets.every(token => {
+                if (token.actor?.id === casterActorId) return true;
+                const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
+                return (tDoc?.disposition ?? 0) >= 1;
+            });
+
+            if (allFriendly) {
+                type EffectData = Record<string, unknown>;
+                const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
+                let appliedCount = 0;
+
+                for (const effectGroup of effectGroups) {
+                    if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
+                    for (const token of authorTargets) {
+                        const tActor = token.actor;
+                        if (!tActor) continue;
+                        const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
+                        const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
+                        if (firstDur?.["seconds"]) {
+                            const g = game as unknown as { time?: { worldTime: number } };
+                            firstDur["startTime"] = g.time?.worldTime ?? 0;
+                        }
+                        try {
+                            await (tActor as FoundryActor & {
+                                createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
+                            }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
+                            appliedCount++;
+                        } catch (err) {
+                            console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
+                        }
+                    }
+                }
+
+                if (appliedCount > 0) {
+                    const names = authorTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
+                    ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
+                }
+                return;
+            }
+        }
+    }
+
+    // ── Path 2: Modal (apenas para o autor da mensagem) ───────────────────────
+    if (getMsgAuthorId(message) !== game.user?.id) return;
+
+    // Se é buff puro e auto-apply está ativo, o GM já cuidou — pula modal
+    if (isPureBuff && autoEnabled) return;
+
+    // ── Resolver alvos para o modal ───────────────────────────────────────────
+    const tTargets = Array.from(game.user?.targets ?? []);
     let effectiveTargets: FoundryToken[];
 
     if (tTargets.length > 0) {
@@ -945,59 +1063,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterUserId  = game.user?.id ?? "";
     const spellName     = extractSpellName(message);
     const cd            = isHeal ? 0 : extractCD(message);
-
-    // ── Auto-apply de buff de magia (se ligado no item específico) ───────────
-    // Condições: item.flags[MODULE_ID].autoApply = true + magia pura (sem
-    // dano, sem resistência, não é cura) + tem efeitos + todos os alvos
-    // amigáveis. Para magias com dano ou resistência o modal sempre aparece.
-    const casterActor = game.actors?.get(casterActorId);
-    const spellItemId  = itemData["_id"] as string | undefined;
-    type ItemWithFlags = FoundryItem & { getFlag(scope: string, key: string): unknown };
-    const spellItem  = spellItemId ? (casterActor?.items?.get(spellItemId) as ItemWithFlags | undefined) : undefined;
-    const autoSpells = (spellItem?.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
-
-    if (autoSpells && !isHeal && resistSkill === null && damageTotal === 0 && hasMsgEffects) {
-        const allFriendly = effectiveTargets.every(token => {
-            if (token.actor?.id === casterActorId) return true;
-            const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
-            return (tDoc?.disposition ?? 0) >= 1;
-        });
-
-        if (allFriendly) {
-            type EffectData = Record<string, unknown>;
-            const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
-            let appliedCount = 0;
-
-            for (const effectGroup of effectGroups) {
-                if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
-                for (const token of effectiveTargets) {
-                    const tActor = token.actor;
-                    if (!tActor) continue;
-                    const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
-                    const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
-                    if (firstDur?.["seconds"]) {
-                        const g = game as unknown as { time?: { worldTime: number } };
-                        firstDur["startTime"] = g.time?.worldTime ?? 0;
-                    }
-                    try {
-                        await (tActor as FoundryActor & {
-                            createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
-                        }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
-                        appliedCount++;
-                    } catch (err) {
-                        console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
-                    }
-                }
-            }
-
-            if (appliedCount > 0) {
-                const names = effectiveTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
-                ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
-            }
-            return; // Pula o modal
-        }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
+    const maxHealValue  = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
 
     for (const token of effectiveTargets) {
         const targetActor = token.actor;
@@ -1026,6 +1092,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
             damageTotal,
             damageFormula,
             isHeal,
+            maxHealValue,
             conditions:      [],
             customEffectNames: [],
         };

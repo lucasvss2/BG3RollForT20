@@ -9,8 +9,8 @@
  * unificado em spell-resistance/index.ts.
  *
  * Requisitos para o auto-apply disparar:
- *  1. O usuário atual é o autor da mensagem.
- *  2. O usuário é GM (único com permissão de aplicar efeitos em atores arbitrários).
+ *  1. O usuário é GM (único com permissão de aplicar efeitos em atores arbitrários).
+ *     O GM processa todas as mensagens, não exige ser o autor.
  *  3. A mensagem possui ao menos 1 grupo de efeito em flags.tormenta20.effects.
  *  4. A mensagem tem itemData e NÃO é magia (tipo ≠ arc/div/uni).
  *  5. Ao menos 1 token T-marcado.
@@ -35,10 +35,8 @@ function getMsgAuthorId(message: ChatMessage): string {
 // ── Lógica principal ──────────────────────────────────────────────────────────
 
 async function processBuffMessage(message: ChatMessage): Promise<void> {
-    // 1. Somente o autor da mensagem dispara o auto-apply
-    if (getMsgAuthorId(message) !== game.user?.id) return;
-
-    // 2. Somente o GM pode aplicar efeitos a atores arbitrários
+    // 1. Somente o GM pode aplicar efeitos a atores arbitrários
+    // (GM processa todas as mensagens; não exige ser autor da mensagem)
     if (!game.user?.isGM) return;
 
     // 3. Deve ter grupos de efeito (botões chat-apply-ae)
@@ -53,10 +51,13 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     const tipo = itemData["tipo"] as string | undefined;
     if (tipo && (SPELL_TIPOS as readonly string[]).includes(tipo)) return; // é magia → modal cuida
 
-    // 5. Deve ter alvos T-marcados
-    const targets = game.user?.targets;
+    // 5. Deve ter alvos T-marcados — usa os alvos do AUTOR da mensagem (não do GM)
+    const authorId   = getMsgAuthorId(message);
+    type UserWithTargets = FoundryUser & { targets?: Set<FoundryToken> };
+    const authorUser = game.users?.get(authorId) as UserWithTargets | undefined;
+    const targets    = (authorUser?.targets ?? game.user?.targets) as Set<FoundryToken> | undefined;
     if (!targets?.size) return;
-    const allTargets = Array.from(targets);
+    const allTargets = Array.from(targets) as FoundryToken[];
 
     // 5b. Verifica flag de auto-apply no item específico (por item, não por ator)
     const casterActorId = message.speaker?.actor ?? "";

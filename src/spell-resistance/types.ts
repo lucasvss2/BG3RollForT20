@@ -62,6 +62,8 @@ export interface SpellResistPreRollRequest {
     damageFormula: string;
     /** true se a magia cura (curapv) — nesse caso vai direto para result dialog */
     isHeal: boolean;
+    /** Valor máximo possível da cura com os dados rolados (para checkbox Consagrar) */
+    maxHealValue: number;
     /** Condições de status a aplicar (extraídas dos effects do chat) */
     conditions: SpellConditionData[];
     /**
@@ -103,6 +105,7 @@ export interface SpellResistRequest {
     damageTotal: number;
     damageFormula: string;
     isHeal: boolean;
+    maxHealValue: number;
     conditions: SpellConditionData[];
     /** Efeitos personalizados da magia sem status equivalente (para seleção manual pelo GM) */
     customEffectNames: string[];
