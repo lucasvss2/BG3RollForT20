@@ -112,4 +112,19 @@ export interface SpellResistRequest {
     passed: boolean;
 }
 
-export type SpellResistSocketData = SpellResistPreRollRequest | SpellResistRequest;
+/**
+ * Pedido de auto-apply de buff — enviado do cliente do lançador (player) ao GM
+ * quando o player não tem permissão para aplicar ActiveEffect em atores arbitrários.
+ * O GM recebe e aplica os efeitos diretamente.
+ */
+export interface AutoApplyBuffRequest {
+    type: "auto-apply-buff";
+    /** Nome do lançador para notificação */
+    casterName: string;
+    /** Grupos de ActiveEffect a aplicar (cada grupo = 1 botão chat-apply-ae) */
+    effectGroups: Record<string, unknown>[][];
+    /** UUIDs dos atores alvo */
+    targetUuids: string[];
+}
+
+export type SpellResistSocketData = SpellResistPreRollRequest | SpellResistRequest | AutoApplyBuffRequest;

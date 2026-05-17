@@ -3,22 +3,25 @@
  *
  * Quando um PODER (poder/habilidade de classe, talento, etc.) com efeitos de
  * buff é usado e o lançador tem tokens marcados com T, este módulo aplica
- * automaticamente TODOS os grupos de ActiveEffect a cada alvo amigável marcado.
+ * automaticamente TODOS os grupos de ActiveEffect a cada alvo marcado.
  *
  * NÃO se aplica a magias (tipo arc/div/uni) — essas são tratadas pelo modal
  * unificado em spell-resistance/index.ts.
  *
  * Requisitos para o auto-apply disparar:
- *  1. O usuário é o AUTOR da mensagem (garante que os alvos T são os corretos).
- *  2. O usuário é GM (único com permissão de aplicar efeitos em atores arbitrários).
- *  3. A mensagem possui ao menos 1 grupo de efeito em flags.tormenta20.effects.
- *  4. A mensagem tem itemData e NÃO é magia (tipo ≠ arc/div/uni).
- *  5. Ao menos 1 token T-marcado.
- *  5b. O item específico tem flag MODULE_ID.autoApplyItems[itemId] = true (GM liga via ⚡ na ficha).
+ *  1. O usuário é o AUTOR da mensagem (garante alvos T corretos).
+ *  2. A mensagem possui ao menos 1 grupo de efeito em flags.tormenta20.effects.
+ *  3. A mensagem tem itemData e NÃO é magia (tipo ≠ arc/div/uni).
+ *  4. Ao menos 1 token T-marcado.
+ *  5. O item tem flag MODULE_ID.autoApplyItems[itemId] = true (GM liga via ⚡ na ficha).
  *  6. Sem roll de dano ou ataque (poder ofensivo vai pelo fluxo normal).
+ *
+ * Player → GM: se o user não for GM, delega via socket ao GM (que tem
+ * permissão de modificar atores arbitrários).
  */
 
 import { MODULE_ID } from "@/constants";
+import { autoApplyBuffEffects, extractItemId } from "@/spell-resistance/index";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -34,83 +37,41 @@ function getMsgAuthorId(message: ChatMessage): string {
 // ── Lógica principal ──────────────────────────────────────────────────────────
 
 async function processBuffMessage(message: ChatMessage): Promise<void> {
-    // 1. Somente o autor da mensagem dispara (garante que os alvos T são os do usuário certo)
+    // 1. Apenas o autor processa
     if (getMsgAuthorId(message) !== game.user?.id) return;
 
-    // 2. Somente o GM pode aplicar efeitos a atores arbitrários
-    if (!game.user?.isGM) return;
-
-    // 3. Deve ter grupos de efeito (botões chat-apply-ae)
+    // 2. Deve ter grupos de efeito
     type EffectData = Record<string, unknown>;
     const effectGroups = message.getFlag("tormenta20", "effects") as EffectData[][] | undefined;
     if (!effectGroups?.length) return;
 
-    // 4. Deve ter itemData e NÃO pode ser magia
+    // 3. Deve ter itemData e NÃO ser magia
     const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
     if (!itemData) return;
-
     const tipo = itemData["tipo"] as string | undefined;
-    if (tipo && (SPELL_TIPOS as readonly string[]).includes(tipo)) return; // é magia → modal cuida
+    if (tipo && (SPELL_TIPOS as readonly string[]).includes(tipo)) return;
 
-    // 5. Deve ter alvos T-marcados
-    const targets    = game.user?.targets as Set<FoundryToken> | undefined;
+    // 4. Alvos T-marcados
+    const targets = game.user?.targets as Set<FoundryToken> | undefined;
     if (!targets?.size) return;
     const allTargets = Array.from(targets) as FoundryToken[];
 
-    // 5b. Verifica flag de auto-apply (mapa autoApplyItems no ator, chaveado por itemId)
+    // 5. Flag autoApply ligada para este item (ID extraído do HTML do card)
     const casterActorId = message.speaker?.actor ?? "";
     const casterActor   = game.actors?.get(casterActorId);
-    const itemId        = itemData["_id"] as string | undefined;
+    const itemId        = extractItemId(message);
     type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
     const autoApplyMap  = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApplyItems") as Record<string, boolean> | undefined;
-    const autoApply     = Boolean(itemId && autoApplyMap?.[itemId]);
-    if (!autoApply) return;
+    if (!itemId || !autoApplyMap?.[itemId]) return;
 
-    // 6. Sem roll de dano ou ataque (poder ofensivo → não auto-aplica)
+    // 6. Sem roll de dano ou ataque
     const rolls = message.rolls ?? [];
     const hasDamageRoll = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
-    const hasAttackRoll  = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "attack");
+    const hasAttackRoll = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "attack");
     if (hasDamageRoll || hasAttackRoll) return;
 
-    // ── Aplica todos os grupos de efeito a todos os alvos ─────────────────────
-    let appliedCount = 0;
-
-    for (const effectGroup of effectGroups) {
-        if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
-
-        for (const token of allTargets) {
-            const actor = token.actor;
-            if (!actor) continue;
-
-            // Deep-clone para não mutar os flags da mensagem
-            const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
-
-            // Define startTime para efeitos com duração em segundos
-            const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
-            if (firstDur?.["seconds"]) {
-                const g = game as unknown as { time?: { worldTime: number } };
-                firstDur["startTime"] = g.time?.worldTime ?? 0;
-            }
-
-            try {
-                // Apenas a primeira chamada envia notificação no chat (toChat: true)
-                await actor.createEmbeddedDocuments("ActiveEffect", effectData, {
-                    toChat: appliedCount === 0,
-                });
-                appliedCount++;
-            } catch (err) {
-                console.warn(`[${MODULE_ID}] Falha ao aplicar poder em ${actor.name}:`, err);
-            }
-        }
-    }
-
-    if (appliedCount > 0) {
-        const names = allTargets
-            .filter(t => t.actor)
-            .map(t => t.actor!.name)
-            .join(", ");
-        ui.notifications?.info(`Poder aplicado automaticamente: ${names}`);
-    }
+    const casterName = message.speaker?.alias ?? "Lançador";
+    await autoApplyBuffEffects(effectGroups, allTargets, casterName);
 }
 
 // ── Entrada pública ───────────────────────────────────────────────────────────

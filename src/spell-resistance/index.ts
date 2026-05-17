@@ -407,6 +407,110 @@ function extractSpellName(message: ChatMessage): string {
     return titleMatch?.[1] ?? "Magia";
 }
 
+/**
+ * Extrai o ID do item da mensagem de chat parseando o atributo data-item-id
+ * do HTML do card. O T20 não inclui esse ID nos flags da mensagem, apenas no DOM.
+ */
+export function extractItemId(message: ChatMessage): string | undefined {
+    return message.content?.match(/data-item-id="([^"]+)"/)?.[1];
+}
+
+/**
+ * Aplica efeitos de buff nos alvos automaticamente. Se o usuário for GM, aplica
+ * diretamente; caso contrário (player), delega ao GM via socket (necessário
+ * porque players não têm permissão para modificar atores de terceiros).
+ */
+export async function autoApplyBuffEffects(
+    effectGroups: Record<string, unknown>[][],
+    targets: FoundryToken[],
+    casterName: string,
+): Promise<void> {
+    type EffectData = Record<string, unknown>;
+
+    // GM: aplica diretamente
+    if (game.user?.isGM) {
+        let appliedCount = 0;
+        for (const group of effectGroups) {
+            if (!Array.isArray(group) || !group.length) continue;
+            for (const token of targets) {
+                const actor = token.actor;
+                if (!actor) continue;
+                const data: EffectData[] = JSON.parse(JSON.stringify(group)) as EffectData[];
+                const firstDur = data[0]?.["duration"] as Record<string, unknown> | undefined;
+                if (firstDur?.["seconds"]) {
+                    const g = game as unknown as { time?: { worldTime: number } };
+                    firstDur["startTime"] = g.time?.worldTime ?? 0;
+                }
+                try {
+                    await (actor as FoundryActor & {
+                        createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
+                    }).createEmbeddedDocuments("ActiveEffect", data, { toChat: appliedCount === 0 });
+                    appliedCount++;
+                } catch (err) {
+                    console.warn(`[${MODULE_ID}] Auto-apply em ${actor.name}:`, err);
+                }
+            }
+        }
+        if (appliedCount > 0) {
+            const names = targets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
+            ui.notifications?.info(`Buff aplicado automaticamente: ${names}`);
+        }
+        return;
+    }
+
+    // Player: delega ao GM via socket
+    const gm = findActiveGM();
+    if (!gm) {
+        ui.notifications?.warn("Auto-apply: GM precisa estar online");
+        return;
+    }
+    const targetUuids = targets.map(t => t.actor?.uuid).filter(Boolean) as string[];
+    if (!targetUuids.length) return;
+
+    const req: import("./types").AutoApplyBuffRequest = {
+        type:         "auto-apply-buff",
+        casterName,
+        effectGroups,
+        targetUuids,
+    };
+    game.socket?.emit(`module.${MODULE_ID}`, req);
+    ui.notifications?.info(`Buff auto-aplicado via GM em ${targets.length} alvo(s)`);
+}
+
+/** Handler GM-side do socket auto-apply-buff. */
+async function handleAutoApplyBuffSocket(req: import("./types").AutoApplyBuffRequest): Promise<void> {
+    if (!game.user?.isGM) return;
+    type EffectData = Record<string, unknown>;
+    let appliedCount = 0;
+    const appliedNames: string[] = [];
+
+    for (const uuid of req.targetUuids) {
+        const actor = fromUuidSync(uuid) as FoundryActor | null;
+        if (!actor) continue;
+        for (const group of req.effectGroups) {
+            if (!Array.isArray(group) || !group.length) continue;
+            const data: EffectData[] = JSON.parse(JSON.stringify(group)) as EffectData[];
+            const firstDur = data[0]?.["duration"] as Record<string, unknown> | undefined;
+            if (firstDur?.["seconds"]) {
+                const g = game as unknown as { time?: { worldTime: number } };
+                firstDur["startTime"] = g.time?.worldTime ?? 0;
+            }
+            try {
+                await (actor as FoundryActor & {
+                    createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
+                }).createEmbeddedDocuments("ActiveEffect", data, { toChat: appliedCount === 0 });
+                appliedCount++;
+                if (!appliedNames.includes(actor.name)) appliedNames.push(actor.name);
+            } catch (err) {
+                console.warn(`[${MODULE_ID}] Auto-apply GM-socket em ${actor.name}:`, err);
+            }
+        }
+    }
+    if (appliedCount > 0) {
+        ui.notifications?.info(`${req.casterName}: buff aplicado em ${appliedNames.join(", ")}`);
+    }
+}
+
 // ── Helpers de cálculo ────────────────────────────────────────────────────────
 
 /**
@@ -1041,6 +1145,8 @@ function setupSocket(): void {
         if (data?.type === "spell-resist-preroll") {
             if (data.targetUserId !== game.user?.id) return;
             openUnifiedSpellModal(data);
+        } else if (data?.type === "auto-apply-buff") {
+            void handleAutoApplyBuffSocket(data);
         }
     });
 }
@@ -1100,9 +1206,9 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterActorId = message.speaker?.actor ?? "";
     const isPureBuff    = !isHeal && resistSkill === null && damageTotal === 0 && hasMsgEffects;
 
-    // Resolve flag do item para auto-apply
+    // Resolve flag do item para auto-apply (ID extraído do HTML, não dos flags)
     const casterActor  = game.actors?.get(casterActorId);
-    const spellItemId   = itemData["_id"] as string | undefined;
+    const spellItemId   = extractItemId(message);
     type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
     const autoApplyMap  = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApplyItems") as Record<string, boolean> | undefined;
     const autoEnabled   = Boolean(spellItemId && autoApplyMap?.[spellItemId]);
@@ -1123,38 +1229,12 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
         if (effectiveTargets.length === 0) return;
     }
 
-    // ── Auto-apply buff puro (GM, sem modal) ─────────────────────────────────
-    if (game.user?.isGM && isPureBuff && autoEnabled && effectiveTargets.length > 0) {
+    // ── Auto-apply buff puro (sem modal) — GM aplica direto; player delega ao GM ─
+    if (isPureBuff && autoEnabled && effectiveTargets.length > 0) {
         type EffectData = Record<string, unknown>;
         const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
-        let appliedCount = 0;
-
-        for (const effectGroup of effectGroups) {
-            if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
-            for (const token of effectiveTargets) {
-                const tActor = token.actor;
-                if (!tActor) continue;
-                const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
-                const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
-                if (firstDur?.["seconds"]) {
-                    const g = game as unknown as { time?: { worldTime: number } };
-                    firstDur["startTime"] = g.time?.worldTime ?? 0;
-                }
-                try {
-                    await (tActor as FoundryActor & {
-                        createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
-                    }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
-                    appliedCount++;
-                } catch (err) {
-                    console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
-                }
-            }
-        }
-
-        if (appliedCount > 0) {
-            const names = effectiveTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
-            ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
-        }
+        const casterName   = message.speaker?.alias ?? "Lançador";
+        await autoApplyBuffEffects(effectGroups, effectiveTargets, casterName);
         return;
     }
 
