@@ -174,6 +174,15 @@ function readPmInput($html: JQuery): number {
     return parseInt($html.find('[name="pmCost"]').val() as string, 10) || 0;
 }
 
+function readRdInput($html: JQuery): number {
+    return Math.max(0, parseInt($html.find('[name="rd"]').val() as string, 10) || 0);
+}
+
+/** Aplica RD ao dano, garantindo mínimo 0 (nunca negativo). */
+function applyRd(amount: number, rd: number): number {
+    return Math.max(0, amount - rd);
+}
+
 // ── Token actor resolution ────────────────────────────────────────────────────
 //
 // game.actors.get(id) returns the PROTOTYPE (pv = 0 base value).
@@ -329,6 +338,10 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 <div class="aad-label-sm">DANO</div>
                 <div class="aad-damage-total">${req.damageTotal}</div>
             </div>
+            <div class="aad-pm-row">
+                <span class="aad-label-sm">RD</span>
+                <input type="number" name="rd" value="0" min="0" max="999" class="aad-pm-input" />
+            </div>
             <div class="aad-divider"></div>
             <div class="aad-pm-row">
                 <span class="aad-label-sm">CUSTO DE MANA (PM)</span>
@@ -344,16 +357,18 @@ function openDamagePrompt(req: AutoDamageRequest): void {
             buttons: {
                 full: {
                     icon:  '<i class="fas fa-sword"></i>',
-                    label: "Aplicar Integral",
+                    label: `Aplicar Integral (${req.damageTotal})`,
                     callback: ($html: JQuery) => {
-                        void applyDamage(req.targetTokenId, req.targetActorId, req.damageTotal, readPmInput($html));
+                        const finalDmg = applyRd(req.damageTotal, readRdInput($html));
+                        void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
                     },
                 },
                 half: {
                     icon:  '<i class="fas fa-shield-halved"></i>',
                     label: `Aplicar Metade (${halfDmg})`,
                     callback: ($html: JQuery) => {
-                        void applyDamage(req.targetTokenId, req.targetActorId, halfDmg, readPmInput($html));
+                        const finalDmg = applyRd(halfDmg, readRdInput($html));
+                        void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
                     },
                 },
                 none: {
@@ -391,6 +406,22 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 },
             },
             default: "full",
+            render: ($html: JQuery) => {
+                const $rd     = $html.find('[name="rd"]');
+                const $dialog = $html.closest(".app, .dialog, dialog");
+                const $full   = $dialog.find('button[data-button="full"]');
+                const $half   = $dialog.find('button[data-button="half"]');
+
+                const refresh = (): void => {
+                    const rd       = readRdInput($html);
+                    const fullDmg  = applyRd(req.damageTotal, rd);
+                    const halfFinal = applyRd(halfDmg, rd);
+                    $full.html(`<i class="fas fa-sword"></i> Aplicar Integral (${fullDmg})`);
+                    $half.html(`<i class="fas fa-shield-halved"></i> Aplicar Metade (${halfFinal})`);
+                };
+
+                $rd.on("input", refresh);
+            },
         },
         {
             classes: ["bg3-dialog", "aad-dialog"],
