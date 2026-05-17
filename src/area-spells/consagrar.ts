@@ -200,6 +200,9 @@ async function placeTemplate(meta: {
                 casterName:         meta.casterName,
                 undeadPenalty:      meta.undeadPenalty,
                 createdAtGameTime:  (game as unknown as { time?: { worldTime?: number } }).time?.worldTime ?? 0,
+                // Quem placeu o template (usado pelo botão de remover área para
+                // saber quem é "dono" — GMs sempre veem o botão para todas as áreas).
+                creatorUserId:      game.user?.id ?? "",
             },
         },
     };
@@ -449,6 +452,187 @@ async function removeAEsForTemplate(templateId: string): Promise<void> {
     if (removed > 0) ui.notifications?.info(`Consagrar removida (${removed} efeito(s) limpos)`);
 }
 
+// ── Floating button: remover área ────────────────────────────────────────────
+//
+// Botão injetado no <menu id="scene-controls-layers"> (mesma "lista" do botão
+// de teste secreto). Aparece como ÚLTIMO item, e só fica visível enquanto há
+// pelo menos uma área Consagrar ativa que o usuário pode remover:
+//   - GM: vê o botão se existir QUALQUER área Consagrar na cena
+//   - Jogador: vê o botão se for o creatorUserId de pelo menos uma área
+
+const REMOVE_BTN_ID = "bg3-t20-consagrar-remove-btn";
+
+type ConsagrarTpl = {
+    id: string;
+    user?: string | { id?: string };
+    author?: { id?: string };
+    flags?: Record<string, Record<string, unknown>>;
+};
+
+/** Templates Consagrar que o usuário atual pode remover. GMs veem todas. */
+function getMyConsagrarTemplates(): ConsagrarTpl[] {
+    const all = getConsagrarTemplates() as unknown as ConsagrarTpl[];
+    if (game.user?.isGM) return all;
+    const uid = game.user?.id;
+    if (!uid) return [];
+    return all.filter(t => {
+        const flagged = t.flags?.[MODULE_ID]?.["creatorUserId"] as string | undefined;
+        if (flagged) return flagged === uid;
+        // Fallback (templates antigos, sem flag): tenta author/user nativos
+        const authorId = t.author?.id ?? (typeof t.user === "string" ? t.user : t.user?.id);
+        return authorId === uid;
+    });
+}
+
+function findSceneControlsMenu(): Element | null {
+    return (
+        document.querySelector("menu#scene-controls-layers") ??
+        document.querySelector("aside#scene-controls menu") ??
+        document.querySelector("#ui-left menu")
+    );
+}
+
+function removeRemoveAreaButton(): void {
+    const btn = document.getElementById(REMOVE_BTN_ID);
+    btn?.parentElement?.remove();
+}
+
+function injectRemoveAreaButton(): void {
+    if (document.getElementById(REMOVE_BTN_ID)) return;
+    const menu = findSceneControlsMenu();
+    if (!menu) return;
+
+    const btn = document.createElement("button");
+    btn.id = REMOVE_BTN_ID;
+    btn.type = "button";
+    btn.className = "control ui-control layer icon fa-solid fa-circle-xmark";
+    btn.style.color = "#ffb84d"; // âmbar pra destacar de outros botões
+    btn.setAttribute("data-tooltip", "Remover área de Consagrar");
+    btn.setAttribute("aria-label", "Remover área de Consagrar");
+    btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void onClickRemoveArea();
+    });
+
+    const li = document.createElement("li");
+    li.appendChild(btn);
+    // appendChild → garantido ser o ÚLTIMO item do menu
+    menu.appendChild(li);
+}
+
+/** Reflete o estado atual (área(s) ativa(s) ou não) no botão. */
+function refreshRemoveAreaButton(): void {
+    if (getMyConsagrarTemplates().length === 0) {
+        removeRemoveAreaButton();
+    } else {
+        injectRemoveAreaButton();
+    }
+}
+
+async function onClickRemoveArea(): Promise<void> {
+    const mine = getMyConsagrarTemplates();
+    if (mine.length === 0) {
+        ui.notifications?.info("Nenhuma área de Consagrar ativa para remover.");
+        refreshRemoveAreaButton();
+        return;
+    }
+
+    type SceneLike = { deleteEmbeddedDocuments?(t: string, ids: string[]): Promise<unknown> };
+    const scene = (canvas as unknown as { scene?: SceneLike }).scene;
+    if (!scene?.deleteEmbeddedDocuments) {
+        ui.notifications?.warn("Cena não disponível.");
+        return;
+    }
+
+    const idsToRemove = mine.length === 1
+        ? await confirmSingleRemoval(mine[0])
+        : await pickTemplatesDialog(mine);
+
+    if (!idsToRemove || idsToRemove.length === 0) return;
+
+    try {
+        await scene.deleteEmbeddedDocuments("MeasuredTemplate", idsToRemove);
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Consagrar: falha ao remover área(s):`, err);
+        ui.notifications?.error("Falha ao remover área de Consagrar (veja console).");
+    }
+}
+
+function confirmSingleRemoval(tpl: ConsagrarTpl): Promise<string[] | null> {
+    const caster = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Lançador";
+    return new Promise<string[] | null>((resolve) => {
+        new Dialog({
+            title: "Remover área de Consagrar",
+            content: `
+                <div style="padding:8px 4px;color:#f0ebe0;">
+                    <p style="margin:0 0 6px;">Remover a área de Consagrar de <b>${caster}</b>?</p>
+                    <p style="margin:0;color:#9a8e7a;font-size:0.85em;">
+                        Os efeitos aplicados aos tokens dentro da área serão limpos.
+                    </p>
+                </div>`,
+            buttons: {
+                remove: {
+                    icon:  '<i class="fas fa-circle-xmark"></i>',
+                    label: "Remover",
+                    callback: () => resolve([tpl.id]),
+                },
+                cancel: {
+                    icon:  '<i class="fas fa-times"></i>',
+                    label: "Cancelar",
+                    callback: () => resolve(null),
+                },
+            },
+            default: "remove",
+            close:   () => resolve(null),
+        }).render(true);
+    });
+}
+
+function pickTemplatesDialog(templates: ConsagrarTpl[]): Promise<string[] | null> {
+    return new Promise<string[] | null>((resolve) => {
+        const rows = templates.map((t, i) => {
+            const caster = (t.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Lançador";
+            return `
+                <label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;color:#f0ebe0;">
+                    <input type="checkbox" data-tid="${t.id}" checked />
+                    <span>Área #${i + 1} — <b>${caster}</b></span>
+                </label>`;
+        }).join("");
+
+        new Dialog({
+            title: "Remover áreas de Consagrar",
+            content: `
+                <div style="padding:8px 4px;">
+                    <p style="margin:0 0 8px;color:#f0ebe0;">Selecione as áreas a remover:</p>
+                    ${rows}
+                </div>`,
+            buttons: {
+                remove: {
+                    icon:  '<i class="fas fa-circle-xmark"></i>',
+                    label: "Remover selecionadas",
+                    callback: ($html: JQuery) => {
+                        const root = ($html as unknown as { 0?: HTMLElement })[0] ?? ($html as unknown as HTMLElement);
+                        const ids = Array.from(
+                            (root as HTMLElement).querySelectorAll("input[data-tid]:checked")
+                        )
+                            .map(el => el.getAttribute("data-tid") ?? "")
+                            .filter(Boolean);
+                        resolve(ids.length > 0 ? ids : null);
+                    },
+                },
+                cancel: {
+                    icon:  '<i class="fas fa-times"></i>',
+                    label: "Cancelar",
+                    callback: () => resolve(null),
+                },
+            },
+            default: "remove",
+            close:   () => resolve(null),
+        }).render(true);
+    });
+}
+
 // ── Setup ────────────────────────────────────────────────────────────────────
 
 export function setupConsagrar(): void {
@@ -472,6 +656,7 @@ export function setupConsagrar(): void {
         };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
         void applyAEsForTemplate(template);
+        refreshRemoveAreaButton();
     });
 
     // 3. Template deletado → GM remove AEs criados por ele
@@ -479,6 +664,7 @@ export function setupConsagrar(): void {
         const template = args[0] as { id: string; flags?: Record<string, Record<string, unknown>> };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
         void removeAEsForTemplate(template.id);
+        refreshRemoveAreaButton();
     });
 
     // 4. FASE 2: Token movido → resincroniza com todos os templates Consagrar
@@ -530,6 +716,10 @@ export function setupConsagrar(): void {
     // 7. FASE 3: Ao carregar/trocar cena → sincroniza tokens com templates existentes
     // canvasReady dispara tanto no start do mundo quanto ao trocar de cena
     Hooks.on("canvasReady", () => {
+        // Botão de remover precisa refletir o estado da cena recém-carregada
+        // (vale para GM e jogadores; por isso vem antes do early-return de GM).
+        refreshRemoveAreaButton();
+
         if (!game.user?.isGM) return;
         const templates = getConsagrarTemplates();
         if (templates.length === 0) return;
@@ -544,6 +734,11 @@ export function setupConsagrar(): void {
             ui.notifications?.info(`Consagrar: ${templates.length} área(s) ativa(s) restaurada(s)`);
         })();
     });
+
+    // 8b. Toolbar re-renderizada (mudou de layer, etc.) → re-injeta o botão
+    Hooks.on("renderSceneControls", () => refreshRemoveAreaButton());
+    // 8c. Estado inicial assim que a UI estiver pronta
+    Hooks.once("ready", () => refreshRemoveAreaButton());
 
     // 8. FASE 3: Tempo do mundo avança → remove templates cujo 1 dia expirou
     const ONE_DAY_SECONDS = 86400;
