@@ -18,6 +18,7 @@ import { setupHiddenTest } from "./hidden-test/index";
 import { setupAutoDamage } from "./auto-damage/index";
 import { setupSpellResistance } from "./spell-resistance/index";
 import { setupBuffApply } from "./buff-apply/index";
+import { setupWeaponAETransfer } from "./weapon-ae-transfer/index";
 import { setupSheetRedesign } from "./sheet/index";
 import { log, warn } from "./utils/logging";
 
@@ -48,6 +49,7 @@ Hooks.once("setup", () => {
     setupAutoDamage();
     setupSpellResistance();
     setupBuffApply();
+    setupWeaponAETransfer();
     setupSheetRedesign();
 });
 
