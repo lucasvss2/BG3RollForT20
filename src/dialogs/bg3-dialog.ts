@@ -451,6 +451,15 @@ const DIALOG_STYLES = `
     cursor: pointer !important;
 }
 
+/* Botões de ação no rodapé do modal (Lançar Magia / Preparar Poção):
+   T20 aplica margin-right: 5px no primeiro botão, deslocando o left-edge dele
+   em relação aos demais. Como o pai já tem gap: 8px, zeramos todas as margens
+   para alinhar perfeitamente. Nota: .ability-use-form e .bg3-dialog ficam no
+   MESMO elemento, então sem espaço entre eles no seletor. */
+.window-app.bg3-dialog.ability-use-form .dialog-buttons > button {
+    margin: 0 !important;
+}
+
 /* Left column: keep it compact, vertically center its own content */
 .window-app.bg3-dialog .aprimoramentos-list .item-cost {
     align-items: center !important;
