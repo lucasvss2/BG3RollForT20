@@ -1191,6 +1191,25 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     $html.find("#smf-undead-half").html(`<i class="fas fa-shield-halved"></i> Metade do Dano (${halfU})`);
                 });
 
+                // ── Auto-marca Consagrar se o alvo está em área de Consagrar ──
+                // Detecta o flag consagrarHealingBoost no ator alvo (criado pelo
+                // template de Consagrar). Se presente, marca o checkbox e dispara
+                // o change para aplicar o boost imediatamente.
+                if (preReq.isHeal && targetActor) {
+                    const hasBoost = (targetActor.effects?.contents ?? []).some(e => {
+                        const f = e.flags?.[MODULE_ID] as Record<string, unknown> | undefined;
+                        return f?.["consagrarHealingBoost"] === true;
+                    });
+                    if (hasBoost) {
+                        const $cb = $html.find("#smf-consagrar");
+                        if ($cb.length && !$cb.is(":checked")) {
+                            $cb.prop("checked", true).trigger("change");
+                            // Marca visualmente que veio do template (tooltip)
+                            $cb.closest(".smf-consagrar-label").attr("title", "Alvo está em área de Consagrar — bônus auto-aplicado");
+                        }
+                    }
+                }
+
                 // ── Morto-Vivo (ativa seção de resistência e dano sagrado) ────
                 $html.find("#smf-morto-vivo").on("change", function () {
                     $html.find("#smf-undead-section").toggle($(this).is(":checked"));

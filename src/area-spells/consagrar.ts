@@ -52,7 +52,12 @@ function isUndead(actor: FoundryActor): boolean {
     return normalizeCondName(raca) === "morto-vivo";
 }
 
-/** Calcula tokens cujo centro está dentro do raio do template (em metros do mundo). */
+/**
+ * Calcula tokens cujo centro está dentro do raio do template (em metros do mundo).
+ * Usa `token.document.x/y` ao invés de `token.center` para evitar problemas de
+ * timing — durante updateToken hook a placeable pode estar mid-animation com
+ * coordenadas obsoletas, enquanto o documento sempre tem o valor canônico.
+ */
 function tokensInTemplate(template: {
     x: number; y: number; distance: number;
 }): FoundryToken[] {
@@ -68,10 +73,19 @@ function tokensInTemplate(template: {
     const radiusPx  = template.distance * pxPerUnit;
 
     return tokens.filter(token => {
-        type TokenWithCenter = { center?: { x: number; y: number }; x?: number; y?: number; w?: number; h?: number };
-        const t = token as unknown as TokenWithCenter;
-        const cx = t.center?.x ?? ((t.x ?? 0) + (t.w ?? 0) / 2);
-        const cy = t.center?.y ?? ((t.y ?? 0) + (t.h ?? 0) / 2);
+        type TokenDoc = {
+            document?: { x?: number; y?: number; width?: number; height?: number };
+            x?: number; y?: number; w?: number; h?: number;
+        };
+        const t   = token as unknown as TokenDoc;
+        const doc = t.document;
+        const docX = doc?.x ?? t.x ?? 0;
+        const docY = doc?.y ?? t.y ?? 0;
+        // width/height no document são em grid units; multiplicar por gridSize
+        const widthPx  = doc?.width  != null ? doc.width  * gridSize : (t.w ?? gridSize);
+        const heightPx = doc?.height != null ? doc.height * gridSize : (t.h ?? gridSize);
+        const cx = docX + widthPx / 2;
+        const cy = docY + heightPx / 2;
         const dx = cx - template.x;
         const dy = cy - template.y;
         return Math.sqrt(dx * dx + dy * dy) <= radiusPx;
@@ -172,6 +186,144 @@ async function placeTemplate(meta: {
 
 // ── Apply / Remove AEs (GM-side) ─────────────────────────────────────────────
 
+/** Constrói os dados do AE apropriado pro tipo da criatura. */
+function buildEffectData(actor: FoundryActor, template: {
+    id: string; uuid: string; flags?: Record<string, Record<string, unknown>>;
+}): Record<string, unknown> | null {
+    const moduleFlags   = template.flags?.[MODULE_ID];
+    const undeadPenalty = (moduleFlags?.["undeadPenalty"] as number | undefined) ?? PENALIDADE_BASE;
+
+    if (isUndead(actor)) {
+        return {
+            name: `Consagrar — Penalidade (-${undeadPenalty})`,
+            img: "icons/svg/sun.svg",
+            transfer: false,
+            origin: template.uuid,
+            flags: { [MODULE_ID]: { [FLAG_EFFECT_ORIGIN]: template.id } },
+            changes: [
+                { key: "system.attributes.defesa.bonus",      mode: 2, value: `-${undeadPenalty}`, priority: 20 },
+                { key: "system.modificadores.pericias.geral", mode: 2, value: `-${undeadPenalty}`, priority: 20 },
+            ],
+        };
+    }
+    return {
+        name: "Consagrar — Cura Aprimorada",
+        img: "icons/svg/holy-shield.svg",
+        transfer: false,
+        origin: template.uuid,
+        flags: {
+            [MODULE_ID]: {
+                [FLAG_EFFECT_ORIGIN]: template.id,
+                [FLAG_HEAL_BOOST]:    true,
+            },
+        },
+        changes: [],
+    };
+}
+
+/** Verifica se o token já tem um AE deste template. */
+function tokenHasEffectFromTemplate(actor: FoundryActor, templateId: string): boolean {
+    return (actor.effects?.contents ?? []).some(e =>
+        (e.flags?.[MODULE_ID] as Record<string, unknown> | undefined)?.[FLAG_EFFECT_ORIGIN] === templateId
+    );
+}
+
+/** Aplica o AE deste template ao token (se ainda não tiver). */
+async function applyEffectToToken(token: FoundryToken, template: {
+    id: string; uuid: string; flags?: Record<string, Record<string, unknown>>;
+}): Promise<boolean> {
+    const actor = token.actor;
+    if (!actor) return false;
+    if (tokenHasEffectFromTemplate(actor, template.id)) return false;
+    const data = buildEffectData(actor, template);
+    if (!data) return false;
+    try {
+        await (actor as FoundryActor & {
+            createEmbeddedDocuments(t: string, data: unknown[]): Promise<unknown>;
+        }).createEmbeddedDocuments("ActiveEffect", [data]);
+        return true;
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Consagrar apply em ${actor.name}:`, err);
+        return false;
+    }
+}
+
+/** Remove do token o AE específico deste template. */
+async function removeEffectFromToken(token: FoundryToken, templateId: string): Promise<boolean> {
+    const actor = token.actor;
+    if (!actor) return false;
+    const ours = (actor.effects?.contents ?? []).filter(e =>
+        (e.flags?.[MODULE_ID] as Record<string, unknown> | undefined)?.[FLAG_EFFECT_ORIGIN] === templateId
+    );
+    if (ours.length === 0) return false;
+    try {
+        await (actor as FoundryActor & {
+            deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
+        }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
+        return true;
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Consagrar remove em ${actor.name}:`, err);
+        return false;
+    }
+}
+
+/** Lista todos os templates Consagrar ativos na cena atual. */
+function getConsagrarTemplates(): Array<{
+    id: string; uuid: string; x: number; y: number; distance: number;
+    flags?: Record<string, Record<string, unknown>>;
+}> {
+    type SceneLike = { templates?: { contents?: Array<{ flags?: Record<string, Record<string, unknown>> }> } };
+    const cv = canvas as unknown as { scene?: SceneLike };
+    const templates = cv.scene?.templates?.contents ?? [];
+    return templates.filter(t =>
+        t.flags?.[MODULE_ID]?.[FLAG_SPELL] === SPELL_KEY
+    ) as Array<{
+        id: string; uuid: string; x: number; y: number; distance: number;
+        flags?: Record<string, Record<string, unknown>>;
+    }>;
+}
+
+/**
+ * Lock para evitar sync concorrente do mesmo token. Sem isso, dois updateToken
+ * em sequência rápida (ex: animação Foundry) podem disparar dois apply em paralelo
+ * antes do primeiro persistir, criando duplicatas.
+ */
+const _syncInProgress = new Set<string>();
+
+/** Sincroniza UM token contra TODOS os templates Consagrar na cena. */
+async function syncTokenWithTemplates(token: FoundryToken): Promise<void> {
+    if (!game.user?.isGM) return;
+    if (!token.actor) return;
+    const tokenId = (token as unknown as { id?: string }).id ?? "";
+    if (!tokenId || _syncInProgress.has(tokenId)) return;
+    _syncInProgress.add(tokenId);
+    try {
+        const templates = getConsagrarTemplates();
+        if (templates.length === 0) {
+            // Sem templates ativos — limpa qualquer AE órfão de Consagrar
+            const all = (token.actor.effects?.contents ?? []).filter(e =>
+                (e.flags?.[MODULE_ID] as Record<string, unknown> | undefined)?.[FLAG_EFFECT_ORIGIN] != null
+            );
+            if (all.length > 0) {
+                try {
+                    await (token.actor as FoundryActor & {
+                        deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
+                    }).deleteEmbeddedDocuments("ActiveEffect", all.map(e => e.id));
+                } catch { /* ignore */ }
+            }
+            return;
+        }
+        for (const template of templates) {
+            const inside = tokensInTemplate(template).some(t => t === token);
+            const has    = tokenHasEffectFromTemplate(token.actor, template.id);
+            if (inside && !has)  await applyEffectToToken(token, template);
+            if (!inside && has)  await removeEffectFromToken(token, template.id);
+        }
+    } finally {
+        _syncInProgress.delete(tokenId);
+    }
+}
+
 async function applyAEsForTemplate(template: {
     id: string; uuid: string; x: number; y: number; distance: number;
     flags?: Record<string, Record<string, unknown>>;
@@ -180,59 +332,16 @@ async function applyAEsForTemplate(template: {
     const moduleFlags = template.flags?.[MODULE_ID];
     if (!moduleFlags || moduleFlags[FLAG_SPELL] !== SPELL_KEY) return;
 
-    const undeadPenalty = (moduleFlags["undeadPenalty"] as number | undefined) ?? PENALIDADE_BASE;
     const tokens = tokensInTemplate(template);
-
     let undeadCount = 0;
     let livingCount = 0;
 
     for (const token of tokens) {
-        const actor = token.actor;
-        if (!actor) continue;
-
-        type ActorWithCreate = FoundryActor & {
-            createEmbeddedDocuments(t: string, data: unknown[], opts?: Record<string, unknown>): Promise<unknown>;
-        };
-        const a = actor as ActorWithCreate;
-
-        if (isUndead(actor)) {
-            const penaltyEffect = {
-                name: `Consagrar — Penalidade (-${undeadPenalty})`,
-                img: "icons/svg/sun.svg",
-                transfer: false,
-                origin: template.uuid,
-                flags: { [MODULE_ID]: { [FLAG_EFFECT_ORIGIN]: template.id } },
-                changes: [
-                    { key: "system.attributes.defesa.bonus",        mode: 2, value: `-${undeadPenalty}`, priority: 20 },
-                    { key: "system.modificadores.pericias.geral",   mode: 2, value: `-${undeadPenalty}`, priority: 20 },
-                ],
-            };
-            try {
-                await a.createEmbeddedDocuments("ActiveEffect", [penaltyEffect]);
-                undeadCount++;
-            } catch (err) {
-                console.warn(`[${MODULE_ID}] Consagrar penalty em ${actor.name}:`, err);
-            }
-        } else {
-            const boostEffect = {
-                name: "Consagrar — Cura Aprimorada",
-                img: "icons/svg/holy-shield.svg",
-                transfer: false,
-                origin: template.uuid,
-                flags: {
-                    [MODULE_ID]: {
-                        [FLAG_EFFECT_ORIGIN]: template.id,
-                        [FLAG_HEAL_BOOST]:    true,
-                    },
-                },
-                changes: [],
-            };
-            try {
-                await a.createEmbeddedDocuments("ActiveEffect", [boostEffect]);
-                livingCount++;
-            } catch (err) {
-                console.warn(`[${MODULE_ID}] Consagrar boost em ${actor.name}:`, err);
-            }
+        if (!token.actor) continue;
+        const applied = await applyEffectToToken(token, template);
+        if (applied) {
+            if (isUndead(token.actor)) undeadCount++;
+            else                       livingCount++;
         }
     }
 
@@ -243,7 +352,25 @@ async function applyAEsForTemplate(template: {
 
 async function removeAEsForTemplate(templateId: string): Promise<void> {
     if (!game.user?.isGM) return;
-    const actors = (game.actors?.contents ?? []) as unknown as FoundryActor[];
+
+    // Coleta atores únicos de DOIS lugares:
+    //   (1) game.actors.contents — atores do mundo
+    //   (2) canvas.tokens.placeables[*].actor — atores SINTÉTICOS de tokens
+    //       unlinked (NPCs em cena). Importante: para tokens unlinked, o
+    //       synthetic.actor é uma instância DIFERENTE com mesmo id do world
+    //       actor; precisamos deduplicar por REFERÊNCIA (Set), não por id.
+    const actorsSet = new Set<FoundryActor>();
+    for (const a of ((game.actors?.contents ?? []) as unknown as FoundryActor[])) {
+        if (a) actorsSet.add(a);
+    }
+    type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+    const cv = canvas as unknown as CanvasLike;
+    for (const tk of (cv.tokens?.placeables ?? [])) {
+        const a = tk.actor;
+        if (a) actorsSet.add(a);
+    }
+    const actors = [...actorsSet];
+
     let removed = 0;
     for (const actor of actors) {
         const ours = (actor.effects?.contents ?? []).filter(e =>
@@ -292,5 +419,51 @@ export function setupConsagrar(): void {
         const template = args[0] as { id: string; flags?: Record<string, Record<string, unknown>> };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
         void removeAEsForTemplate(template.id);
+    });
+
+    // 4. FASE 2: Token movido → resincroniza com todos os templates Consagrar
+    Hooks.on("updateToken", (...args: unknown[]) => {
+        const tokenDoc = args[0] as { object?: FoundryToken; x?: number; y?: number };
+        const changes  = args[1] as Record<string, unknown>;
+        // Só interessa se posição mudou
+        if (changes["x"] === undefined && changes["y"] === undefined) return;
+        if (getConsagrarTemplates().length === 0) return;
+        const token = tokenDoc.object;
+        if (!token) return;
+        void syncTokenWithTemplates(token);
+    });
+
+    // 5. FASE 2: Token criado na cena → checa se cai em algum template Consagrar
+    Hooks.on("createToken", (...args: unknown[]) => {
+        const tokenDoc = args[0] as { object?: FoundryToken };
+        if (getConsagrarTemplates().length === 0) return;
+        const token = tokenDoc.object;
+        if (!token) return;
+        void syncTokenWithTemplates(token);
+    });
+
+    // 6. FASE 2: Template movido/redimensionado → reaplica todos os tokens
+    Hooks.on("updateMeasuredTemplate", (...args: unknown[]) => {
+        const tplDoc  = args[0] as {
+            id: string; uuid: string; x: number; y: number; distance: number;
+            flags?: Record<string, Record<string, unknown>>;
+        };
+        const changes = args[1] as Record<string, unknown>;
+        if (tplDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
+        if (changes["x"] === undefined && changes["y"] === undefined && changes["distance"] === undefined) return;
+        if (!game.user?.isGM) return;
+        // Re-sync de todos os tokens da cena para esse template
+        type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+        const cv = canvas as unknown as CanvasLike;
+        const tokens = cv.tokens?.placeables ?? [];
+        void (async () => {
+            for (const token of tokens) {
+                if (!token.actor) continue;
+                const inside = tokensInTemplate(tplDoc).some(t => t === token);
+                const has    = tokenHasEffectFromTemplate(token.actor, tplDoc.id);
+                if (inside && !has)  await applyEffectToToken(token, tplDoc);
+                if (!inside && has)  await removeEffectFromToken(token, tplDoc.id);
+            }
+        })();
     });
 }
