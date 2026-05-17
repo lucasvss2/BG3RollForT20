@@ -1403,7 +1403,15 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
 
     const damageRoll = rolls.find(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
 
-    const isHeal      = damageRoll != null && (damageRoll.formula ?? "").includes("curapv");
+    // Detecta Truque cedo — o roll de cura original foi suprimido em preCreate,
+    // então não podemos depender de damageRoll para determinar isHeal nesse caso.
+    const spellNameEarly = extractSpellName(message);
+    const truqueAtivo    =
+        normalizeCondName(spellNameEarly) === "curar ferimentos"
+        && /truque/i.test(message.content ?? "")
+        && /1d8/i.test(message.content ?? "");
+    const isHeal      = truqueAtivo
+        || (damageRoll != null && (damageRoll.formula ?? "").includes("curapv"));
     const resistTxt   = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim();
     const damageTotal = damageRoll?.total ?? 0;
 
@@ -1461,13 +1469,8 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
         && normalizeCondName(spellName) === "curar ferimentos"
         && /fadiga/i.test(message.content ?? "");
 
-    // Detecta o aprimoramento "Truque" de Curar Ferimentos — vira 1d8 dano de luz vs morto-vivo.
-    // Rolamos um 1d8 separadamente (o T20 já rolou 2d8+2 da cura original, que ignoramos).
-    const truqueAtivo = isHeal
-        && normalizeCondName(spellName) === "curar ferimentos"
-        && /truque/i.test(message.content ?? "")
-        && /1d8/i.test(message.content ?? "");
-
+    // truqueAtivo já foi calculado no topo de processSpellMessage.
+    // O roll de 2d8+2 já foi suprimido pelo preCreate hook quando Truque está ativo.
     let effectiveDamage  = damageTotal;
     let effectiveMaxHeal = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
 
@@ -1539,10 +1542,50 @@ function setupCreateChatHook(): void {
     });
 }
 
+/**
+ * Intercepta a mensagem ANTES de ser criada para remover o roll original de
+ * cura (2d8+2 de Curar Ferimentos) quando o aprimoramento Truque está ativo —
+ * o Truque substitui a cura por 1d8 de dano de luz, então a rolagem original
+ * não deve aparecer no chat. Roda apenas no cliente do autor.
+ */
+function setupTruquePreCreateHook(): void {
+    Hooks.on("preCreateChatMessage", (...args: unknown[]): void => {
+        type DocLike = { updateSource(changes: Record<string, unknown>): void };
+        const doc      = args[0] as DocLike;
+        const data     = args[1] as Record<string, unknown>;
+        const userId   = args[3] as string;
+        if (userId !== game.user?.id) return;
+
+        const content = (data["content"] as string | undefined) ?? "";
+        if (!content) return;
+
+        // Detecta Truque em Curar Ferimentos no conteúdo do card
+        if (!/truque/i.test(content)) return;
+        if (!/1d8/i.test(content)) return;
+        if (!/curar\s+ferimentos/i.test(content)) return;
+
+        // Remove rolls do tipo "damage" (que é o roll de cura 2d8+2)
+        const rolls = data["rolls"] as unknown[] | undefined;
+        if (!Array.isArray(rolls) || !rolls.length) return;
+        const filtered = rolls.filter(r => {
+            try {
+                const rd = typeof r === "string" ? JSON.parse(r) as Record<string, unknown> : r as Record<string, unknown>;
+                const opts = rd["options"] as Record<string, unknown> | undefined;
+                return opts?.["type"] !== "damage";
+            } catch {
+                return true;
+            }
+        });
+        if (filtered.length === rolls.length) return; // nada a remover
+        doc.updateSource({ rolls: filtered });
+    });
+}
+
 // ── Entrada pública ───────────────────────────────────────────────────────────
 
 export function setupSpellResistance(): void {
     ensureStyles();
     setupSocket();
+    setupTruquePreCreateHook();
     setupCreateChatHook();
 }

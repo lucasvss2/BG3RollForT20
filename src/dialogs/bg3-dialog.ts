@@ -403,6 +403,12 @@ const DIALOG_STYLES = `
     border-bottom: none !important;
 }
 
+/* T20 às vezes insere <hr> entre os <li> — esconde para não duplicar o divisor */
+.window-app.bg3-dialog .aprimoramentos-list hr,
+.window-app.bg3-dialog .aprimoramentos-list li.item > hr {
+    display: none !important;
+}
+
 /* Left column: keep it compact, vertically center its own content */
 .window-app.bg3-dialog .aprimoramentos-list .item-cost {
     align-items: center !important;
