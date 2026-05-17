@@ -461,6 +461,87 @@ async function removeAEsForTemplate(templateId: string): Promise<void> {
 //   - Jogador: vê o botão se for o creatorUserId de pelo menos uma área
 
 const REMOVE_BTN_ID = "bg3-t20-consagrar-remove-btn";
+const CONSAGRAR_STYLES_ID = "bg3-t20-consagrar-styles";
+
+// CSS específico do dialog Consagrar — pequeno complemento ao tema bg3-dialog
+// (que já cuida do gradiente, header, footer, botões e checkboxes).
+const CONSAGRAR_STYLES = `
+.window-app.bg3-dialog .bg3-consagrar-remove {
+    padding: 14px 16px 6px;
+}
+.window-app.bg3-dialog .bg3-consagrar-remove p {
+    margin: 0 0 8px;
+    color: #d0c4a8;
+    font-family: "Palatino Linotype", "Book Antiqua", serif;
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+.window-app.bg3-dialog .bg3-consagrar-remove p b {
+    color: #c8a96e;
+    font-weight: 700;
+}
+.window-app.bg3-dialog .bg3-consagrar-remove .hint {
+    color: #8a7450;
+    font-size: 0.82rem;
+    font-style: italic;
+    margin-top: 4px;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker {
+    padding: 12px 16px 8px;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker > .picker-intro {
+    color: #8a7450;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin: 0 0 10px;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker .picker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(106, 78, 24, 0.18);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker .picker-row:last-child {
+    border-bottom: none;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker .picker-row:hover {
+    background: rgba(106, 78, 24, 0.12);
+}
+.window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-idx {
+    color: #8a7450;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    min-width: 56px;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-name {
+    color: #d0c4a8;
+    font-family: "Palatino Linotype", serif;
+    font-size: 0.95rem;
+}
+.window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-name b {
+    color: #c8a96e;
+    font-weight: 700;
+}
+`;
+
+function ensureConsagrarStyles(): void {
+    if (document.getElementById(CONSAGRAR_STYLES_ID)) return;
+    const el = document.createElement("style");
+    el.id = CONSAGRAR_STYLES_ID;
+    el.textContent = CONSAGRAR_STYLES;
+    document.head.appendChild(el);
+}
+
+function esc(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 type ConsagrarTpl = {
     id: string;
@@ -560,16 +641,14 @@ async function onClickRemoveArea(): Promise<void> {
 }
 
 function confirmSingleRemoval(tpl: ConsagrarTpl): Promise<string[] | null> {
-    const caster = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Lançador";
+    const caster = esc((tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Lançador");
     return new Promise<string[] | null>((resolve) => {
         new Dialog({
             title: "Remover área de Consagrar",
             content: `
-                <div style="padding:8px 4px;color:#f0ebe0;">
-                    <p style="margin:0 0 6px;">Remover a área de Consagrar de <b>${caster}</b>?</p>
-                    <p style="margin:0;color:#9a8e7a;font-size:0.85em;">
-                        Os efeitos aplicados aos tokens dentro da área serão limpos.
-                    </p>
+                <div class="bg3-consagrar-remove">
+                    <p>Remover a área de Consagrar de <b>${caster}</b>?</p>
+                    <p class="hint">Os efeitos aplicados aos tokens dentro da área serão limpos.</p>
                 </div>`,
             buttons: {
                 remove: {
@@ -585,26 +664,27 @@ function confirmSingleRemoval(tpl: ConsagrarTpl): Promise<string[] | null> {
             },
             default: "remove",
             close:   () => resolve(null),
-        }).render(true);
+        }, { classes: ["bg3-dialog"] }).render(true);
     });
 }
 
 function pickTemplatesDialog(templates: ConsagrarTpl[]): Promise<string[] | null> {
     return new Promise<string[] | null>((resolve) => {
         const rows = templates.map((t, i) => {
-            const caster = (t.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Lançador";
+            const caster = esc((t.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Lançador");
             return `
-                <label style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;color:#f0ebe0;">
+                <label class="picker-row">
                     <input type="checkbox" data-tid="${t.id}" checked />
-                    <span>Área #${i + 1} — <b>${caster}</b></span>
+                    <span class="row-idx">Área #${i + 1}</span>
+                    <span class="row-name"><b>${caster}</b></span>
                 </label>`;
         }).join("");
 
         new Dialog({
             title: "Remover áreas de Consagrar",
             content: `
-                <div style="padding:8px 4px;">
-                    <p style="margin:0 0 8px;color:#f0ebe0;">Selecione as áreas a remover:</p>
+                <div class="bg3-consagrar-picker">
+                    <p class="picker-intro">Selecione as áreas a remover</p>
                     ${rows}
                 </div>`,
             buttons: {
@@ -629,13 +709,16 @@ function pickTemplatesDialog(templates: ConsagrarTpl[]): Promise<string[] | null
             },
             default: "remove",
             close:   () => resolve(null),
-        }).render(true);
+        }, { classes: ["bg3-dialog"] }).render(true);
     });
 }
 
 // ── Setup ────────────────────────────────────────────────────────────────────
 
 export function setupConsagrar(): void {
+    // CSS específico dos dialogs Consagrar (complementa o tema bg3-dialog)
+    ensureConsagrarStyles();
+
     // 1. Detecta cast (apenas autor processa para prompt de posicionamento)
     Hooks.on("createChatMessage", (...args: unknown[]) => {
         const message = args[0] as ChatMessage;
