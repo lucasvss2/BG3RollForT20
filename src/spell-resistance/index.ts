@@ -511,6 +511,125 @@ async function handleAutoApplyBuffSocket(req: import("./types").AutoApplyBuffReq
     }
 }
 
+// ── Purificação ───────────────────────────────────────────────────────────────
+
+/** Condições removíveis pela magia Purificação (do livro do jogador). */
+const PURIFICATION_CONDITIONS: ReadonlySet<string> = new Set([
+    "abalado", "apavorado", "alquebrado", "atordoado", "cego", "confuso",
+    "debilitado", "enjoado", "envenenado", "esmorecido", "exausto",
+    "fascinado", "fatigado", "fraco", "frustrado", "lento", "ofuscado",
+    "paralisado", "pasmo", "surdo",
+]);
+
+/** Normaliza nome de condição: minúsculo + sem acentos, para matching robusto. */
+function normalizeCondName(s: string): string {
+    return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+}
+
+/** Encontra ActiveEffects no ator que correspondem a condições purificáveis. */
+function findPurifiableEffects(actor: FoundryActor): { id: string; name: string }[] {
+    type EffectLike = { id: string; name?: string; statuses?: Set<string> | string[] };
+    const effects = ((actor as unknown as { effects?: { contents?: EffectLike[] } }).effects?.contents) ?? [];
+    const out: { id: string; name: string }[] = [];
+
+    for (const eff of effects) {
+        let matched: string | undefined;
+
+        // 1. Via statuses (Foundry v11+)
+        const statuses = eff.statuses;
+        if (statuses) {
+            const arr = Array.isArray(statuses) ? statuses : Array.from(statuses);
+            for (const sid of arr) {
+                if (PURIFICATION_CONDITIONS.has(normalizeCondName(sid))) {
+                    matched = sid;
+                    break;
+                }
+            }
+        }
+        // 2. Via nome do effect (fallback)
+        if (!matched && eff.name && PURIFICATION_CONDITIONS.has(normalizeCondName(eff.name))) {
+            matched = eff.name;
+        }
+
+        if (matched) out.push({ id: eff.id, name: eff.name ?? matched });
+    }
+    return out;
+}
+
+/** Handler principal da Purificação: remove condições matching dos alvos T. */
+async function handlePurification(_message: ChatMessage, casterName: string): Promise<void> {
+    const targets = Array.from(game.user?.targets ?? []) as FoundryToken[];
+    if (!targets.length) {
+        ui.notifications?.info("Purificação: nenhum alvo selecionado (T)");
+        return;
+    }
+
+    type TargetInfo = { token: FoundryToken; matches: { id: string; name: string }[] };
+    const targetsWithMatches: TargetInfo[] = [];
+    for (const token of targets) {
+        if (!token.actor) continue;
+        const matches = findPurifiableEffects(token.actor);
+        if (matches.length > 0) targetsWithMatches.push({ token, matches });
+    }
+
+    if (targetsWithMatches.length === 0) {
+        ui.notifications?.info("Purificação: nenhum alvo tem condições purificáveis");
+        return;
+    }
+
+    // GM: aplica direto. Player: delega via socket.
+    if (game.user?.isGM) {
+        for (const { token, matches } of targetsWithMatches) {
+            const ids = matches.map(m => m.id);
+            try {
+                await (token.actor! as FoundryActor & {
+                    deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
+                }).deleteEmbeddedDocuments("ActiveEffect", ids);
+                ui.notifications?.info(`Purificação: removida(s) ${matches.map(m => m.name).join(", ")} de ${token.actor!.name}`);
+            } catch (err) {
+                console.warn(`[${MODULE_ID}] Purificação em ${token.actor!.name}:`, err);
+            }
+        }
+        return;
+    }
+
+    const gm = findActiveGM();
+    if (!gm) {
+        ui.notifications?.warn("Purificação: GM precisa estar online para remover condições de alvos não-próprios");
+        return;
+    }
+
+    const req: import("./types").PurificationRequest = {
+        type:        "purification",
+        casterName,
+        targets:     targetsWithMatches.map(({ token, matches }) => ({
+            actorUuid:   token.actor!.uuid,
+            effectIds:   matches.map(m => m.id),
+            effectNames: matches.map(m => m.name),
+        })),
+    };
+    game.socket?.emit(`module.${MODULE_ID}`, req);
+    const totalCond = targetsWithMatches.reduce((s, t) => s + t.matches.length, 0);
+    ui.notifications?.info(`Purificação: ${totalCond} condição(ões) enviada(s) ao GM para remoção`);
+}
+
+/** Handler GM-side do socket purification. */
+async function handlePurificationSocket(req: import("./types").PurificationRequest): Promise<void> {
+    if (!game.user?.isGM) return;
+    for (const t of req.targets) {
+        const actor = fromUuidSync(t.actorUuid) as FoundryActor | null;
+        if (!actor || !t.effectIds.length) continue;
+        try {
+            await (actor as FoundryActor & {
+                deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
+            }).deleteEmbeddedDocuments("ActiveEffect", t.effectIds);
+            ui.notifications?.info(`Purificação (${req.casterName}): removida(s) ${t.effectNames.join(", ")} de ${actor.name}`);
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Purificação GM-socket em ${actor.name}:`, err);
+        }
+    }
+}
+
 // ── Helpers de cálculo ────────────────────────────────────────────────────────
 
 /**
@@ -1169,6 +1288,8 @@ function setupSocket(): void {
             openUnifiedSpellModal(data);
         } else if (data?.type === "auto-apply-buff") {
             void handleAutoApplyBuffSocket(data);
+        } else if (data?.type === "purification") {
+            void handlePurificationSocket(data);
         }
     });
 }
@@ -1209,6 +1330,15 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
 
     // Ignora se tiver roll de ataque (tratado pelo auto-damage)
     if (rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "attack")) return;
+
+    // ── Purificação: handler especial (apenas o autor processa) ──────────────
+    if (getMsgAuthorId(message) === game.user?.id) {
+        const spellName = extractSpellName(message);
+        if (normalizeCondName(spellName) === "purificacao") {
+            await handlePurification(message, message.speaker?.alias ?? "Lançador");
+            return;
+        }
+    }
 
     const damageRoll = rolls.find(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
 

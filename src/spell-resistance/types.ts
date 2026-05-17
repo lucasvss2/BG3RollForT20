@@ -127,4 +127,20 @@ export interface AutoApplyBuffRequest {
     targetUuids: string[];
 }
 
-export type SpellResistSocketData = SpellResistPreRollRequest | SpellResistRequest | AutoApplyBuffRequest;
+/**
+ * Pedido de purificação — enviado do cliente do lançador (player) ao GM
+ * para remover condições matching dos alvos. O GM tem permissão de deletar
+ * ActiveEffects em atores arbitrários.
+ */
+export interface PurificationRequest {
+    type: "purification";
+    casterName: string;
+    /** Lista de alvos com os IDs dos efeitos a deletar em cada um */
+    targets: { actorUuid: string; effectIds: string[]; effectNames: string[] }[];
+}
+
+export type SpellResistSocketData =
+    | SpellResistPreRollRequest
+    | SpellResistRequest
+    | AutoApplyBuffRequest
+    | PurificationRequest;
