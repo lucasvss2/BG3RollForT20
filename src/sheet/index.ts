@@ -1202,7 +1202,7 @@ form.tormenta20.tabbed select:focus {
 .app.window-app.tormenta20:not(.sheet) .window-content form { padding: 8px 12px !important; }
 .app.window-app.tormenta20:not(.sheet) h2,
 .app.window-app.tormenta20:not(.sheet) h3,
-.app.window-app.tormenta20:not(.sheet) h4 {
+.app.window-app.tormenta20:not(.sheet) h4:not(.item-name) {
     color: #c9a76a !important; font-family: 'Cinzel', serif !important;
     border-bottom: 1px solid rgba(201,167,106,0.25) !important; padding-bottom: 4px !important;
 }
