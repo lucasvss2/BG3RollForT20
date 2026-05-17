@@ -319,11 +319,11 @@ const DIALOG_STYLES = `
 /* Buttons / anchors inside table cells */
 .window-app.bg3-dialog tbody td > button,
 .window-app.bg3-dialog tbody td > a {
-    background: linear-gradient(to bottom, #5c3a10, #3a2208) !important;
-    border: 1px solid #7a5818 !important;
+    background: linear-gradient(to bottom, var(--bg3-btn-bg-top), var(--bg3-btn-bg-bottom)) !important;
+    border: 1px solid var(--bg3-btn-border) !important;
     border-radius: 3px !important;
     box-shadow: 0 0 8px rgba(139, 105, 20, 0.25), inset 0 1px rgba(255, 220, 150, 0.12) !important;
-    color: #f0e0b0 !important;
+    color: var(--bg3-btn-text) !important;
     cursor: pointer !important;
     display: inline-flex !important;
     align-items: center !important;
@@ -358,9 +358,9 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog tbody td > button:hover,
 .window-app.bg3-dialog tbody td > a:hover {
     background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
-    border-color: #c8a96e !important;
-    box-shadow: 0 0 14px rgba(200, 169, 110, 0.45), inset 0 1px rgba(255, 220, 150, 0.2) !important;
-    color: #fff8e8 !important;
+    border-color: var(--bg3-accent) !important;
+    box-shadow: 0 0 14px var(--bg3-tint-bold), inset 0 1px rgba(255, 220, 150, 0.2) !important;
+    color: var(--bg3-btn-text-hover) !important;
 }
 
 /* ── t20 enhancement list (ul.aprimoramentos-list) ──────────────────────── */
@@ -376,13 +376,13 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog .aprimoramentos-list .items-header {
     background: transparent !important;
     border: none !important;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border-bottom: 1px solid var(--bg3-divider) !important;
     margin: 0 !important;
     padding: 4px 8px !important;
 }
 
 .window-app.bg3-dialog .aprimoramentos-list .items-header h3 {
-    color: #8a7450 !important;
+    color: var(--bg3-accent-muted) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.75rem !important;
     font-weight: normal !important;
@@ -394,7 +394,7 @@ const DIALOG_STYLES = `
 /* Each enhancement row — vertically centered, padding simétrico 4px */
 .window-app.bg3-dialog .aprimoramentos-list li.item {
     align-items: center !important;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.12) !important;
+    border-bottom: 1px solid var(--bg3-divider-soft) !important;
     min-height: 28px !important;
     padding: 4px 8px !important;
 }

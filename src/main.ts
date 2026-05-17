@@ -10,6 +10,7 @@
  */
 
 import { MODULE_ID, SYSTEM_ID } from "./constants";
+import { setupTheme } from "./theme/index";
 import { setupIntegration } from "./integration/index";
 import { setupDialogStyling } from "./dialogs/bg3-dialog";
 import { setupChatStyling } from "./chat/chatStyles";
@@ -39,6 +40,7 @@ Hooks.once("init", () => {
 
 Hooks.once("setup", () => {
     if (game.system.id !== SYSTEM_ID) return;
+    setupTheme();           // PRIMEIRO — tokens CSS disponíveis para os demais
     setupIntegration();
     setupDialogStyling();
     setupChatStyling();

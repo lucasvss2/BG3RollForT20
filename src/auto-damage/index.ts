@@ -6,7 +6,8 @@ import type { AutoDamageRequest, AttackRerollRequest, AttackMissNotify, AutoDama
 const AUTO_DAMAGE_STYLES_ID = "bg3-t20-auto-damage-styles";
 
 const AUTO_DAMAGE_STYLES = `
-/* ── Auto-damage prompt dialog ─────────────────────────────────────────── */
+/* ── Auto-damage prompt dialog ──────────────────────────────────────────── */
+/* MIGRADO PARA TOKENS: cores via var(--bg3-*) — ver src/theme/tokens.ts. */
 
 .aad-body {
     padding: 4px 0 2px;
@@ -17,23 +18,23 @@ const AUTO_DAMAGE_STYLES = `
     text-align: center;
 }
 .aad-label-sm {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-size: 0.72rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     flex: 0 0 auto;
 }
 .aad-target-name {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-size: clamp(1.3rem, 3vw, 1.8rem);
     font-weight: 700;
     letter-spacing: 0.14em;
-    text-shadow: 0 0 18px rgba(200,169,110,0.55);
+    text-shadow: 0 0 18px rgba(var(--bg3-accent-rgb), 0.55);
     text-transform: uppercase;
     margin: 4px 0 2px;
 }
 .aad-divider {
-    background: linear-gradient(to right, transparent, rgba(200,169,110,0.45), transparent);
+    background: linear-gradient(to right, transparent, var(--bg3-tint-bold), transparent);
     height: 1px;
     margin: 4px 16px;
 }
@@ -45,7 +46,7 @@ const AUTO_DAMAGE_STYLES = `
     flex-wrap: wrap;
 }
 .aad-value-lg {
-    color: #e8d8a8;
+    color: var(--bg3-accent-bright);
     font-size: 1.05rem;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -53,13 +54,13 @@ const AUTO_DAMAGE_STYLES = `
     text-align: right;
 }
 .aad-attack-val {
-    color: #6ecf7a;
+    color: var(--bg3-color-success);
     font-size: 1.1rem;
     font-weight: 900;
     letter-spacing: 0.04em;
 }
 .aad-def-val {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-size: 1.05rem;
     font-weight: 700;
 }
@@ -71,11 +72,11 @@ const AUTO_DAMAGE_STYLES = `
     gap: 2px;
 }
 .aad-damage-total {
-    color: #cc4444;
+    color: var(--bg3-color-danger);
     font-size: 3.4rem;
     font-weight: 900;
     line-height: 1;
-    text-shadow: 0 0 30px rgba(204,68,68,0.6);
+    text-shadow: 0 0 30px rgba(204, 68, 68, 0.6);
 }
 .aad-pm-row {
     display: flex;
@@ -86,10 +87,10 @@ const AUTO_DAMAGE_STYLES = `
 .aad-pm-input {
     width: 70px;
     text-align: center;
-    background: rgba(0,0,0,0.35);
-    border: 1px solid rgba(200,169,110,0.35);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--bg3-border-strong);
     border-radius: 3px;
-    color: #e8d8a8;
+    color: var(--bg3-accent-bright);
     font-family: "Modesto Condensed", monospace;
     font-size: 1rem;
     padding: 2px 6px;
@@ -97,22 +98,22 @@ const AUTO_DAMAGE_STYLES = `
 }
 .aad-pm-input:focus {
     outline: none;
-    border-color: rgba(200,169,110,0.7);
+    border-color: rgba(var(--bg3-accent-rgb), 0.7);
 }
 
 /* ── Reroll chat card header ───────────────────────────────────────────── */
 
 .bg3-reroll-header {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.82rem;
     font-weight: 700;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    text-shadow: 0 0 12px rgba(200,169,110,0.45);
+    text-shadow: 0 0 12px var(--bg3-tint-bold);
     text-align: center;
     padding: 4px 8px 6px;
-    border-bottom: 1px solid rgba(200,169,110,0.35);
+    border-bottom: 1px solid var(--bg3-border-strong);
     margin-bottom: 4px;
 }
 
