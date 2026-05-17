@@ -66,10 +66,19 @@ function isUndead(actor: FoundryActor): boolean {
 }
 
 /**
- * Calcula tokens cujo centro está dentro do raio do template (em metros do mundo).
- * Usa `token.document.x/y` ao invés de `token.center` para evitar problemas de
- * timing — durante updateToken hook a placeable pode estar mid-animation com
- * coordenadas obsoletas, enquanto o documento sempre tem o valor canônico.
+ * Calcula tokens cujo centro está dentro do raio do template.
+ *
+ * Tudo é expresso em QUADRADOS (não pixels) para ser independente do tamanho
+ * de pixel por quadrado de cada cena.
+ *
+ * - template.x / template.y são pixels → dividir por gridSize → quadrados
+ * - token.document.x / y são pixels  → dividir por gridSize → quadrados
+ * - token.document.width / height já estão em quadrados (Foundry v13)
+ * - template.distance está em metros → dividir por gridDist (metros/quadrado)
+ *   → raio em quadrados (ex.: 9m / 1.5m = 6 quadrados)
+ *
+ * Usa token.document em vez de token.center/token.x para evitar posições
+ * obsoletas durante a animação de movimento.
  */
 function tokensInTemplate(template: {
     x: number; y: number; distance: number;
@@ -78,30 +87,36 @@ function tokensInTemplate(template: {
         tokens?: { placeables?: FoundryToken[] };
         scene?: { grid?: { size?: number; distance?: number } };
     };
-    const cv = canvas as unknown as CanvasLike;
-    const tokens = cv.tokens?.placeables ?? [];
-    const gridSize = cv.scene?.grid?.size ?? 100;
-    const gridDist = cv.scene?.grid?.distance ?? 1.5;
-    const pxPerUnit = gridSize / gridDist;
-    const radiusPx  = template.distance * pxPerUnit;
+    const cv       = canvas as unknown as CanvasLike;
+    const tokens   = cv.tokens?.placeables ?? [];
+    const gridSize = cv.scene?.grid?.size     ?? 100; // px/quadrado
+    const gridDist = cv.scene?.grid?.distance ?? 1.5; // m/quadrado
+
+    // Raio em quadrados: 9m / 1.5m = 6 quadrados (independente de px/quadrado)
+    const radiusSq = template.distance / gridDist;
+
+    // Centro do template em quadrados
+    const tCxSq = template.x / gridSize;
+    const tCySq = template.y / gridSize;
 
     return tokens.filter(token => {
         type TokenDoc = {
             document?: { x?: number; y?: number; width?: number; height?: number };
-            x?: number; y?: number; w?: number; h?: number;
+            x?: number; y?: number;
         };
         const t   = token as unknown as TokenDoc;
         const doc = t.document;
-        const docX = doc?.x ?? t.x ?? 0;
-        const docY = doc?.y ?? t.y ?? 0;
-        // width/height no document são em grid units; multiplicar por gridSize
-        const widthPx  = doc?.width  != null ? doc.width  * gridSize : (t.w ?? gridSize);
-        const heightPx = doc?.height != null ? doc.height * gridSize : (t.h ?? gridSize);
-        const cx = docX + widthPx / 2;
-        const cy = docY + heightPx / 2;
-        const dx = cx - template.x;
-        const dy = cy - template.y;
-        return Math.sqrt(dx * dx + dy * dy) <= radiusPx;
+        const docXpx = doc?.x ?? t.x ?? 0;
+        const docYpx = doc?.y ?? t.y ?? 0;
+        // document.width/height em quadrados (padrão 1)
+        const widthSq  = doc?.width  ?? 1;
+        const heightSq = doc?.height ?? 1;
+        // Centro do token em quadrados
+        const cx = docXpx / gridSize + widthSq  / 2;
+        const cy = docYpx / gridSize + heightSq / 2;
+        const dx = cx - tCxSq;
+        const dy = cy - tCySq;
+        return Math.sqrt(dx * dx + dy * dy) <= radiusSq;
     });
 }
 
