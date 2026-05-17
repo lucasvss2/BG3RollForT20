@@ -1472,13 +1472,17 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     let effectiveMaxHeal = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
 
     if (truqueAtivo) {
-        const dRoll = new Roll("1d8");
+        // Aprimoramento "Energético" (0 PM): adiciona +1d6 ao dano do Truque
+        const energeticoAtivo = /energ[eé]tico/i.test(message.content ?? "");
+        const formula  = energeticoAtivo ? "1d8 + 1d6" : "1d8";
+        const dRoll    = new Roll(formula);
         await dRoll.evaluate({ async: true } as never);
         effectiveDamage  = dRoll.total ?? 0;
-        effectiveMaxHeal = 8;
+        effectiveMaxHeal = energeticoAtivo ? 14 : 8;
+        const flavorSuffix = energeticoAtivo ? " · Energético (+1d6)" : "";
         await ChatMessage.create({
             content: await dRoll.render({
-                flavor: `Curar Ferimentos — Truque · Dano de Luz vs Morto-Vivo (Vontade reduz à metade)`,
+                flavor: `Curar Ferimentos — Truque · Dano de Luz vs Morto-Vivo (Vontade reduz à metade)${flavorSuffix}`,
             }),
             rolls:   [dRoll.toJSON()],
             type:    5,
@@ -1511,7 +1515,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
             cd,
             messageId:       message.id,
             damageTotal:     effectiveDamage,
-            damageFormula:   truqueAtivo ? "1d8" : damageFormula,
+            damageFormula:   truqueAtivo ? (/energ[eé]tico/i.test(message.content ?? "") ? "1d8 + 1d6" : "1d8") : damageFormula,
             isHeal,
             maxHealValue:    effectiveMaxHeal,
             removeFadiga,
