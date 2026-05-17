@@ -43,13 +43,26 @@ function parseEnhancementBonus(content: string): number {
 }
 
 /**
- * Detecta se o ator é morto-vivo (T20: actor.system.detalhes.raca === "Morto-vivo").
+ * Detecta se o ator é morto-vivo.
+ *
+ * NPCs: `actor.system.detalhes.raca === "Morto-vivo"` (campo direto)
+ * PCs:  item de tipo "race" com nome "Osteon" ou "Soterrado"
  */
 function isUndead(actor: FoundryActor): boolean {
+    // NPCs — campo direto
     type DetalhesShape = { detalhes?: { raca?: string } };
     const raca = (actor.system as DetalhesShape | undefined)?.detalhes?.raca;
-    if (typeof raca !== "string") return false;
-    return normalizeCondName(raca) === "morto-vivo";
+    if (typeof raca === "string" && raca !== "" && normalizeCondName(raca) === "morto-vivo") {
+        return true;
+    }
+    // PCs — item de raça undead (Osteon, Soterrado)
+    type ItemLike = { type?: string; name?: string };
+    const items = (actor as unknown as { items?: { contents?: ItemLike[] } }).items?.contents ?? [];
+    return items.some(item => {
+        if (item.type !== "race") return false;
+        const n = typeof item.name === "string" ? normalizeCondName(item.name) : "";
+        return n === "osteon" || n === "soterrado";
+    });
 }
 
 /**
@@ -228,16 +241,30 @@ function tokenHasEffectFromTemplate(actor: FoundryActor, templateId: string): bo
     );
 }
 
-/** Aplica o AE deste template ao token (se ainda não tiver). */
+/**
+ * Lock por (actorId, templateId) para evitar race condition entre paths concorrentes
+ * (createMeasuredTemplate sweep + updateToken sync) que ambos passem no check
+ * tokenHasEffectFromTemplate antes de qualquer createEmbeddedDocuments resolver.
+ */
+const _applyInProgress = new Set<string>();
+
+/** Aplica o AE deste template ao token (se ainda não tiver). Thread-safe. */
 async function applyEffectToToken(token: FoundryToken, template: {
     id: string; uuid: string; flags?: Record<string, Record<string, unknown>>;
 }): Promise<boolean> {
     const actor = token.actor;
     if (!actor) return false;
+    const actorId = (actor as unknown as { id?: string }).id ?? "";
+    const lockKey = `${actorId}::${template.id}`;
+    // Bloqueia qualquer segundo caller antes mesmo de verificar o efeito
+    if (_applyInProgress.has(lockKey)) return false;
     if (tokenHasEffectFromTemplate(actor, template.id)) return false;
-    const data = buildEffectData(actor, template);
-    if (!data) return false;
+    _applyInProgress.add(lockKey);
     try {
+        // Double-check após adquirir o lock (pode ter sido aplicado por caller concorrente)
+        if (tokenHasEffectFromTemplate(actor, template.id)) return false;
+        const data = buildEffectData(actor, template);
+        if (!data) return false;
         await (actor as FoundryActor & {
             createEmbeddedDocuments(t: string, data: unknown[]): Promise<unknown>;
         }).createEmbeddedDocuments("ActiveEffect", [data]);
@@ -245,6 +272,8 @@ async function applyEffectToToken(token: FoundryToken, template: {
     } catch (err) {
         console.warn(`[${MODULE_ID}] Consagrar apply em ${actor.name}:`, err);
         return false;
+    } finally {
+        _applyInProgress.delete(lockKey);
     }
 }
 
@@ -284,18 +313,26 @@ function getConsagrarTemplates(): Array<{
 }
 
 /**
- * Lock para evitar sync concorrente do mesmo token. Sem isso, dois updateToken
- * em sequência rápida (ex: animação Foundry) podem disparar dois apply em paralelo
- * antes do primeiro persistir, criando duplicatas.
+ * Lock por tokenId: evita sync concorrente.
+ * Pending: garante que a ÚLTIMA posição sempre seja processada, mesmo que o evento
+ * tenha chegado durante um sync em andamento (caso contrário o evento seria descartado,
+ * causando delay na remoção do AE quando o token sai da área durante um sync ativo).
  */
 const _syncInProgress = new Set<string>();
+const _syncPending    = new Map<string, FoundryToken>();
 
 /** Sincroniza UM token contra TODOS os templates Consagrar na cena. */
 async function syncTokenWithTemplates(token: FoundryToken): Promise<void> {
     if (!game.user?.isGM) return;
     if (!token.actor) return;
     const tokenId = (token as unknown as { id?: string }).id ?? "";
-    if (!tokenId || _syncInProgress.has(tokenId)) return;
+    if (!tokenId) return;
+
+    if (_syncInProgress.has(tokenId)) {
+        // Salva o token mais recente para re-sincronizar assim que o sync atual terminar
+        _syncPending.set(tokenId, token);
+        return;
+    }
     _syncInProgress.add(tokenId);
     try {
         const templates = getConsagrarTemplates();
@@ -314,13 +351,21 @@ async function syncTokenWithTemplates(token: FoundryToken): Promise<void> {
             return;
         }
         for (const template of templates) {
-            const inside = tokensInTemplate(template).some(t => t === token);
-            const has    = tokenHasEffectFromTemplate(token.actor, template.id);
+            const inside = tokensInTemplate(template).some(
+                t => (t as unknown as { id?: string }).id === tokenId
+            );
+            const has = tokenHasEffectFromTemplate(token.actor, template.id);
             if (inside && !has)  await applyEffectToToken(token, template);
             if (!inside && has)  await removeEffectFromToken(token, template.id);
         }
     } finally {
         _syncInProgress.delete(tokenId);
+        // Processa o sync pendente (última posição) se chegou durante este sync
+        const pending = _syncPending.get(tokenId);
+        if (pending) {
+            _syncPending.delete(tokenId);
+            void syncTokenWithTemplates(pending);
+        }
     }
 }
 
