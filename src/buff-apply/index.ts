@@ -59,13 +59,13 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     if (!targets?.size) return;
     const allTargets = Array.from(targets) as FoundryToken[];
 
-    // 5b. Verifica flag de auto-apply no item específico (por item, não por ator)
+    // 5b. Verifica flag de auto-apply (mapa autoApplyItems no ator, chaveado por itemId)
     const casterActorId = message.speaker?.actor ?? "";
     const casterActor   = game.actors?.get(casterActorId);
     const itemId        = itemData["_id"] as string | undefined;
-    type ItemWithFlags  = FoundryItem & { getFlag(scope: string, key: string): unknown };
-    const item          = itemId ? (casterActor?.items?.get(itemId) as ItemWithFlags | undefined) : undefined;
-    const autoApply     = (item?.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+    type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
+    const autoApplyMap  = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApplyItems") as Record<string, boolean> | undefined;
+    const autoApply     = Boolean(itemId && autoApplyMap?.[itemId]);
     if (!autoApply) return;
 
     // 6. Todos os alvos precisam ser amigáveis (buff de aliado, não ataque)

@@ -1102,10 +1102,10 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
 
     // Resolve flag do item (necessário em ambos os paths)
     const casterActor  = game.actors?.get(casterActorId);
-    const spellItemId  = itemData["_id"] as string | undefined;
-    type ItemWithFlags = FoundryItem & { getFlag(scope: string, key: string): unknown };
-    const spellItem    = spellItemId ? (casterActor?.items?.get(spellItemId) as ItemWithFlags | undefined) : undefined;
-    const autoEnabled  = (spellItem?.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+    const spellItemId   = itemData["_id"] as string | undefined;
+    type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
+    const autoApplyMap  = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApplyItems") as Record<string, boolean> | undefined;
+    const autoEnabled   = Boolean(spellItemId && autoApplyMap?.[spellItemId]);
 
     // ── Path 1: GM auto-apply ─────────────────────────────────────────────────
     // Roda em todas as mensagens de magia, não só as do próprio GM.

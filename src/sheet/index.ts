@@ -1881,20 +1881,24 @@ form.tormenta20.sheet.actor .sheet-header ul.attributes:not(.summary) .attribute
 /* ── Auto-apply toggle por item (botão ⚡ nas rows de magia/poder, GM only) */
 
 /* Botão apagado = auto-apply OFF */
+/* OFF: sempre visível, tom dourado apagado */
 .t20-aa-item-btn {
-    color: #2a2018 !important;
-    opacity: 0.45;
+    color: #7a6848 !important;
+    opacity: 0.5;
+    flex: 0 0 auto;
+    padding: 0 5px;
     transition: color 0.15s, opacity 0.15s, text-shadow 0.15s;
+    cursor: pointer;
 }
 .t20-aa-item-btn:hover {
-    color: #8ab4e8 !important;
-    opacity: 1 !important;
+    color: #e8b84b !important;
+    opacity: 0.85 !important;
 }
-/* Botão aceso = auto-apply ON */
+/* ON: dourado aceso */
 .t20-aa-item-btn.t20-aa-on {
-    color: #8ab4e8 !important;
+    color: #e8b84b !important;
     opacity: 1;
-    text-shadow: 0 0 6px rgba(138,180,232,0.55);
+    text-shadow: 0 0 7px rgba(232,184,75,0.6);
 }
 `;
 
@@ -2050,40 +2054,41 @@ function enhanceSheet(root: HTMLElement): void {
 }
 
 // ── Auto-apply per-item toggle buttons (GM only) ─────────────────────────────
+// Flag armazenada NO ATOR (não no item) como mapa { [itemId]: boolean }
+// sob a chave "autoApplyItems". Isso evita depender de lookups frágeis
+// de item em mensagens de chat e garante consistência com o actor disponível.
 
-type ItemWithFlags = FoundryItem & {
-    getFlag(scope: string, key: string): unknown;
-    setFlag(scope: string, key: string, value: unknown): Promise<unknown>;
-};
+type AutoApplyMap = Record<string, boolean>;
 
 function injectAutoApplyItemButtons(root: HTMLElement, actor: FoundryActor | undefined): void {
-    // Apenas GM pode ver/usar os botões
     if (!game.user?.isGM) return;
-
-    // Apenas fichas de personagem jogador
     if (!actor || (actor as unknown as { type?: string }).type !== "character") return;
 
-    // Processa cada linha de item com data-item-id
-    const itemRows = root.querySelectorAll<HTMLElement>("[data-item-id]");
-    itemRows.forEach(row => {
+    type ActorWithFlags = FoundryActor & {
+        getFlag(scope: string, key: string): unknown;
+        setFlag(scope: string, key: string, value: unknown): Promise<unknown>;
+    };
+    const actorF = actor as ActorWithFlags;
+
+    root.querySelectorAll<HTMLElement>("[data-item-id]").forEach(row => {
         const itemId = row.dataset["itemId"];
         if (!itemId) return;
 
-        // Evita injeção dupla
+        // Evita injeção dupla ao re-renderizar
         if (row.querySelector(".t20-aa-item-btn")) return;
 
-        const item = actor.items?.get(itemId) as ItemWithFlags | undefined;
+        const item = actor.items?.get(itemId);
         if (!item) return;
 
-        // Apenas magias e poderes
         const itype = (item as unknown as { type?: string }).type;
         if (itype !== "magia" && itype !== "poder") return;
 
-        const isOn = (item.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
+        // Lê estado atual do mapa no ator
+        const map  = (actorF.getFlag(MODULE_ID, "autoApplyItems") as AutoApplyMap | undefined) ?? {};
+        const isOn = map[itemId] ?? false;
 
         const btn = document.createElement("a");
         btn.className = `t20-aa-item-btn${isOn ? " t20-aa-on" : ""}`;
-        btn.dataset["itemId"] = itemId;
         btn.title = isOn
             ? "Auto-apply buff: LIGADO (clique para desligar)"
             : "Auto-apply buff: DESLIGADO (clique para ligar)";
@@ -2092,9 +2097,10 @@ function injectAutoApplyItemButtons(root: HTMLElement, actor: FoundryActor | und
         btn.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const current = (item.getFlag(MODULE_ID, "autoApply") as boolean | undefined) ?? false;
-            const next = !current;
-            void item.setFlag(MODULE_ID, "autoApply", next).then(() => {
+            // Relê o mapa atual para não perder mudanças concorrentes
+            const cur  = (actorF.getFlag(MODULE_ID, "autoApplyItems") as AutoApplyMap | undefined) ?? {};
+            const next = !(cur[itemId] ?? false);
+            void actorF.setFlag(MODULE_ID, "autoApplyItems", { ...cur, [itemId]: next }).then(() => {
                 btn.classList.toggle("t20-aa-on", next);
                 btn.title = next
                     ? "Auto-apply buff: LIGADO (clique para desligar)"
@@ -2102,10 +2108,13 @@ function injectAutoApplyItemButtons(root: HTMLElement, actor: FoundryActor | und
             });
         });
 
-        // Injeta no início dos controles do item
+        // Injeta ANTES de .item-controls (como irmão, não filho)
+        // → fica sempre visível sem depender do hover que mostra as controls
         const controls = row.querySelector(".item-controls");
         if (controls) {
-            controls.prepend(btn);
+            row.insertBefore(btn, controls);
+        } else {
+            row.appendChild(btn);
         }
     });
 }
