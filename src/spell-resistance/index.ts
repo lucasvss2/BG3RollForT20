@@ -258,11 +258,28 @@ const SPELL_RESIST_STYLES = `
 .smf-consagrar-label {
     display: flex; align-items: center; gap: 6px; cursor: pointer;
     color: #e8c46e; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.06em;
-    text-transform: uppercase; margin: 0 0 6px; user-select: none;
+    text-transform: uppercase; margin: 0 0 4px; user-select: none;
 }
 .smf-consagrar-label input[type="checkbox"] { accent-color: #e8c46e; width: 14px; height: 14px; }
 .smf-consagrar-label i { color: #e8c46e; }
 .smf-consagrar-max { color: #8a7450; font-size: 0.78rem; font-weight: 400; }
+.smf-undead-label {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    color: #b06080; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; margin: 0 0 6px; user-select: none;
+}
+.smf-undead-label input[type="checkbox"] { accent-color: #b06080; width: 14px; height: 14px; }
+.smf-undead-label i { color: #b06080; }
+.smf-undead-dmg-btn {
+    padding: 5px 10px;
+    background: rgba(160,60,90,0.12); border: 1px solid rgba(160,60,90,0.4);
+    border-radius: 3px; color: #d890a8; cursor: pointer; width: 100%;
+    font-family: inherit; font-size: 0.8rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    transition: background 0.15s; display: flex; align-items: center; gap: 6px;
+}
+.smf-undead-dmg-btn:hover { background: rgba(160,60,90,0.25); }
+.smf-undead-dmg-btn.smf-spent { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 .smf-feedback {
     font-size: 0.82rem; color: #6ecf7a; text-align: center;
     padding: 3px 0; display: none;
@@ -576,10 +593,16 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                 <span class="smf-consagrar-max">(máx: ${preReq.maxHealValue})</span>
             </label>
         ` : "";
+        const halfHeal = Math.floor(preReq.damageTotal / 2);
+        const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
         damageSectionHtml = `
             <div class="smf-section-title"><i class="fas fa-heart"></i> CURA</div>
             <div class="smf-heal-number" id="smf-heal-number">${preReq.damageTotal}</div>
             ${consagrarHtml}
+            <label class="smf-undead-label" title="Magia de cura causa dano sagrado em mortos-vivos. O alvo rola Vontade ${cdLabel} — passa: metade do dano.">
+                <input type="checkbox" id="smf-morto-vivo" />
+                <i class="fas fa-skull"></i> Morto-Vivo
+            </label>
             <div class="smf-dmg-btns">
                 <button class="smf-heal-btn" id="smf-heal-full" data-heal-base="${preReq.damageTotal}" data-heal-max="${preReq.maxHealValue}">
                     <i class="fas fa-heart"></i> Curar (${preReq.damageTotal})
@@ -589,6 +612,28 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                 </button>
             </div>
             <div class="smf-feedback" id="smf-dmg-feedback"></div>
+
+            <div id="smf-undead-section" style="display:none; margin-top:8px; border-top:1px solid rgba(138,102,68,0.3); padding-top:8px;">
+                <div class="smf-section-title" style="margin-bottom:4px;">
+                    <i class="fas fa-skull-crossbones"></i> DANO SAGRADO — VONTADE ${cdLabel}
+                </div>
+                <button class="smf-action-btn" id="smf-undead-roll">
+                    <i class="fas fa-dice-d20"></i> Rolar Vontade (${cdLabel})
+                </button>
+                <div id="smf-undead-result" class="smf-resist-result" style="display:none;"></div>
+                <div id="smf-undead-dmg-btns" class="smf-dmg-btns" style="display:none; margin-top:6px;">
+                    <button class="smf-undead-dmg-btn" id="smf-undead-full">
+                        <i class="fas fa-skull-crossbones"></i> Dano Completo (${preReq.damageTotal})
+                    </button>
+                    <button class="smf-undead-dmg-btn" id="smf-undead-half">
+                        <i class="fas fa-shield-halved"></i> Metade do Dano (${halfHeal})
+                    </button>
+                    <button class="smf-undead-dmg-btn" id="smf-undead-none">
+                        <i class="fas fa-ban"></i> Não Aplicar
+                    </button>
+                </div>
+                <div class="smf-feedback" id="smf-undead-feedback"></div>
+            </div>
         `;
     } else if (!preReq.isHeal && preReq.damageTotal > 0) {
         damageSectionHtml = `
@@ -830,14 +875,89 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
                 // ── Consagrar (maximiza cura) ─────────────────────────────────
                 $html.find("#smf-consagrar").on("change", function () {
-                    const checked  = $(this).is(":checked");
-                    const healBtn  = $html.find("#smf-heal-full");
-                    const baseVal  = parseInt(healBtn.data("heal-base") as string, 10) || preReq.damageTotal;
-                    const maxVal   = parseInt(healBtn.data("heal-max")  as string, 10) || preReq.damageTotal;
-                    const val      = checked ? maxVal : baseVal;
+                    const checked = $(this).is(":checked");
+                    const healBtn = $html.find("#smf-heal-full");
+                    const baseVal = parseInt(healBtn.data("heal-base") as string, 10) || preReq.damageTotal;
+                    const maxVal  = parseInt(healBtn.data("heal-max")  as string, 10) || preReq.damageTotal;
+                    const val     = checked ? maxVal : baseVal;
+                    const halfU   = Math.floor(val / 2);
                     $html.find("#smf-heal-number").text(String(val));
                     healBtn.data("heal-current", val);
                     healBtn.html(`<i class="fas fa-heart"></i> Curar (${val})`);
+                    // Atualiza labels dos botões de dano sagrado
+                    $html.find("#smf-undead-full").html(`<i class="fas fa-skull-crossbones"></i> Dano Completo (${val})`);
+                    $html.find("#smf-undead-half").html(`<i class="fas fa-shield-halved"></i> Metade do Dano (${halfU})`);
+                });
+
+                // ── Morto-Vivo (ativa seção de resistência e dano sagrado) ────
+                $html.find("#smf-morto-vivo").on("change", function () {
+                    $html.find("#smf-undead-section").toggle($(this).is(":checked"));
+                });
+
+                // ── Rolar Vontade (resistência do morto-vivo) ─────────────────
+                $html.find("#smf-undead-roll").on("click", function () {
+                    const rollBtn  = $(this);
+                    rollBtn.prop("disabled", true);
+                    const vontBonus = targetActor ? computeSkillTotal(targetActor, "vont") : 0;
+                    const bonusStr  = vontBonus >= 0 ? `+${vontBonus}` : `${vontBonus}`;
+                    void (async () => {
+                        const roll = new Roll(`1d20 ${bonusStr}`);
+                        await roll.evaluate({ async: true } as never);
+                        const total  = roll.total ?? 0;
+                        const passed = preReq.cd > 0 ? total >= preReq.cd : false;
+                        const cdLabel = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
+
+                        await ChatMessage.create({
+                            content: await roll.render({
+                                flavor: `Resistência Vontade (${targetName}) vs ${cdLabel} — ${passed ? "✓ PASSOU" : "✗ FALHOU"}`,
+                            }),
+                            rolls:   [roll.toJSON()],
+                            type:    5,
+                            speaker: ChatMessage.getSpeaker({ actor: targetActor ?? null }),
+                            flags:   { [MODULE_ID]: { resistanceRoll: true } },
+                        });
+
+                        const passClass  = passed ? "smf-rr-pass"       : "smf-rr-fail";
+                        const badgeClass = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
+                        const outcome    = passed ? "Metade do dano (passou)" : "Dano completo (falhou)";
+                        $html.find("#smf-undead-result").html(`
+                            <div class="smf-rr-row">
+                                <span class="smf-label-sm">VONTADE</span>
+                                <span class="${passClass}">${total}</span>
+                                <span class="smf-label-sm">d20 + ${vontBonus}</span>
+                                <span class="smf-label-sm">${cdLabel}</span>
+                                <span class="${badgeClass}">${passed ? "PASSOU" : "FALHOU"}</span>
+                            </div>
+                            <div class="smf-rr-outcome">${esc(outcome)}</div>
+                        `).show();
+                        rollBtn.hide();
+                        $html.find("#smf-undead-dmg-btns").show();
+                    })();
+                });
+
+                // ── Dano sagrado ao morto-vivo ────────────────────────────────
+                $html.find(".smf-undead-dmg-btn").on("click", async function () {
+                    const btn = $(this);
+                    const id  = btn.attr("id");
+                    // Respeita Consagrar: lê o valor atual do número de cura exibido
+                    const curHeal = parseInt($html.find("#smf-heal-number").text(), 10) || preReq.damageTotal;
+                    const halfU   = Math.floor(curHeal / 2);
+                    let amt   = 0;
+                    let label = "";
+                    if (id === "smf-undead-full") {
+                        amt   = curHeal;
+                        label = `✓ ${amt} de dano sagrado aplicado`;
+                    } else if (id === "smf-undead-half") {
+                        amt   = halfU;
+                        label = `✓ ${amt} de dano sagrado (metade) aplicado`;
+                    } else {
+                        label = "✓ Dano sagrado não aplicado";
+                    }
+                    if (amt > 0) {
+                        await applySpellDamage(preReq.targetActorUuid, preReq.targetActorId, amt);
+                    }
+                    $html.find(".smf-undead-dmg-btn").addClass("smf-spent");
+                    $html.find("#smf-undead-feedback").text(label).show();
                 });
 
                 // ── Dano / Cura ───────────────────────────────────────────────
@@ -1062,7 +1182,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterName    = message.speaker?.alias ?? "Lançador";
     const casterUserId  = game.user?.id ?? "";
     const spellName     = extractSpellName(message);
-    const cd            = isHeal ? 0 : extractCD(message);
+    const cd            = extractCD(message); // sempre extrai, inclusive para curas (usado em dano sagrado vs. mortos-vivos)
     const maxHealValue  = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
 
     for (const token of effectiveTargets) {
