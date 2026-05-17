@@ -14,9 +14,8 @@
  *  3. A mensagem possui ao menos 1 grupo de efeito em flags.tormenta20.effects.
  *  4. A mensagem tem itemData e NÃO é magia (tipo ≠ arc/div/uni).
  *  5. Ao menos 1 token T-marcado.
- *  5b. O item específico tem flag MODULE_ID.autoApply = true (desligado por padrão; GM liga via ⚡ na ficha).
- *  6. Todos os alvos T são amigáveis (disposition >= 1 ou o próprio lançador).
- *  7. Sem roll de dano ou ataque (poder ofensivo vai pelo fluxo normal).
+ *  5b. O item específico tem flag MODULE_ID.autoApplyItems[itemId] = true (GM liga via ⚡ na ficha).
+ *  6. Sem roll de dano ou ataque (poder ofensivo vai pelo fluxo normal).
  */
 
 import { MODULE_ID } from "@/constants";
@@ -67,15 +66,7 @@ async function processBuffMessage(message: ChatMessage): Promise<void> {
     const autoApply     = Boolean(itemId && autoApplyMap?.[itemId]);
     if (!autoApply) return;
 
-    // 6. Todos os alvos precisam ser amigáveis (buff de aliado, não ataque)
-    const allTargetsFriendly = allTargets.every(token => {
-        if (token.actor?.id === casterActorId) return true; // auto-buff
-        const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
-        return (tDoc?.disposition ?? 0) >= 1;
-    });
-    if (!allTargetsFriendly) return;
-
-    // 7. Sem roll de dano ou ataque (poder ofensivo → não auto-aplica)
+    // 6. Sem roll de dano ou ataque (poder ofensivo → não auto-aplica)
     const rolls = message.rolls ?? [];
     const hasDamageRoll = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
     const hasAttackRoll  = rolls.some(r => (r.options as Record<string, unknown>)?.["type"] === "attack");

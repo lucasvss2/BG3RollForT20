@@ -1125,45 +1125,37 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
 
     // ── Auto-apply buff puro (GM, sem modal) ─────────────────────────────────
     if (game.user?.isGM && isPureBuff && autoEnabled && effectiveTargets.length > 0) {
-        const allFriendly = effectiveTargets.every(token => {
-            if (token.actor?.id === casterActorId) return true;
-            const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
-            return (tDoc?.disposition ?? 0) >= 1;
-        });
+        type EffectData = Record<string, unknown>;
+        const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
+        let appliedCount = 0;
 
-        if (allFriendly) {
-            type EffectData = Record<string, unknown>;
-            const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
-            let appliedCount = 0;
-
-            for (const effectGroup of effectGroups) {
-                if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
-                for (const token of effectiveTargets) {
-                    const tActor = token.actor;
-                    if (!tActor) continue;
-                    const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
-                    const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
-                    if (firstDur?.["seconds"]) {
-                        const g = game as unknown as { time?: { worldTime: number } };
-                        firstDur["startTime"] = g.time?.worldTime ?? 0;
-                    }
-                    try {
-                        await (tActor as FoundryActor & {
-                            createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
-                        }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
-                        appliedCount++;
-                    } catch (err) {
-                        console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
-                    }
+        for (const effectGroup of effectGroups) {
+            if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
+            for (const token of effectiveTargets) {
+                const tActor = token.actor;
+                if (!tActor) continue;
+                const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
+                const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
+                if (firstDur?.["seconds"]) {
+                    const g = game as unknown as { time?: { worldTime: number } };
+                    firstDur["startTime"] = g.time?.worldTime ?? 0;
+                }
+                try {
+                    await (tActor as FoundryActor & {
+                        createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
+                    }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
+                    appliedCount++;
+                } catch (err) {
+                    console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
                 }
             }
-
-            if (appliedCount > 0) {
-                const names = effectiveTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
-                ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
-            }
-            return;
         }
+
+        if (appliedCount > 0) {
+            const names = effectiveTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
+            ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
+        }
+        return;
     }
 
     const damageFormula = damageRoll?.formula ?? "";
