@@ -409,6 +409,48 @@ const DIALOG_STYLES = `
     display: none !important;
 }
 
+/* Botões +/- quadrados com ícone perfeitamente centralizado.
+   Especificidade extra (.tormenta20 + .aprimoramentos-list) para vencer a
+   regra genérica de botões em sheet/index.ts (.tormenta20:not(.sheet) button). */
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list button.numCtrl {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1 !important;
+}
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list button.numCtrl i {
+    display: block !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+}
+
+/* Input numérico no centro do +/- — tamanho de referência para os checkboxes */
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list .item-cost input.numInp {
+    width: 25px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    text-align: center !important;
+}
+
+/* Checkboxes das linhas sem +/-: mesma dimensão do input numérico (25×24).
+   Precisa min-width + flex-basis porque o input vira flex-item e width sozinho
+   não vence o min-content default do checkbox (~20px). */
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list .item-cost > input[type="checkbox"] {
+    width: 25px !important;
+    min-width: 25px !important;
+    max-width: 25px !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    flex: 0 0 25px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+}
+
 /* Left column: keep it compact, vertically center its own content */
 .window-app.bg3-dialog .aprimoramentos-list .item-cost {
     align-items: center !important;
