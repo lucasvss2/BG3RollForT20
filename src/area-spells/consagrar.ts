@@ -167,11 +167,11 @@ async function placeTemplate(meta: {
         borderColor: "#c9a76a",
         flags: {
             [MODULE_ID]: {
-                [FLAG_SPELL]:    SPELL_KEY,
-                casterActorId:   meta.casterActorId,
-                casterName:      meta.casterName,
-                undeadPenalty:   meta.undeadPenalty,
-                createdAt:       Date.now(),
+                [FLAG_SPELL]:       SPELL_KEY,
+                casterActorId:      meta.casterActorId,
+                casterName:         meta.casterName,
+                undeadPenalty:      meta.undeadPenalty,
+                createdAtGameTime:  (game as unknown as { time?: { worldTime?: number } }).time?.worldTime ?? 0,
             },
         },
     };
@@ -465,5 +465,44 @@ export function setupConsagrar(): void {
                 if (!inside && has)  await removeEffectFromToken(token, tplDoc.id);
             }
         })();
+    });
+
+    // 7. FASE 3: Ao carregar/trocar cena → sincroniza tokens com templates existentes
+    // canvasReady dispara tanto no start do mundo quanto ao trocar de cena
+    Hooks.on("canvasReady", () => {
+        if (!game.user?.isGM) return;
+        const templates = getConsagrarTemplates();
+        if (templates.length === 0) return;
+        type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+        const cv = canvas as unknown as CanvasLike;
+        const tokens = cv.tokens?.placeables ?? [];
+        void (async () => {
+            for (const token of tokens) {
+                if (!token.actor) continue;
+                await syncTokenWithTemplates(token);
+            }
+            ui.notifications?.info(`Consagrar: ${templates.length} área(s) ativa(s) restaurada(s)`);
+        })();
+    });
+
+    // 8. FASE 3: Tempo do mundo avança → remove templates cujo 1 dia expirou
+    const ONE_DAY_SECONDS = 86400;
+    Hooks.on("updateWorldTime", (...args: unknown[]) => {
+        if (!game.user?.isGM) return;
+        const worldTime = args[0] as number;
+        const templates = getConsagrarTemplates();
+        if (templates.length === 0) return;
+        type SceneLike = {
+            deleteEmbeddedDocuments?(t: string, ids: string[]): Promise<unknown>;
+        };
+        const scene = (canvas as unknown as { scene?: SceneLike }).scene;
+        for (const template of templates) {
+            const createdAt = template.flags?.[MODULE_ID]?.["createdAtGameTime"] as number | undefined;
+            if (createdAt == null) continue;
+            if (worldTime - createdAt >= ONE_DAY_SECONDS) {
+                void scene?.deleteEmbeddedDocuments?.("MeasuredTemplate", [template.id]);
+                ui.notifications?.info("Consagrar: área expirou após 1 dia de jogo e foi removida");
+            }
+        }
     });
 }
