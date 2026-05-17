@@ -1100,72 +1100,17 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterActorId = message.speaker?.actor ?? "";
     const isPureBuff    = !isHeal && resistSkill === null && damageTotal === 0 && hasMsgEffects;
 
-    // Resolve flag do item (necessário em ambos os paths)
+    // Resolve flag do item para auto-apply
     const casterActor  = game.actors?.get(casterActorId);
     const spellItemId   = itemData["_id"] as string | undefined;
     type ActorWithFlags = FoundryActor & { getFlag(scope: string, key: string): unknown };
     const autoApplyMap  = (casterActor as ActorWithFlags | undefined)?.getFlag(MODULE_ID, "autoApplyItems") as Record<string, boolean> | undefined;
     const autoEnabled   = Boolean(spellItemId && autoApplyMap?.[spellItemId]);
 
-    // ── Path 1: GM auto-apply ─────────────────────────────────────────────────
-    // Roda em todas as mensagens de magia, não só as do próprio GM.
-    // Usa os alvos T do AUTOR da mensagem para não depender dos alvos do GM.
-    if (game.user?.isGM && isPureBuff && autoEnabled) {
-        const authorId      = getMsgAuthorId(message);
-        type UserWithTargets = FoundryUser & { targets?: Set<FoundryToken> };
-        const authorUser    = game.users?.get(authorId) as UserWithTargets | undefined;
-        const authorTargets = Array.from(authorUser?.targets ?? []) as FoundryToken[];
-
-        if (authorTargets.length > 0) {
-            const allFriendly = authorTargets.every(token => {
-                if (token.actor?.id === casterActorId) return true;
-                const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
-                return (tDoc?.disposition ?? 0) >= 1;
-            });
-
-            if (allFriendly) {
-                type EffectData = Record<string, unknown>;
-                const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
-                let appliedCount = 0;
-
-                for (const effectGroup of effectGroups) {
-                    if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
-                    for (const token of authorTargets) {
-                        const tActor = token.actor;
-                        if (!tActor) continue;
-                        const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
-                        const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
-                        if (firstDur?.["seconds"]) {
-                            const g = game as unknown as { time?: { worldTime: number } };
-                            firstDur["startTime"] = g.time?.worldTime ?? 0;
-                        }
-                        try {
-                            await (tActor as FoundryActor & {
-                                createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
-                            }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
-                            appliedCount++;
-                        } catch (err) {
-                            console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
-                        }
-                    }
-                }
-
-                if (appliedCount > 0) {
-                    const names = authorTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
-                    ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
-                }
-                return;
-            }
-        }
-    }
-
-    // ── Path 2: Modal (apenas para o autor da mensagem) ───────────────────────
+    // ── Apenas o autor da mensagem processa (garante que os alvos T são corretos) ─
     if (getMsgAuthorId(message) !== game.user?.id) return;
 
-    // Se é buff puro e auto-apply está ativo, o GM já cuidou — pula modal
-    if (isPureBuff && autoEnabled) return;
-
-    // ── Resolver alvos para o modal ───────────────────────────────────────────
+    // ── Resolver alvos ────────────────────────────────────────────────────────
     const tTargets = Array.from(game.user?.targets ?? []);
     let effectiveTargets: FoundryToken[];
 
@@ -1176,6 +1121,49 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
         const controlled = cvs.tokens?.controlled ?? [];
         effectiveTargets = controlled.filter(t => t.actor != null && t.actor.id !== casterActorId);
         if (effectiveTargets.length === 0) return;
+    }
+
+    // ── Auto-apply buff puro (GM, sem modal) ─────────────────────────────────
+    if (game.user?.isGM && isPureBuff && autoEnabled && effectiveTargets.length > 0) {
+        const allFriendly = effectiveTargets.every(token => {
+            if (token.actor?.id === casterActorId) return true;
+            const tDoc = (token as unknown as { document?: { disposition?: number } }).document;
+            return (tDoc?.disposition ?? 0) >= 1;
+        });
+
+        if (allFriendly) {
+            type EffectData = Record<string, unknown>;
+            const effectGroups = (message.getFlag("tormenta20", "effects") as EffectData[][] | undefined) ?? [];
+            let appliedCount = 0;
+
+            for (const effectGroup of effectGroups) {
+                if (!Array.isArray(effectGroup) || !effectGroup.length) continue;
+                for (const token of effectiveTargets) {
+                    const tActor = token.actor;
+                    if (!tActor) continue;
+                    const effectData: EffectData[] = JSON.parse(JSON.stringify(effectGroup)) as EffectData[];
+                    const firstDur = effectData[0]?.["duration"] as Record<string, unknown> | undefined;
+                    if (firstDur?.["seconds"]) {
+                        const g = game as unknown as { time?: { worldTime: number } };
+                        firstDur["startTime"] = g.time?.worldTime ?? 0;
+                    }
+                    try {
+                        await (tActor as FoundryActor & {
+                            createEmbeddedDocuments(t: string, d: unknown[], o?: Record<string, unknown>): Promise<unknown>;
+                        }).createEmbeddedDocuments("ActiveEffect", effectData, { toChat: appliedCount === 0 });
+                        appliedCount++;
+                    } catch (err) {
+                        console.warn(`[${MODULE_ID}] Auto-apply magia em ${tActor.name}:`, err);
+                    }
+                }
+            }
+
+            if (appliedCount > 0) {
+                const names = effectiveTargets.filter(t => t.actor).map(t => t.actor!.name).join(", ");
+                ui.notifications?.info(`Buff de magia aplicado automaticamente: ${names}`);
+            }
+            return;
+        }
     }
 
     const damageFormula = damageRoll?.formula ?? "";
