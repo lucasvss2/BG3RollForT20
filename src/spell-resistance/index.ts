@@ -395,6 +395,27 @@ function extractCD(message: ChatMessage): number {
     return match ? parseInt(match[1], 10) : 0;
 }
 
+/**
+ * Calcula a CD de magia do lançador: attributes.cd (base, ex. 15) + valor do
+ * atributo de conjuração (ex. Sabedoria do clérigo). Inclui automaticamente
+ * qualquer bônus já aplicado no atributo (racial, item, etc.).
+ *
+ * Para Curar Ferimentos sem resistência o chat card não tem "CD X" explícito,
+ * então usamos isso como fallback quando extractCD retorna 0.
+ */
+function computeCasterSpellCD(actor: FoundryActor | null | undefined): number {
+    if (!actor) return 0;
+    type T20Sys = {
+        attributes?: { cd?: number; conjuracao?: string };
+        atributos?:  Record<string, { value?: number } | undefined>;
+    };
+    const sys  = actor.system as T20Sys | undefined;
+    const base = sys?.attributes?.cd ?? 0;
+    const conj = sys?.attributes?.conjuracao;
+    const mod  = (conj ? sys?.atributos?.[conj]?.value : undefined) ?? 0;
+    return base + mod;
+}
+
 function extractSpellName(message: ChatMessage): string {
     const actorId = message.content?.match(/data-actor-id="([^"]+)"/)?.[1];
     const itemId  = message.content?.match(/data-item-id="([^"]+)"/)?.[1];
@@ -1463,7 +1484,12 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const casterName    = message.speaker?.alias ?? "Lançador";
     const casterUserId  = game.user?.id ?? "";
     const spellName     = extractSpellName(message);
-    const cd            = extractCD(message); // sempre extrai, inclusive para curas (usado em dano sagrado vs. mortos-vivos)
+    // CD: se o chat tiver "CD X" usa esse valor (já inclui modificadores do modal de configuração);
+    // caso contrário (Curar Ferimentos sem resistência), calcula do ator lançador.
+    const extractedCD = extractCD(message);
+    const cd          = extractedCD > 0
+        ? extractedCD
+        : computeCasterSpellCD(game.actors?.get(message.speaker?.actor ?? "") ?? null);
     // Detecta o aprimoramento de Curar Ferimentos "+2 PM: remove uma condição de fadiga do alvo"
     const removeFadiga  = isHeal
         && normalizeCondName(spellName) === "curar ferimentos"

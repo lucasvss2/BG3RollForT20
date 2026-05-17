@@ -420,6 +420,7 @@ const DIALOG_STYLES = `
 
 /* Right column: item description */
 .window-app.bg3-dialog .aprimoramentos-list h4.item-name {
+    border: none !important;       /* T20 default põe border-bottom no h4, duplicando o divisor do li.item */
     font-size: 0.82rem !important;
     font-weight: normal !important;
     line-height: 1.4 !important;
