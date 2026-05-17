@@ -694,6 +694,48 @@ async function applyCondition(actorUuid: string, actorId: string, statusId: stri
     await actor.toggleStatusEffect(statusId, { active: true });
 }
 
+/**
+ * Remove uma instância de condição de Fadiga (Fatigado) do ator alvo.
+ * Usado pelo aprimoramento de Curar Ferimentos. Procura por ActiveEffect
+ * com status "fatigado" ou nome "Fatigado"/"Fadiga" e remove o primeiro.
+ */
+async function removeFadigaCondition(actorUuid: string, actorId: string): Promise<boolean> {
+    const actor = resolveTargetActor(actorUuid, actorId);
+    if (!actor) return false;
+
+    type EffectLike = { id: string; name?: string; statuses?: Set<string> | string[] };
+    const effects = ((actor as unknown as { effects?: { contents?: EffectLike[] } }).effects?.contents) ?? [];
+
+    let toRemove: string | undefined;
+    for (const eff of effects) {
+        let matched = false;
+        const statuses = eff.statuses;
+        if (statuses) {
+            const arr = Array.isArray(statuses) ? statuses : Array.from(statuses);
+            for (const sid of arr) {
+                const n = normalizeCondName(sid);
+                if (n === "fatigado" || n === "fadiga") { matched = true; break; }
+            }
+        }
+        if (!matched && eff.name) {
+            const n = normalizeCondName(eff.name);
+            if (n === "fatigado" || n === "fadiga") matched = true;
+        }
+        if (matched) { toRemove = eff.id; break; }
+    }
+
+    if (!toRemove) return false;
+    try {
+        await (actor as FoundryActor & {
+            deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
+        }).deleteEmbeddedDocuments("ActiveEffect", [toRemove]);
+        return true;
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Falha ao remover Fadiga:`, err);
+        return false;
+    }
+}
+
 async function applyBuffEffect(messageId: string, effectIndex: number, actor: FoundryActor): Promise<void> {
     type ActorWithCreate = FoundryActor & {
         createEmbeddedDocuments(type: string, data: unknown[], opts?: Record<string, unknown>): Promise<unknown>;
@@ -828,7 +870,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
             </label>
             <div class="smf-dmg-btns">
                 <button class="smf-heal-btn" id="smf-heal-full" data-heal-base="${preReq.damageTotal}" data-heal-max="${preReq.maxHealValue}">
-                    <i class="fas fa-heart"></i> Curar (${preReq.damageTotal})
+                    <i class="fas fa-heart"></i> Curar (${preReq.damageTotal})${preReq.removeFadiga ? " e Remover Fadiga" : ""}
                 </button>
                 <button class="smf-dmg-btn" id="smf-no-heal">
                     <i class="fas fa-ban"></i> Não Aplicar
@@ -1119,7 +1161,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     const halfU   = Math.floor(val / 2);
                     $html.find("#smf-heal-number").text(String(val));
                     healBtn.data("heal-current", val);
-                    healBtn.html(`<i class="fas fa-heart"></i> Curar (${val})`);
+                    healBtn.html(`<i class="fas fa-heart"></i> Curar (${val})${preReq.removeFadiga ? " e Remover Fadiga" : ""}`);
                     // Atualiza labels dos botões de dano sagrado
                     $html.find("#smf-undead-full").html(`<i class="fas fa-skull-crossbones"></i> Dano Completo (${val})`);
                     $html.find("#smf-undead-half").html(`<i class="fas fa-shield-halved"></i> Metade do Dano (${halfU})`);
@@ -1217,6 +1259,11 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                             || preReq.damageTotal;
                         await applySpellHeal(preReq.targetActorUuid, preReq.targetActorId, healAmt);
                         label = `✓ Cura de ${healAmt} aplicada`;
+                        // Aprimoramento: também remove uma condição de Fadiga do alvo
+                        if (preReq.removeFadiga) {
+                            const removed = await removeFadigaCondition(preReq.targetActorUuid, preReq.targetActorId);
+                            label += removed ? " · Fadiga removida" : " · sem Fadiga para remover";
+                        }
                     } else if (id === "smf-no-heal" || id === "smf-dmg-none") {
                         label = "✓ Não aplicado";
                     } else {
@@ -1396,6 +1443,10 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     const spellName     = extractSpellName(message);
     const cd            = extractCD(message); // sempre extrai, inclusive para curas (usado em dano sagrado vs. mortos-vivos)
     const maxHealValue  = (isHeal && damageRoll) ? computeMaxRoll(damageRoll) : 0;
+    // Detecta o aprimoramento de Curar Ferimentos "+2 PM: remove uma condição de fadiga do alvo"
+    const removeFadiga  = isHeal
+        && normalizeCondName(spellName) === "curar ferimentos"
+        && /fadiga/i.test(message.content ?? "");
 
     for (const token of effectiveTargets) {
         const targetActor = token.actor;
@@ -1425,6 +1476,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
             damageFormula,
             isHeal,
             maxHealValue,
+            removeFadiga,
             conditions:      [],
             customEffectNames: [],
         };

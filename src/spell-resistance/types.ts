@@ -64,6 +64,8 @@ export interface SpellResistPreRollRequest {
     isHeal: boolean;
     /** Valor máximo possível da cura com os dados rolados (para checkbox Consagrar) */
     maxHealValue: number;
+    /** true se Curar Ferimentos foi castada com o aprimoramento de remover fadiga (+2 PM) */
+    removeFadiga?: boolean;
     /** Condições de status a aplicar (extraídas dos effects do chat) */
     conditions: SpellConditionData[];
     /**
