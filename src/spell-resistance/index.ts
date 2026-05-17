@@ -416,7 +416,7 @@ function computeCasterSpellCD(actor: FoundryActor | null | undefined): number {
     return base + mod;
 }
 
-function extractSpellName(message: ChatMessage): string {
+export function extractSpellName(message: ChatMessage): string {
     const actorId = message.content?.match(/data-actor-id="([^"]+)"/)?.[1];
     const itemId  = message.content?.match(/data-item-id="([^"]+)"/)?.[1];
     if (actorId && itemId) {
@@ -543,7 +543,7 @@ const PURIFICATION_CONDITIONS: ReadonlySet<string> = new Set([
 ]);
 
 /** Normaliza nome de condição: minúsculo + sem acentos, para matching robusto. */
-function normalizeCondName(s: string): string {
+export function normalizeCondName(s: string): string {
     return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 }
 
@@ -1378,7 +1378,7 @@ function setupSocket(): void {
 
 // ── Helpers de usuário / ator ─────────────────────────────────────────────────
 
-function getMsgAuthorId(message: ChatMessage): string {
+export function getMsgAuthorId(message: ChatMessage): string {
     const m = message as unknown as { author?: { id: string }; user?: { id: string } | string };
     return m.author?.id ?? (typeof m.user === "object" ? m.user?.id : m.user) ?? "";
 }
@@ -1420,6 +1420,14 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
             await handlePurification(message, message.speaker?.alias ?? "Lançador");
             return;
         }
+    }
+
+    // ── Magias de área que NÃO devem abrir o modal de spell-resist ──────────
+    // (Consagrar tem effects no item mas é magia de área persistente — alvos
+    // são tokens DENTRO da área, não T-targets; o handler dedicado deve cuidar.)
+    {
+        const sn = normalizeCondName(extractSpellName(message));
+        if (sn === "consagrar") return;
     }
 
     const damageRoll = rolls.find(r => (r.options as Record<string, unknown>)?.["type"] === "damage");
