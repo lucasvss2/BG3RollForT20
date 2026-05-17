@@ -391,12 +391,12 @@ const DIALOG_STYLES = `
     text-transform: uppercase !important;
 }
 
-/* Each enhancement row */
+/* Each enhancement row — vertically centered, padding simétrico 4px */
 .window-app.bg3-dialog .aprimoramentos-list li.item {
-    align-items: flex-start !important;
+    align-items: center !important;
     border-bottom: 1px solid rgba(106, 78, 24, 0.12) !important;
     min-height: 28px !important;
-    padding: 5px 8px !important;
+    padding: 4px 8px !important;
 }
 
 .window-app.bg3-dialog .aprimoramentos-list li.item:last-child {
