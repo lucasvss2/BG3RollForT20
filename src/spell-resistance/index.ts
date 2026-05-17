@@ -879,7 +879,8 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                     $html.find("#smf-pm-total").text(String(total));
                 });
 
-                // ── Rolar Resistência ─────────────────────────────────────────
+                // ── Rolar Resistência (suporta reroll) ────────────────────────
+                let hasRolledResist = false;
                 $html.find("#smf-roll-resist").on("click", function () {
                     const rollBtn = $(this);
                     rollBtn.prop("disabled", true);
@@ -913,11 +914,13 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                         const roll = new Roll(parts.join(" "));
                         await roll.evaluate({ async: true });
 
-                        // Desconta PM
-                        const totalPm = selected.reduce((s, p) => s + p.pm, 0);
-                        if (totalPm > 0 && targetActor) {
-                            const cur = targetActor.system?.attributes?.pm?.value ?? 0;
-                            await targetActor.update({ "system.attributes.pm.value": Math.max(0, cur - totalPm) });
+                        // Desconta PM apenas na PRIMEIRA rolagem; rerolls são livres
+                        if (!hasRolledResist) {
+                            const totalPm = selected.reduce((s, p) => s + p.pm, 0);
+                            if (totalPm > 0 && targetActor) {
+                                const cur = targetActor.system?.attributes?.pm?.value ?? 0;
+                                await targetActor.update({ "system.attributes.pm.value": Math.max(0, cur - totalPm) });
+                            }
                         }
 
                         const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
@@ -971,9 +974,13 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                             <div class="smf-rr-outcome">${esc(outcomeText)}</div>
                         `).show();
 
-                        // Esconde form de roll
-                        $html.find("#smf-powers-wrap, #smf-extra-wrap").hide();
-                        rollBtn.hide();
+                        // Esconde form de poderes (PM já descontado); mantém botão como "Rerolar"
+                        $html.find("#smf-powers-wrap").hide();
+                        if (!hasRolledResist) {
+                            rollBtn.html(`<i class="fas fa-rotate"></i> Rerolar ${esc(skillLabel)} (CD ${preReq.cd})`);
+                            hasRolledResist = true;
+                        }
+                        rollBtn.prop("disabled", false);
                     })();
                 });
 

@@ -1,6 +1,6 @@
 {
     "name": "t20-theme-overhaul",
-    "version": "1.6.43",
+    "version": "1.6.44",
     "description": "Melhorias visuais e mecânicas para Tormenta20 no Foundry VTT",
     "type": "module",
     "scripts": {
