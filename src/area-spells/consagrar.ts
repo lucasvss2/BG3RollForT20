@@ -26,20 +26,49 @@ const FLAG_EFFECT_ORIGIN = "consagrarTemplateOrigin"; // AE flag: ID do template
 const FLAG_HEAL_BOOST = "consagrarHealingBoost";      // AE flag: marca o effect de cura aprimorada
 
 const RAIO_METROS = 9;
-const PENALIDADE_BASE = 2;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Lê o conteúdo da mensagem para detectar quantos níveis do aprimoramento
- * "aumenta as penalidades para mortos-vivos em –1" foram ativados.
- * Cada nível adiciona +1 à penalidade base (-2).
+ * Lê a penalidade FINAL para mortos-vivos diretamente dos efeitos que o T20
+ * já computou em `message.flags.tormenta20.effects` levando em conta os
+ * aprimoramentos selecionados na hora do cast.
+ *
+ * Vantagem: delegar 100% da matemática ao T20 (incluindo "1PM: -2 base" +
+ * "2PM × N: cada nível adiciona -1"). Se nenhum aprimoramento for marcado,
+ * o array `effects` vem vazio → retorna 0 (sem AE de penalidade).
+ *
+ * A estrutura é `Array<Array<EffectData>>` — achatamos e pegamos o maior
+ * |value| entre os changes que miram defesa.bonus ou pericias.geral.
  */
-function parseEnhancementBonus(content: string): number {
-    if (!/penalidades.*?(?:morto[-\s]?vivos|undead).*?[-–]\s*\d/i.test(content)) return 0;
-    // Tenta extrair o valor numérico (T20 reflete o nível somado, ex: "em -2")
-    const m = content.match(/penalidades.*?(?:morto[-\s]?vivos|undead).*?em\s+[-–]\s*(\d+)/i);
-    return m ? Math.max(0, parseInt(m[1], 10)) : 1;
+function computeUndeadPenaltyFromMessage(message: ChatMessage): number {
+    type EffectShape = {
+        name?: string;
+        changes?: Array<{ key: string; value: number | string }>;
+    };
+    const t20 = (message.flags as Record<string, unknown> | undefined)?.tormenta20 as
+        | { effects?: unknown } | undefined;
+    const raw = t20?.effects;
+    if (!Array.isArray(raw)) return 0;
+    const flat: EffectShape[] = raw.flatMap((inner: unknown): EffectShape[] =>
+        Array.isArray(inner)
+            ? (inner as EffectShape[])
+            : [inner as EffectShape]
+    );
+    let maxAbs = 0;
+    for (const eff of flat) {
+        for (const ch of (eff.changes ?? [])) {
+            if (
+                ch.key !== "system.attributes.defesa.bonus" &&
+                ch.key !== "system.modificadores.pericias.geral"
+            ) continue;
+            const v = typeof ch.value === "number"
+                ? ch.value
+                : parseInt(String(ch.value), 10);
+            if (Number.isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
+        }
+    }
+    return maxAbs;
 }
 
 /**
@@ -66,58 +95,82 @@ function isUndead(actor: FoundryActor): boolean {
 }
 
 /**
- * Calcula tokens cujo centro está dentro do raio do template.
+ * Verdadeira posição do token em PIXELS levando em conta o quirk do v13:
  *
- * Tudo é expresso em QUADRADOS (não pixels) para ser independente do tamanho
- * de pixel por quadrado de cada cena.
+ *   No hook `updateToken`, `doc.x/y` ainda é a posição ANTIGA — o destino
+ *   está em `changes.x/y` (que o caller passa via `overrideXY`).
+ *   `doc.x/y` só converge para o destino DEPOIS que a animação termina
+ *   (centenas de ms a segundos). Por isso TODA chamada de sync que vem
+ *   de `updateToken` precisa passar o destino explicitamente.
  *
- * - template.x / template.y são pixels → dividir por gridSize → quadrados
- * - token.document.x / y são pixels  → dividir por gridSize → quadrados
- * - token.document.width / height já estão em quadrados (Foundry v13)
- * - template.distance está em metros → dividir por gridDist (metros/quadrado)
- *   → raio em quadrados (ex.: 9m / 1.5m = 6 quadrados)
+ * Para chamadas de fora de `updateToken` (canvasReady, createToken,
+ * updateMeasuredTemplate), `overrideXY` é undefined e usamos doc.x/y, que
+ * aí sim já está estável.
+ */
+function getTokenPosPx(
+    token: FoundryToken,
+    overrideXY?: { x?: number; y?: number },
+): { x: number; y: number; widthSq: number; heightSq: number } {
+    type TokenDoc = {
+        document?: { x?: number; y?: number; width?: number; height?: number };
+        x?: number; y?: number;
+    };
+    const t = token as unknown as TokenDoc;
+    const doc = t.document;
+    const baseX = doc?.x ?? t.x ?? 0;
+    const baseY = doc?.y ?? t.y ?? 0;
+    return {
+        x:        overrideXY?.x ?? baseX,
+        y:        overrideXY?.y ?? baseY,
+        widthSq:  doc?.width  ?? 1,
+        heightSq: doc?.height ?? 1,
+    };
+}
+
+/**
+ * Testa se o centro do token cai dentro do raio do template.
  *
- * Usa token.document em vez de token.center/token.x para evitar posições
- * obsoletas durante a animação de movimento.
+ * Tudo é convertido para QUADRADOS:
+ *   raioQuads   = template.distance(m) / grid.distance(m/quadrado)
+ *   centroTplQ  = template.x(px) / grid.size(px/quadrado)
+ *   centroTkQ   = token.x(px)    / grid.size + widthSq/2
+ *
+ * `overrideXY` é o destino do movimento (changes.x/y do hook), usado para
+ * derrotar o quirk de doc.x/y desatualizado durante a animação em v13.
+ */
+function isTokenInsideTemplate(
+    token: FoundryToken,
+    template: { x: number; y: number; distance: number },
+    overrideXY?: { x?: number; y?: number },
+): boolean {
+    type CanvasLike = { scene?: { grid?: { size?: number; distance?: number } } };
+    const cv       = canvas as unknown as CanvasLike;
+    const gridSize = cv.scene?.grid?.size     ?? 100;
+    const gridDist = cv.scene?.grid?.distance ?? 1.5;
+
+    const radiusSq = template.distance / gridDist;
+    const tCxSq    = template.x / gridSize;
+    const tCySq    = template.y / gridSize;
+
+    const pos = getTokenPosPx(token, overrideXY);
+    const cx  = pos.x / gridSize + pos.widthSq  / 2;
+    const cy  = pos.y / gridSize + pos.heightSq / 2;
+    const dx  = cx - tCxSq;
+    const dy  = cy - tCySq;
+    return Math.sqrt(dx * dx + dy * dy) <= radiusSq;
+}
+
+/**
+ * Lista de tokens cujo centro está dentro do template (sem override —
+ * para uso em sweeps de mundo, p.ex. ao criar o template inicialmente).
  */
 function tokensInTemplate(template: {
     x: number; y: number; distance: number;
 }): FoundryToken[] {
-    type CanvasLike = {
-        tokens?: { placeables?: FoundryToken[] };
-        scene?: { grid?: { size?: number; distance?: number } };
-    };
-    const cv       = canvas as unknown as CanvasLike;
-    const tokens   = cv.tokens?.placeables ?? [];
-    const gridSize = cv.scene?.grid?.size     ?? 100; // px/quadrado
-    const gridDist = cv.scene?.grid?.distance ?? 1.5; // m/quadrado
-
-    // Raio em quadrados: 9m / 1.5m = 6 quadrados (independente de px/quadrado)
-    const radiusSq = template.distance / gridDist;
-
-    // Centro do template em quadrados
-    const tCxSq = template.x / gridSize;
-    const tCySq = template.y / gridSize;
-
-    return tokens.filter(token => {
-        type TokenDoc = {
-            document?: { x?: number; y?: number; width?: number; height?: number };
-            x?: number; y?: number;
-        };
-        const t   = token as unknown as TokenDoc;
-        const doc = t.document;
-        const docXpx = doc?.x ?? t.x ?? 0;
-        const docYpx = doc?.y ?? t.y ?? 0;
-        // document.width/height em quadrados (padrão 1)
-        const widthSq  = doc?.width  ?? 1;
-        const heightSq = doc?.height ?? 1;
-        // Centro do token em quadrados
-        const cx = docXpx / gridSize + widthSq  / 2;
-        const cy = docYpx / gridSize + heightSq / 2;
-        const dx = cx - tCxSq;
-        const dy = cy - tCySq;
-        return Math.sqrt(dx * dx + dy * dy) <= radiusSq;
-    });
+    type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+    const cv     = canvas as unknown as CanvasLike;
+    const tokens = cv.tokens?.placeables ?? [];
+    return tokens.filter(t => isTokenInsideTemplate(t, template));
 }
 
 /** Promise que resolve quando o usuário clica no canvas (ou ESC para cancelar). */
@@ -231,7 +284,10 @@ async function claimTemplate(
 ): Promise<void> {
     try {
         await tplDoc.update({ [`flags.${MODULE_ID}`]: buildConsagrarFlags(pending) });
-        ui.notifications?.info(`Consagrar ativada (penalidade undead -${pending.undeadPenalty}).`);
+        const msg = pending.undeadPenalty > 0
+            ? `Consagrar ativada (penalidade undead -${pending.undeadPenalty}).`
+            : `Consagrar ativada (sem penalidade — nenhum aprimoramento selecionado).`;
+        ui.notifications?.info(msg);
     } catch (err) {
         console.warn(`[${MODULE_ID}] Consagrar: falha ao reclamar template:`, err);
     }
@@ -289,9 +345,12 @@ function buildEffectData(actor: FoundryActor, template: {
     id: string; uuid: string; flags?: Record<string, Record<string, unknown>>;
 }): Record<string, unknown> | null {
     const moduleFlags   = template.flags?.[MODULE_ID];
-    const undeadPenalty = (moduleFlags?.["undeadPenalty"] as number | undefined) ?? PENALIDADE_BASE;
+    const undeadPenalty = (moduleFlags?.["undeadPenalty"] as number | undefined) ?? 0;
 
     if (isUndead(actor)) {
+        // Sem aprimoramentos selecionados → T20 não computa penalidade → não
+        // criamos AE para o morto-vivo (ele continua na área, mas sem o debuff).
+        if (undeadPenalty <= 0) return null;
         return {
             name: `Consagrar — Penalidade (-${undeadPenalty})`,
             img: "icons/svg/sun.svg",
@@ -404,18 +463,30 @@ function getConsagrarTemplates(): Array<{
  * causando delay na remoção do AE quando o token sai da área durante um sync ativo).
  */
 const _syncInProgress = new Set<string>();
-const _syncPending    = new Map<string, FoundryToken>();
+type PendingSync = { token: FoundryToken; overrideXY?: { x?: number; y?: number } };
+const _syncPending = new Map<string, PendingSync>();
 
-/** Sincroniza UM token contra TODOS os templates Consagrar na cena. */
-async function syncTokenWithTemplates(token: FoundryToken): Promise<void> {
+/**
+ * Sincroniza UM token contra TODOS os templates Consagrar na cena.
+ *
+ * `overrideXY` é o DESTINO do movimento (changes.x/y do updateToken hook).
+ * Necessário em Foundry v13 porque `token.document.x/y` continua na posição
+ * antiga durante toda a animação — só converge para o destino depois. Sem o
+ * override, o sync usa a posição antiga e o "inside" fica incorreto.
+ */
+async function syncTokenWithTemplates(
+    token: FoundryToken,
+    overrideXY?: { x?: number; y?: number },
+): Promise<void> {
     if (!game.user?.isGM) return;
     if (!token.actor) return;
     const tokenId = (token as unknown as { id?: string }).id ?? "";
     if (!tokenId) return;
 
     if (_syncInProgress.has(tokenId)) {
-        // Salva o token mais recente para re-sincronizar assim que o sync atual terminar
-        _syncPending.set(tokenId, token);
+        // Salva o sync mais recente para re-processar assim que o atual terminar.
+        // Sempre prevalece a posição mais nova (último override > anterior).
+        _syncPending.set(tokenId, { token, overrideXY });
         return;
     }
     _syncInProgress.add(tokenId);
@@ -436,10 +507,8 @@ async function syncTokenWithTemplates(token: FoundryToken): Promise<void> {
             return;
         }
         for (const template of templates) {
-            const inside = tokensInTemplate(template).some(
-                t => (t as unknown as { id?: string }).id === tokenId
-            );
-            const has = tokenHasEffectFromTemplate(token.actor, template.id);
+            const inside = isTokenInsideTemplate(token, template, overrideXY);
+            const has    = tokenHasEffectFromTemplate(token.actor, template.id);
             if (inside && !has)  await applyEffectToToken(token, template);
             if (!inside && has)  await removeEffectFromToken(token, template.id);
         }
@@ -449,7 +518,7 @@ async function syncTokenWithTemplates(token: FoundryToken): Promise<void> {
         const pending = _syncPending.get(tokenId);
         if (pending) {
             _syncPending.delete(tokenId);
-            void syncTokenWithTemplates(pending);
+            void syncTokenWithTemplates(pending.token, pending.overrideXY);
         }
     }
 }
@@ -797,7 +866,10 @@ export function setupConsagrar(): void {
         registerPendingCast(uid, {
             casterActorId: message.speaker?.actor ?? "",
             casterName:    message.speaker?.alias ?? "Lançador",
-            undeadPenalty: PENALIDADE_BASE + parseEnhancementBonus(message.content ?? ""),
+            // T20 já computou a penalidade total em flags.tormenta20.effects[]
+            // (respeita "1PM: -2 base" + "2PM × N: cada nível adiciona -1").
+            // Se nenhum aprimoramento for selecionado, vem 0 → sem AE de penalidade.
+            undeadPenalty: computeUndeadPenaltyFromMessage(message),
         });
     });
 
@@ -850,16 +922,23 @@ export function setupConsagrar(): void {
     });
 
     // 4. Token atualizado → resincroniza com todos os templates Consagrar.
-    //    NÃO filtramos por changes.x/y porque o sistema de movimento do v13 pode
-    //    reportar a mudança sob outras chaves (_movement, path, etc.). O sync
-    //    sempre lê document.x/y, que JÁ reflete a posição final do movimento,
-    //    então rodar sempre é correto e barato (idempotente + lock por tokenId).
+    //    QUIRK DE FOUNDRY v13: quando este hook dispara, `tokenDoc.x/y` ainda
+    //    estão na posição ANTIGA — o DESTINO está em `changes.x/y`. Só depois
+    //    da animação inteira (centenas de ms) é que doc.x/y converge para o
+    //    destino. Passamos `changes.x/y` como override de posição pro sync,
+    //    senão o cálculo "inside" usa a posição antiga e o AE não aplica/sai.
     Hooks.on("updateToken", (...args: unknown[]) => {
         if (getConsagrarTemplates().length === 0) return;
         const tokenDoc = args[0] as { object?: FoundryToken };
-        const token = tokenDoc.object;
+        const changes  = args[1] as Record<string, unknown> | undefined;
+        const token    = tokenDoc.object;
         if (!token) return;
-        void syncTokenWithTemplates(token);
+        const destX = typeof changes?.["x"] === "number" ? (changes["x"] as number) : undefined;
+        const destY = typeof changes?.["y"] === "number" ? (changes["y"] as number) : undefined;
+        const overrideXY = (destX !== undefined || destY !== undefined)
+            ? { x: destX, y: destY }
+            : undefined;
+        void syncTokenWithTemplates(token, overrideXY);
     });
 
     // 5. FASE 2: Token criado na cena → checa se cai em algum template Consagrar
@@ -899,7 +978,7 @@ export function setupConsagrar(): void {
         void (async () => {
             for (const token of tokens) {
                 if (!token.actor) continue;
-                const inside = tokensInTemplate(tplDoc).some(t => t === token);
+                const inside = isTokenInsideTemplate(token, tplDoc);
                 const has    = tokenHasEffectFromTemplate(token.actor, tplDoc.id);
                 if (inside && !has)  await applyEffectToToken(token, tplDoc);
                 if (!inside && has)  await removeEffectFromToken(token, tplDoc.id);
