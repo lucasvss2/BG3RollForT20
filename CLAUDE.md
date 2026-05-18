@@ -376,6 +376,10 @@ Roll.fromData((message as any)._source.rolls[0]);
 
 `normalizeCondName(s)` = `s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim()`. **No hyphen substitution.** Constants for matching multi-word power/spell names must keep the space: `"aura sagrada"`, NOT `"aura-sagrada"`. Got bitten by this writing Aura Sagrada detection.
 
+### Poderes do paladino têm prefixo `"Bênção da Justiça: "` (e similares)
+
+O T20 nomeia poderes de família com prefixo de categoria — Égide Sagrada aparece como **"Bênção da Justiça: Égide Sagrada"** (não só "Égide Sagrada"). Quem fizer detecção via `extractSpellName` + `normalizeCondName` DEVE usar `.includes(NORMALIZED_NAME)`, NÃO igualdade. Aura Sagrada parece não ter prefixo (até hoje), mas é só sorte — preferir `.includes()` por default em qualquer detecção nova.
+
 ### `flags.tormenta20.itemData` lacks `name` for powers
 
 `message.flags.tormenta20.itemData` for `type:"poder"` items contains only the item's `.system` payload — there is no `name` top-level field. Always resolve the item name via `extractSpellName(message)` which parses `data-item-id` from the rendered content and looks it up via `actor.items.get(itemId).name`.
