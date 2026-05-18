@@ -456,6 +456,98 @@ async function cleanupAEsForTemplate(templateId: string): Promise<void> {
     }
 }
 
+// ── Sequencer (autoanim persistente atrelado ao token do caster) ────────────
+//
+// O autoanimations cria efeitos PERSISTENTES atrelados ao token do caster (não
+// ao MeasuredTemplate). Pra Égide observei file pattern
+// `autoanimations.static.shieldfx.energyfield.*` (escudo amarelo). Deletar o
+// template NÃO encerra a animação — temos que chamar `Sequencer.EffectManager
+// .endEffects({ effects: <IDs> })`.
+//
+// Estratégia idêntica à do Aura Sagrada: snapshot dos IDs atrelados ao caster
+// ANTES do cast, depois 1.5s após. Diff = IDs novos = efeitos da Égide. Salvo
+// no flag do template. No delete: termino esses IDs + fallback por file regex.
+
+type SequencerEffectManager = {
+    effects: Iterable<{ id: string; data?: { source?: unknown; file?: string } }>;
+    endEffects(filter: { effects: string[] }): Promise<unknown> | unknown;
+};
+
+function getSequencerManager(): SequencerEffectManager | null {
+    const g = globalThis as unknown as { Sequencer?: { EffectManager?: SequencerEffectManager } };
+    return g.Sequencer?.EffectManager ?? null;
+}
+
+function getSequencerEffectIdsForToken(tokenId: string): string[] {
+    if (!tokenId) return [];
+    const sm = getSequencerManager();
+    if (!sm) return [];
+    const out: string[] = [];
+    for (const e of sm.effects) {
+        const src = e.data?.source;
+        const srcStr = typeof src === "string" ? src : "";
+        if (srcStr.includes(tokenId)) out.push(e.id);
+    }
+    return out;
+}
+
+async function endSequencerEffectsByIds(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    const sm = getSequencerManager();
+    if (!sm) return;
+    const liveIds = new Set<string>();
+    for (const e of sm.effects) liveIds.add(e.id);
+    const toEnd = ids.filter(id => liveIds.has(id));
+    if (toEnd.length === 0) return;
+    try {
+        await sm.endEffects({ effects: toEnd });
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao encerrar efeitos do Sequencer:`, err);
+    }
+}
+
+/**
+ * FALLBACK: termina efeitos do autoanim atrelados ao caster token cujo file
+ * casa o padrão de Égide (shieldfx) OU genéricos de spell/aura.
+ */
+async function endAutoanimEgideEffectsForCasterToken(casterTokenId: string): Promise<void> {
+    if (!casterTokenId) return;
+    const sm = getSequencerManager();
+    if (!sm) return;
+    const matchIds: string[] = [];
+    for (const e of sm.effects) {
+        const src = e.data?.source;
+        const srcStr = typeof src === "string" ? src : "";
+        if (!srcStr.includes(casterTokenId)) continue;
+        const file = e.data?.file ?? "";
+        // Padrão pra Égide observado: shieldfx. Cobrimos também spell/aura
+        // genéricos por segurança caso o user troque a animação no autoanim.
+        if (!/autoanimations.*\.(shieldfx|spell|aura)\./i.test(file)) continue;
+        matchIds.push(e.id);
+    }
+    if (matchIds.length === 0) return;
+    try {
+        await sm.endEffects({ effects: matchIds });
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Égide Sagrada: fallback endEffects falhou:`, err);
+    }
+}
+
+async function endEgideAnimationsForCaster(casterTokenId: string, savedIds: string[]): Promise<void> {
+    const sm = getSequencerManager();
+    if (!sm) return;
+
+    if (savedIds && savedIds.length > 0) {
+        await endSequencerEffectsByIds(savedIds);
+    }
+
+    await new Promise(r => setTimeout(r, 100));
+
+    if (casterTokenId) {
+        await endAutoanimEgideEffectsForCasterToken(casterTokenId);
+    }
+}
+
 // ── Pipeline de cast ─────────────────────────────────────────────────────────
 
 async function onEgideSagradaCast(message: ChatMessage): Promise<void> {
@@ -471,6 +563,10 @@ async function onEgideSagradaCast(message: ChatMessage): Promise<void> {
         return;
     }
     const casterTokenId = (casterToken as unknown as { id?: string }).id ?? "";
+
+    // SNAPSHOT: efeitos do Sequencer já atrelados ao caster ANTES do cast.
+    // O diff posterior nos dá os IDs criados pelo autoanim pra Égide.
+    const seqIdsBefore = new Set(getSequencerEffectIdsForToken(casterTokenId));
 
     const baseEffect = extractBaseEffectData(message);
     if (!baseEffect) {
@@ -510,6 +606,21 @@ async function onEgideSagradaCast(message: ChatMessage): Promise<void> {
     }
 
     if (isActiveGM()) await resyncAllTokens();
+
+    // Captura IDs NOVOS do Sequencer (atrelados ao caster) — esses são os
+    // efeitos que o autoanim criou pra animar a Égide. Salvamos no flag pro
+    // hook deleteMeasuredTemplate encerrar a animação depois.
+    void (async () => {
+        await new Promise(r => setTimeout(r, 1500));
+        const afterIds = getSequencerEffectIdsForToken(casterTokenId);
+        const newIds = afterIds.filter(id => !seqIdsBefore.has(id));
+        if (newIds.length === 0) return;
+        try {
+            await tplDoc.update({ [`flags.${MODULE_ID}.sequencerEffectIds`]: newIds });
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao salvar sequencerEffectIds:`, err);
+        }
+    })();
 
     ui.notifications?.info(
         `Égide Sagrada ativada (raio ${raioM}m${withShield ? " — Escudo Fraterno" : " — adjacente"}).`
@@ -677,13 +788,16 @@ export function setupEgideSagrada(): void {
         void resyncAllTokens();
     });
 
-    // 4. Template deletado → cleanup AEs + refresh menu
+    // 4. Template deletado → encerra animação do Sequencer + cleanup AEs + refresh menu
     Hooks.on("deleteMeasuredTemplate", (...args: unknown[]) => {
         const template = args[0] as {
             id: string;
             flags?: Record<string, Record<string, unknown>>;
         };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
+        const seqIds = (template.flags?.[MODULE_ID]?.["sequencerEffectIds"] as string[] | undefined) ?? [];
+        const casterTokenId = (template.flags?.[MODULE_ID]?.[FLAG_CASTER] as string | undefined) ?? "";
+        void endEgideAnimationsForCaster(casterTokenId, seqIds);
         void cleanupAEsForTemplate(template.id).then(() => refreshSkillsMenu());
     });
 
