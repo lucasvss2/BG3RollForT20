@@ -332,6 +332,22 @@ Roll.fromData((message as any)._source.rolls[0]);
 
 `message.flags.tormenta20.itemData` for `type:"poder"` items contains only the item's `.system` payload — there is no `name` top-level field. Always resolve the item name via `extractSpellName(message)` which parses `data-item-id` from the rendered content and looks it up via `actor.items.get(itemId).name`.
 
+### Unlinked tokens têm synthetic actor — `game.actors.get(id)` NÃO ATUALIZA o token
+
+Pra NPCs unlinked (caso clássico: tokens de NPC arrastados pra cena), `token.actor` é um **synthetic actor** separado do world actor. Atualizar `game.actors.get(id)` modifica o ator do mundo mas o token na cena continua com o PV/estado antigo.
+
+**Sempre prefira** `canvas.tokens.get(tokenId).actor` quando o objetivo é modificar o estado VISÍVEL na cena (PV de NPCs, etc.). Helper canônico:
+
+```typescript
+function resolveActorForCandidate(c: { tokenId: string; actorId: string }) {
+    const tok = canvas.tokens?.get(c.tokenId);
+    if (tok?.actor) return tok.actor; // synthetic se unlinked
+    return game.actors?.get(c.actorId) ?? null;
+}
+```
+
+Bug histórico: v1.10.2 — Aura Ardente postava card mostrando dano em Aparição (NPC unlinked) mas PV do token ficava inalterado, porque eu modificava o world actor via `game.actors.get(id).applyDamage(...)`.
+
 ### updateToken — doc.x/y is OLD position during animation
 
 When `updateToken` fires, `tokenDoc.x` and `tokenDoc.y` still hold the **pre-move** position. The destination is in `args[1].x` / `args[1].y` (the `changes` object). Pass these as `overrideXY` to any position-based check; only use `doc.x/y` when called outside of `updateToken` (e.g. `canvasReady`, `createToken`).
