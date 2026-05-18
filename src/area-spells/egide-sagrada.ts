@@ -140,8 +140,11 @@ function isAuraTarget(
 // ── Detecção da Égide Sagrada e estado do caster ─────────────────────────────
 
 function isEgideSagradaMessage(message: ChatMessage): boolean {
-    const name = extractSpellName(message);
-    return normalizeCondName(name) === SPELL_NAME_NORMALIZED;
+    // T20 nomeia o poder como "Bênção da Justiça: Égide Sagrada" (não só
+    // "Égide Sagrada"). Match por substring com word boundary é mais robusto
+    // e cobre eventuais variações futuras (prefixos diferentes etc).
+    const name = normalizeCondName(extractSpellName(message));
+    return name.includes(SPELL_NAME_NORMALIZED);
 }
 
 /** True se o ator tem "Escudo Fraterno" entre seus poderes. */
