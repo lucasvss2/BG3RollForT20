@@ -241,29 +241,30 @@ baseEffectData         — AE template cloned per recipient
 
 **Client setting:** `auraSagrada.alwaysPromptStartOfTurn` — when **false** (default), Aura de Cura applies automatically to all eligible allies at the caster's turn start. When **true**, opens a dialog with checkboxes pre-marked (player can deselect targets). Same setting will be reused by future Aura Ardente.
 
-### Aura de Cura (v1.8.0) — Fase 2
+### Aura de Cura e Aura Ardente — semântica de tick (v1.9.1)
 
-Aprimoramento (item separado no actor, nome `"Aura de Cura"` normalizado). Quando ativo + a Aura Sagrada do mesmo caster está ativa:
-- No início de cada turno do caster (hooks `combatStart` / `combatTurn` / `combatRound`), cura aliados elegíveis em `5 + CHA do caster`.
-- Elegíveis = tokens (caster + mesma `disposition`) **dentro** da aura.
-- Skip de quem está com PV cheio.
-- Multi-GM: só o `isActiveGM()` aplica.
-- CHA do caster lido de `template.flags.aeris-bg3-rolls-t20.baseEffectData.changes[0].value` (T20 já resolveu `@car` no momento do cast).
+Itens normalizados nos poderes do caster: `"aura de cura"` (cura aliados elegíveis) e `"aura ardente"` (dano de luz em mortos-vivos/espíritos). Os dois são independentes — o caster pode ter um, o outro ou ambos.
+
+**Quando o tick acontece**: o efeito é aplicado no início do **turno do ALVO** (não mais no turno do caster). O caster também é elegível pra Aura de Cura no PRÓPRIO turno, porque ele se inclui como aliado dentro da própria aura — preserva o texto "você e os aliados".
+
+**Sustentar (custo de PM)**: quando o turno volta ao caster, o handler debita 1 PM por aura ativa dele. Auras que não couberem ser pagas são **canceladas automaticamente** (delete template → cleanup AEs via hook existente). Posta chat card vermelho `Aura Sagrada cancelada — sem PM` + `ui.notifications.warn`. O sustain roda ANTES do tick → se a aura cair por falta de PM, ela não cura nem dana ninguém neste mesmo turno.
+
+**Aura de Cura**:
+- Elegível = caster + tokens com mesma `disposition`, dentro da aura, com PV < max.
+- Cura = `5 + CHA do caster` (lido de `template.flags.aeris-bg3-rolls-t20.baseEffectData.changes[0].value` — T20 já resolveu `@car` no cast).
 - Aplica via `actor.update({ "system.attributes.pv.value": Math.min(max, cur + heal) })`.
-- Posta chat card resumo: `Aura de Cura — <caster>` + lista `<aliado>: +N`.
+- Posta chat card `Aura de Cura — <caster>` (border `#c8a96e`) com `<alvo>: +N`.
 
-### Aura Ardente (v1.9.0) — Fase 3
-
-Aprimoramento gêmeo (inverso) da Aura de Cura. Item `"Aura Ardente"` normalizado nos poderes do caster. Quando ativo + a Aura Sagrada do mesmo caster está ativa:
-- Mesmos hooks `combatStart` / `combatTurn` / `combatRound`; mesma setting `auraSagrada.alwaysPromptStartOfTurn`.
-- Aplica `5 + CHA` de **dano de luz** em mortos-vivos e espíritos dentro da aura.
-- Alvos = tokens `inside` cuja raça (`actor.system.detalhes.raca`, normalizada) é `"morto-vivo"` ou contém `"espír"`. Disposition NÃO é checada (texto: "à sua escolha" — picker resolve).
-- Aplicação via `actor.applyDamage(amount, 1, false)` — sem RD (luz é elemental). T20 ActorT20 expõe `applyDamage(amount, multiplier=1, applyRD=false)`.
-- Skip de quem está com PV ≤ 0.
-- Posta chat card `Aura Ardente — <caster>` (border `#ff8a4a`) com lista `<alvo>: -N`.
+**Aura Ardente**:
+- Elegível = tokens cuja raça (`actor.system.detalhes.raca`, normalizada) é `"morto-vivo"` ou contém `"espír"`, dentro da aura, com PV > 0. Disposition NÃO é checada (texto: "à sua escolha" — picker resolve).
+- Dano = `5 + CHA do caster` (luz elemental).
+- Aplica via `actor.applyDamage(amount, 1, false)` — sem RD. T20 ActorT20 expõe `applyDamage(amount, multiplier=1, applyRD=false)`.
+- Posta chat card `Aura Ardente — <caster>` (border `#ff8a4a`).
 - CSS suplementar: `.bg3-aura-ardente-picker` com texto laranja.
 
-O hook `onCombatTurnStart` agora aplica AMBOS aprimoramentos em paralelo — caster pode ter um, outro ou ambos; cada aprimoramento checa seus próprios candidatos antes de rodar.
+**Setting `auraSagrada.alwaysPromptStartOfTurn`**: quando `true`, abre 1 dialog por alvo perguntando aplicar/pular. Quando `false` (default), aplica direto.
+
+**Hooks**: `combatStart` / `combatTurn` / `combatRound` (`isActiveGM()` é o único que roda; sequência: sustain → tick).
 
 ### Phases not yet implemented
 Aura Antimagia · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
