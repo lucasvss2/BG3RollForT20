@@ -447,6 +447,117 @@ async function cleanupAEsForTemplate(templateId: string): Promise<void> {
     }
 }
 
+// ── Sequencer (animação persistente do autoanimations) ──────────────────────
+//
+// Quando o usuário lança "Aura Sagrada", o módulo `autoanimations` (via
+// Sequencer) cria 1 ou mais efeitos visuais PERSISTENTES anexados ao TOKEN
+// do caster (não ao MeasuredTemplate). Deletar o template NÃO encerra a
+// animação — ela continua até alguém chamar `Sequencer.EffectManager.endEffects`.
+//
+// Estratégia: capturamos a LISTA de IDs de efeitos do Sequencer atrelados
+// ao caster ANTES e DEPOIS do cast (com pequeno delay pro autoanim disparar).
+// Os IDs NOVOS são os efeitos da aura — guardamos no flag do template.
+// Quando a aura cai (delete via botão OU sem PM), terminamos esses IDs
+// especificamente via `endEffects({ effects: <objetos> })`.
+
+type SequencerEffectManager = {
+    effects: Iterable<{ id: string; data?: { source?: unknown; file?: string } }>;
+    // `effects` em endEffects DEVE ser string[] (IDs) ou CanvasEffect[];
+    // passar [{ id }] dá: "collections in inFilter.effects must be of type
+    // string or CanvasEffect".
+    endEffects(filter: { effects: string[] }): Promise<unknown> | unknown;
+};
+
+function getSequencerManager(): SequencerEffectManager | null {
+    const g = globalThis as unknown as { Sequencer?: { EffectManager?: SequencerEffectManager } };
+    return g.Sequencer?.EffectManager ?? null;
+}
+
+/** Lista IDs de efeitos do Sequencer cuja `source` (string) inclui o tokenId. */
+function getSequencerEffectIdsForToken(tokenId: string): string[] {
+    if (!tokenId) return [];
+    const sm = getSequencerManager();
+    if (!sm) return [];
+    const out: string[] = [];
+    for (const e of sm.effects) {
+        const src = e.data?.source;
+        const srcStr = typeof src === "string" ? src : "";
+        if (srcStr.includes(tokenId)) out.push(e.id);
+    }
+    return out;
+}
+
+/**
+ * Termina (com cleanup visual) os efeitos do Sequencer cujos IDs estão na
+ * lista. Aceita IDs que possivelmente já não existem mais — silent.
+ */
+async function endSequencerEffectsByIds(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    const sm = getSequencerManager();
+    if (!sm) return;
+    const liveIds = new Set<string>();
+    for (const e of sm.effects) liveIds.add(e.id);
+    const toEnd = ids.filter(id => liveIds.has(id));
+    if (toEnd.length === 0) return;
+    try {
+        // API quer string[] (IDs); passar [{id}] objeto plain quebra.
+        await sm.endEffects({ effects: toEnd });
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao encerrar efeitos do Sequencer:`, err);
+    }
+}
+
+/**
+ * Termina efeitos do autoanimations atrelados ao caster token cujo arquivo
+ * sugere ser uma animação de magia. Usado como FALLBACK quando o flag
+ * `sequencerEffectIds` está vazio (race no cast).
+ */
+async function endAutoanimSpellEffectsForCasterToken(casterTokenId: string): Promise<void> {
+    if (!casterTokenId) return;
+    const sm = getSequencerManager();
+    if (!sm) return;
+    const matchIds: string[] = [];
+    for (const e of sm.effects) {
+        const src = e.data?.source;
+        const srcStr = typeof src === "string" ? src : "";
+        if (!srcStr.includes(casterTokenId)) continue;
+        const file = e.data?.file ?? "";
+        // Pattern do autoanim pra spells/auras (cobre detectmagic, aura, etc.)
+        if (!/autoanimations.*\.(spell|aura)\./i.test(file)) continue;
+        matchIds.push(e.id);
+    }
+    if (matchIds.length === 0) return;
+    try {
+        await sm.endEffects({ effects: matchIds });
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Aura Sagrada: fallback endEffects falhou:`, err);
+    }
+}
+
+/**
+ * Estratégia dupla pra encerrar a animação visual da aura:
+ *  1. Primeiro pelos IDs salvos no flag (preciso — só esses)
+ *  2. Depois, se nada foi terminado, fallback por casterTokenId + filtro de file
+ */
+async function endAuraAnimationsForCaster(casterTokenId: string, savedIds: string[]): Promise<void> {
+    const sm = getSequencerManager();
+    if (!sm) return;
+    const liveBefore = new Set<string>();
+    for (const e of sm.effects) liveBefore.add(e.id);
+
+    if (savedIds && savedIds.length > 0) {
+        await endSequencerEffectsByIds(savedIds);
+    }
+
+    // Espera o end propagar
+    await new Promise(r => setTimeout(r, 100));
+
+    // Se ainda há efeitos do tipo spell/aura atrelados ao caster, fallback
+    if (casterTokenId) {
+        await endAutoanimSpellEffectsForCasterToken(casterTokenId);
+    }
+}
+
 // ── Pipeline de cast ─────────────────────────────────────────────────────────
 
 /**
@@ -470,6 +581,11 @@ async function onAuraSagradaCast(message: ChatMessage): Promise<void> {
         return;
     }
     const casterTokenId = (casterToken as unknown as { id?: string }).id ?? "";
+
+    // SNAPSHOT: efeitos do Sequencer já atrelados ao caster ANTES do cast.
+    // Capturamos imediatamente (antes de qualquer outra coisa) pra não competir
+    // com o autoanimations que também escuta `createChatMessage`.
+    const seqIdsBefore = new Set(getSequencerEffectIdsForToken(casterTokenId));
 
     const baseEffect = extractBaseEffectData(message);
     if (!baseEffect) {
@@ -515,6 +631,21 @@ async function onAuraSagradaCast(message: ChatMessage): Promise<void> {
     //    NB: o `updateMeasuredTemplate` resultante do passo 3 já chama resync;
     //    forçamos aqui também por garantia (caso GM não esteja com sync ativo).
     if (isActiveGM()) await resyncAllTokens();
+
+    // 5. Após delay, captura efeitos NOVOS do Sequencer (atrelados ao caster)
+    //    — esses são os que o autoanim criou pra animar a aura. Salvamos os IDs
+    //    no flag pro hook deleteMeasuredTemplate encerrar visualmente depois.
+    void (async () => {
+        await new Promise(r => setTimeout(r, 1500));
+        const afterIds = getSequencerEffectIdsForToken(casterTokenId);
+        const newIds = afterIds.filter(id => !seqIdsBefore.has(id));
+        if (newIds.length === 0) return;
+        try {
+            await tplDoc.update({ [`flags.${MODULE_ID}.sequencerEffectIds`]: newIds });
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao salvar sequencerEffectIds:`, err);
+        }
+    })();
 
     ui.notifications?.info(
         `Aura Sagrada ativada (raio ${raioM}m${raioM === RAIO_PODEROSA_M ? " — Aura Poderosa" : ""}).`
@@ -1342,11 +1473,24 @@ export function setupAuraSagrada(): void {
         void resyncAllTokens();
     });
 
-    // 4. Template deletado → limpar AEs e refresh do skills-menu (botão de cancelar
-    //    pode ter ficado sem ações visíveis).
+    // 4. Template deletado → limpar AEs, encerrar animação do Sequencer
+    //    (autoanimations cria efeitos PERSISTENTES anexados ao token do caster;
+    //    deletar o template não para isso — temos que chamar endEffects), e
+    //    refresh do skills-menu.
     Hooks.on("deleteMeasuredTemplate", (...args: unknown[]) => {
-        const template = args[0] as { id: string; flags?: Record<string, Record<string, unknown>> };
+        const template = args[0] as {
+            id: string;
+            flags?: Record<string, Record<string, unknown>>;
+        };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
+        // Encerra animação ANTES do cleanup. Estratégia dupla pra robustez:
+        //   1. IDs salvos no flag (capturados no cast) — caminho preciso
+        //   2. Fallback: pega todos efeitos do Sequencer atrelados ao caster
+        //      token cujo file menciona "spell" (autoanimations) e termina —
+        //      cobre caso o flag não tenha sido salvo a tempo (race no cast)
+        const seqIds = (template.flags?.[MODULE_ID]?.["sequencerEffectIds"] as string[] | undefined) ?? [];
+        const casterTokenId = (template.flags?.[MODULE_ID]?.[FLAG_CASTER] as string | undefined) ?? "";
+        void endAuraAnimationsForCaster(casterTokenId, seqIds);
         void cleanupAEsForTemplate(template.id).then(() => refreshSkillsMenu());
     });
 
