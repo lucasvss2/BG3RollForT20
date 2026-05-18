@@ -386,7 +386,8 @@ actor.system.pericias.refl.value; // total Reflexos bonus
 actor.system.pericias.vont.value; // total Vontade bonus
 actor.system.attributes.pv; // { value, max, temp }
 actor.system.nivel.value; // character level
-actor.system.detalhes.raca; // NPC race string, e.g. "Morto-vivo"
+actor.system.detalhes.raca; // NPC race string, e.g. "Morto-vivo" — MAS pode vir vazio
+actor.system.detalhes.tipo; // Código curto T20: "hum"|"ani"|"con"|"mon"|"mor"|"esp"|""
 
 // Spell item (from message.getFlag("tormenta20","itemData"))
 itemData.type; // "magia"
@@ -416,6 +417,20 @@ roll.options.type; // "attack"|"damage"|"initiative"|"skill"|"save"
 | Fortitude | `fort` | CON      |
 | Reflexos  | `refl` | DEX      |
 | Vontade   | `vont` | WIS      |
+
+### Tipos de NPC no bestiário T20 (`detalhes.tipo`)
+
+| Código | Significado | Exemplos |
+|---|---|---|
+| `hum` | Humanoide | Drake, Asuka, Aparição, Esqueleto |
+| `ani` | Animal | Capivara, Cavalo |
+| `con` | Construto | Armário Animado, Mímico, Baú Animado |
+| `mon` | Monstro | Carrasco de Lena, Ente, Trog Rei |
+| `mor` | Morto-vivo | Lich, Ravarimm |
+| `esp` | Espírito | Sílfide, Nandara |
+| `""` | Legado / não classificado | Escribas, alguns NPCs antigos |
+
+**Atenção**: `detalhes.raca` pode estar vazio mesmo para mortos-vivos (Lich, p.ex.) — sempre cheque AMBOS `raca` e `tipo`. Combinações são comuns: Ravarimm = `raca: "Anão"` + `tipo: "mor"` (humanoide morto-vivo).
 
 ---
 
