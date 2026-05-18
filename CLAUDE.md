@@ -348,6 +348,17 @@ function resolveActorForCandidate(c: { tokenId: string; actorId: string }) {
 
 Bug histórico: v1.10.2 — Aura Ardente postava card mostrando dano em Aparição (NPC unlinked) mas PV do token ficava inalterado, porque eu modificava o world actor via `game.actors.get(id).applyDamage(...)`.
 
+### Múltiplos tokens unlinked do MESMO NPC base compartilham `actor.id`
+
+Quando o usuário arrasta o MESMO NPC pra cena várias vezes (ex.: 2 "Ameaça" Aparição), TODOS os tokens unlinked criam synthetic actors com o MESMO `actor.id` (herdado do world actor). Apenas o `token.id` é único por instância.
+
+Implicações:
+- Dedup por `actor.id` faz só um token entrar em listas de candidates. Use `seen Set<tokenId>` em vez de `seen Set<actorId>`.
+- Pra identificar "este combatant específico" em combat hooks, use `combat.combatant.tokenId` (ou `combatant.token.id`), NUNCA `combatant.actor.id`.
+- `combatant.actor` pra unlinked é o synthetic do token específico — instâncias diferentes por token, mas todas com mesmo `.id`. Comparar com `===` pode parecer funcionar mas é frágil; sempre prefira tokenId.
+
+Bug histórico: v1.10.3 — Aura Ardente em cena com 2 Aparições só danificava a primeira em ambos os turnos.
+
 ### updateToken — doc.x/y is OLD position during animation
 
 When `updateToken` fires, `tokenDoc.x` and `tokenDoc.y` still hold the **pre-move** position. The destination is in `args[1].x` / `args[1].y` (the `changes` object). Pass these as `overrideXY` to any position-based check; only use `doc.x/y` when called outside of `updateToken` (e.g. `canvasReady`, `createToken`).
