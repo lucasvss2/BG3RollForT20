@@ -264,7 +264,22 @@ Itens normalizados nos poderes do caster: `"aura de cura"` (cura aliados elegív
 
 **Setting `auraSagrada.alwaysPromptStartOfTurn`**: quando `true`, abre 1 dialog por alvo perguntando aplicar/pular. Quando `false` (default), aplica direto.
 
-**Hooks**: `combatStart` / `combatTurn` / `combatRound` (`isActiveGM()` é o único que roda; sequência: sustain → tick).
+**Hooks**: `combatTurnChange(combat, prior, current)` (`isActiveGM()` é o único que roda; sequência: sustain → tick).
+
+**⚠️ Gotcha**: NÃO usar `combatTurn` — esse hook entrega `combat.combatant` como o combatant ANTERIOR (que está terminando o turno), o que aplica o tick no FIM do turno do recebedor. `combatTurnChange` é o hook correto: entrega `combat.combatant = NOVO combatant` e dispara em todas as transições (start do combate, próximo turno, virada de round).
+
+### Aura Antimagia (v1.10.0) — Fase 4
+
+Aprimoramento (item `"Aura Antimagia"` normalizado nos poderes do caster; pre-req paladino nível 14). Quando ativo + a Aura Sagrada do mesmo caster está ativa:
+- Aliados elegíveis (caster + mesma `disposition`, dentro da aura) podem rolar novamente qualquer teste de resistência contra magia. Sem custo extra.
+
+**Implementação**:
+- `aura-sagrada.ts` exporta `getAuraAntimagiaContextForActor(actorId): Array<{ casterName, casterActorId }>` que filtra: ator dentro de aura ativa cujo caster tem o aprimoramento + mesma disposition.
+- `spell-resistance/index.ts` consulta esse helper ao construir o dialog unificado. Se há contexto, renderiza badge `.smf-aura-antimagia-badge` (gradient dourado, borda esquerda destacada) acima do form de resistência: `"Aura Antimagia disponível — <caster> permite re-roll deste teste"`.
+- O dialog JÁ permitia re-roll livre (botão "Rerolar" após a primeira tentativa); a badge dá contexto narrativo do POR QUE o re-roll é gratuito agora. Não muda mecânica do dialog.
+
+### Phases not yet implemented
+Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
 
 ### Encerrar animação ao cancelar a aura (v1.9.2)
 
