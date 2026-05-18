@@ -30,45 +30,72 @@ const RAIO_METROS = 9;
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Lê a penalidade FINAL para mortos-vivos diretamente dos efeitos que o T20
- * já computou em `message.flags.tormenta20.effects` levando em conta os
- * aprimoramentos selecionados na hora do cast.
+ * Elege o GM "primário" para executar mutações compartilhadas (apply/remove
+ * AE, sweep, etc.). Quando há múltiplos GMs ativos, todos rodavam a lógica
+ * em paralelo e cada mutação era feita N vezes — o bug de duplicação de AE
+ * reportado em v1.6.66. Elegemos o GM ativo com o menor ID lexicográfico:
+ * determinístico em todos os clientes, sem precisar de coordenação.
+ */
+function isActiveGM(): boolean {
+    const myId = game.user?.id;
+    if (!myId || !game.user?.isGM) return false;
+    const activeGMs = (game.users?.contents ?? [])
+        .filter(u => u.isGM && u.active)
+        .map(u => u.id)
+        .sort();
+    return activeGMs[0] === myId;
+}
+
+/**
+ * Calcula a penalidade para mortos-vivos com base nos APRIMORAMENTOS QUE O
+ * USUÁRIO REALMENTE MARCOU no cast (`message.flags.tormenta20.onUseEffects`).
  *
- * Vantagem: delegar 100% da matemática ao T20 (incluindo "1PM: -2 base" +
- * "2PM × N: cada nível adiciona -1"). Se nenhum aprimoramento for marcado,
- * o array `effects` vem vazio → retorna 0 (sem AE de penalidade).
+ * Por que NÃO usar `flags.tormenta20.effects`:
+ *   T20 carrega `effects[0] = "Penalidade em Mortos-Vivos" (-2)` na mensagem
+ *   *independentemente* do usuário ter ativado o 1PM. Ler dali aplicava
+ *   penalidade mesmo sem aprimoramento — o bug reportado em v1.6.66.
  *
- * A estrutura é `Array<Array<EffectData>>` — achatamos e pegamos o maior
- * |value| entre os changes que miram defesa.bonus ou pericias.geral.
+ * Regra (segundo o texto da magia + esclarecimento do usuário):
+ *   - 1PM "além do normal ... -2 em testes e Defesa" — base; SEM ele, ZERO
+ *   - 2PM "aumenta as penalidades em -1" — cada nível adiciona -1
+ *   - Se o 1PM não foi marcado, o 2PM (que só "aumenta as penalidades") não
+ *     produz penalidade sozinho.
  */
 function computeUndeadPenaltyFromMessage(message: ChatMessage): number {
-    type EffectShape = {
-        name?: string;
-        changes?: Array<{ key: string; value: number | string }>;
-    };
+    type OnUseEntry = { cost?: number; description?: string; qty?: number };
     const t20 = (message.flags as Record<string, unknown> | undefined)?.tormenta20 as
-        | { effects?: unknown } | undefined;
-    const raw = t20?.effects;
+        | { onUseEffects?: unknown } | undefined;
+    const raw = t20?.onUseEffects;
     if (!Array.isArray(raw)) return 0;
-    const flat: EffectShape[] = raw.flatMap((inner: unknown): EffectShape[] =>
-        Array.isArray(inner)
-            ? (inner as EffectShape[])
-            : [inner as EffectShape]
-    );
-    let maxAbs = 0;
-    for (const eff of flat) {
-        for (const ch of (eff.changes ?? [])) {
-            if (
-                ch.key !== "system.attributes.defesa.bonus" &&
-                ch.key !== "system.modificadores.pericias.geral"
-            ) continue;
-            const v = typeof ch.value === "number"
-                ? ch.value
-                : parseInt(String(ch.value), 10);
-            if (Number.isFinite(v)) maxAbs = Math.max(maxAbs, Math.abs(v));
+
+    let baseFromFirst   = 0;
+    let extraFromSecond = 0;
+
+    for (const rawE of raw) {
+        const e   = rawE as OnUseEntry;
+        const qty = Number(e?.qty ?? 0);
+        if (!Number.isFinite(qty) || qty < 1) continue;
+        const desc = String(e?.description ?? "");
+
+        // 1PM: "além do normal, mortos-vivos na área sofrem –2 em testes e Defesa"
+        // — detectamos pelo "-2" próximo a "testes e Defesa".
+        if (/[-–−]\s*2[^a-z]+testes\s+e\s+defesa/i.test(desc)) {
+            baseFromFirst = 2;
+            continue;
+        }
+
+        // 2PM: "aumenta as penalidades para mortos-vivos em –1"
+        // — cada nível (qty) adiciona -1 à penalidade existente.
+        if (/aumenta\s+(?:as\s+)?penalidades/i.test(desc)) {
+            extraFromSecond += qty * 1;
+            continue;
         }
     }
-    return maxAbs;
+
+    // Sem o aprimoramento-base (1PM), não há penalidade — o 2PM sozinho só
+    // "aumenta as penalidades", não cria nenhuma.
+    if (baseFromFirst === 0) return 0;
+    return baseFromFirst + extraFromSecond;
 }
 
 /**
@@ -392,6 +419,32 @@ function tokenHasEffectFromTemplate(actor: FoundryActor, templateId: string): bo
  */
 const _applyInProgress = new Set<string>();
 
+/**
+ * Procura uma AE de Consagrar "Penalidade em Mortos-Vivos" no ator que NÃO
+ * foi marcada por nós (tipicamente: aplicada pelo botão `chat-apply-ae` do
+ * card do T20). Quando existe, devemos ADOTAR essa AE (marcando com nossa
+ * flag de origem) em vez de criar uma duplicada.
+ */
+function findUnclaimedT20PenaltyEffect(
+    actor: FoundryActor,
+    templateId: string,
+): FoundryItemEffect | null {
+    for (const e of (actor.effects?.contents ?? [])) {
+        const ours = (e.flags?.[MODULE_ID] as Record<string, unknown> | undefined)?.[FLAG_EFFECT_ORIGIN];
+        if (ours) continue; // já é nosso (de qualquer template)
+        const name = e.name ?? "";
+        if (
+            name === "Penalidade em Mortos-Vivos" ||
+            /^Consagrar\s*[—\-:]\s*Penalidade/i.test(name)
+        ) {
+            // Sanity: ignora templateId === ours já filtrado acima
+            void templateId;
+            return e;
+        }
+    }
+    return null;
+}
+
 /** Aplica o AE deste template ao token (se ainda não tiver). Thread-safe. */
 async function applyEffectToToken(token: FoundryToken, template: {
     id: string; uuid: string; flags?: Record<string, Record<string, unknown>>;
@@ -407,6 +460,27 @@ async function applyEffectToToken(token: FoundryToken, template: {
     try {
         // Double-check após adquirir o lock (pode ter sido aplicado por caller concorrente)
         if (tokenHasEffectFromTemplate(actor, template.id)) return false;
+
+        // ADOÇÃO: se já há uma AE de "Penalidade em Mortos-Vivos" no ator
+        // (tipicamente aplicada manualmente via botão `chat-apply-ae` do
+        // chat-card T20), apenas marcamos com nossa origem em vez de criar
+        // duplicata. removeEffectFromToken depois apaga essa AE quando o
+        // token deixar a área.
+        if (isUndead(actor)) {
+            const existing = findUnclaimedT20PenaltyEffect(actor, template.id);
+            if (existing) {
+                try {
+                    await (existing as unknown as { update(d: Record<string, unknown>): Promise<unknown> })
+                        .update({ [`flags.${MODULE_ID}.${FLAG_EFFECT_ORIGIN}`]: template.id });
+                    return true;
+                } catch (err) {
+                    console.warn(`[${MODULE_ID}] Consagrar adopt em ${actor.name}:`, err);
+                    // Se a adoção falhar, NÃO criamos uma nova (evita o duplicado)
+                    return false;
+                }
+            }
+        }
+
         const data = buildEffectData(actor, template);
         if (!data) return false;
         await (actor as FoundryActor & {
@@ -478,7 +552,7 @@ async function syncTokenWithTemplates(
     token: FoundryToken,
     overrideXY?: { x?: number; y?: number },
 ): Promise<void> {
-    if (!game.user?.isGM) return;
+    if (!isActiveGM()) return;
     if (!token.actor) return;
     const tokenId = (token as unknown as { id?: string }).id ?? "";
     if (!tokenId) return;
@@ -527,7 +601,7 @@ async function applyAEsForTemplate(template: {
     id: string; uuid: string; x: number; y: number; distance: number;
     flags?: Record<string, Record<string, unknown>>;
 }): Promise<void> {
-    if (!game.user?.isGM) return;
+    if (!isActiveGM()) return;
     const moduleFlags = template.flags?.[MODULE_ID];
     if (!moduleFlags || moduleFlags[FLAG_SPELL] !== SPELL_KEY) return;
 
@@ -550,7 +624,7 @@ async function applyAEsForTemplate(template: {
 }
 
 async function removeAEsForTemplate(templateId: string): Promise<void> {
-    if (!game.user?.isGM) return;
+    if (!isActiveGM()) return;
 
     // Coleta atores únicos de DOIS lugares:
     //   (1) game.actors.contents — atores do mundo
@@ -907,7 +981,7 @@ export function setupConsagrar(): void {
             }
         }
 
-        if (hasConsagrar && game.user?.isGM) {
+        if (hasConsagrar && isActiveGM()) {
             void applyAEsForTemplate(tplDoc);
         }
         refreshRemoveAreaButton();
@@ -941,6 +1015,62 @@ export function setupConsagrar(): void {
         void syncTokenWithTemplates(token, overrideXY);
     });
 
+    // 4b. AE criada em qualquer ator:
+    //     Se for "Penalidade em Mortos-Vivos" (vinda do botão `chat-apply-ae`
+    //     do card T20) e o ator estiver dentro de uma área Consagrar:
+    //       - se JÁ existe uma AE nossa pra esse template → deleta a nova
+    //         (é a duplicada); caso contrário, ADOTA a nova marcando com
+    //         nossa flag de origem.
+    //     Evita o cenário de duplicação reportado quando o usuário clica
+    //     no botão de aplicar efeito do chat APÓS o nosso auto-apply.
+    Hooks.on("createActiveEffect", (...args: unknown[]) => {
+        if (!isActiveGM()) return;
+        const ae = args[0] as FoundryItemEffect & {
+            parent?: FoundryActor;
+            update?(d: Record<string, unknown>): Promise<unknown>;
+        };
+        // Pula AE que já é nossa (já tem origem Consagrar)
+        if ((ae.flags?.[MODULE_ID] as Record<string, unknown> | undefined)?.[FLAG_EFFECT_ORIGIN]) return;
+        const name = ae.name ?? "";
+        if (
+            name !== "Penalidade em Mortos-Vivos" &&
+            !/^Consagrar\s*[—\-:]\s*Penalidade/i.test(name)
+        ) return;
+        const actor = ae.parent;
+        if (!actor) return;
+
+        const templates = getConsagrarTemplates();
+        if (templates.length === 0) return;
+
+        type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+        const cv = canvas as unknown as CanvasLike;
+        const tokens = cv.tokens?.placeables ?? [];
+        // Acha o token deste ator (linked ou unlinked) na cena
+        const myToken = tokens.find(t =>
+            t.actor === actor ||
+            (t.actor as unknown as { id?: string })?.id === (actor as unknown as { id?: string }).id
+        );
+        if (!myToken) return;
+
+        for (const template of templates) {
+            if (!isTokenInsideTemplate(myToken, template)) continue;
+            const oursForThisTpl = (actor.effects?.contents ?? []).find(e =>
+                e.id !== ae.id &&
+                (e.flags?.[MODULE_ID] as Record<string, unknown> | undefined)?.[FLAG_EFFECT_ORIGIN] === template.id
+            );
+            if (oursForThisTpl) {
+                // Já temos AE pra esse template → a recém-criada é duplicada → deleta
+                void (actor as FoundryActor & {
+                    deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
+                }).deleteEmbeddedDocuments("ActiveEffect", [ae.id]);
+            } else {
+                // Adota: marca a AE recém-criada como nossa
+                void ae.update?.({ [`flags.${MODULE_ID}.${FLAG_EFFECT_ORIGIN}`]: template.id });
+            }
+            return;
+        }
+    });
+
     // 5. FASE 2: Token criado na cena → checa se cai em algum template Consagrar
     Hooks.on("createToken", (...args: unknown[]) => {
         const tokenDoc = args[0] as { object?: FoundryToken };
@@ -963,7 +1093,7 @@ export function setupConsagrar(): void {
         // (a) Flag Consagrar acabou de ser adicionada
         const flagChange = (changes["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
         if (flagChange && flagChange[FLAG_SPELL] === SPELL_KEY) {
-            if (game.user?.isGM) void applyAEsForTemplate(tplDoc);
+            if (isActiveGM()) void applyAEsForTemplate(tplDoc);
             refreshRemoveAreaButton();
             return;
         }
@@ -971,7 +1101,7 @@ export function setupConsagrar(): void {
         // (b) Mudança geométrica em template Consagrar já existente
         if (tplDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
         if (changes["x"] === undefined && changes["y"] === undefined && changes["distance"] === undefined) return;
-        if (!game.user?.isGM) return;
+        if (!isActiveGM()) return;
         type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
         const cv = canvas as unknown as CanvasLike;
         const tokens = cv.tokens?.placeables ?? [];
@@ -993,7 +1123,7 @@ export function setupConsagrar(): void {
         // (vale para GM e jogadores; por isso vem antes do early-return de GM).
         refreshRemoveAreaButton();
 
-        if (!game.user?.isGM) return;
+        if (!isActiveGM()) return;
         const templates = getConsagrarTemplates();
         if (templates.length === 0) return;
         type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
@@ -1016,7 +1146,7 @@ export function setupConsagrar(): void {
     // 8. FASE 3: Tempo do mundo avança → remove templates cujo 1 dia expirou
     const ONE_DAY_SECONDS = 86400;
     Hooks.on("updateWorldTime", (...args: unknown[]) => {
-        if (!game.user?.isGM) return;
+        if (!isActiveGM()) return;
         const worldTime = args[0] as number;
         const templates = getConsagrarTemplates();
         if (templates.length === 0) return;
