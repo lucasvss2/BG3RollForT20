@@ -921,6 +921,20 @@ type HealCandidate = {
     healed:    number;  // quanto foi efetivamente curado (clamped)
 };
 
+/**
+ * Resolve o `actor` correto pra um candidate. Prefere o actor do TOKEN
+ * (synthetic) porque tokens unlinked têm um actor separado do world actor
+ * — modificar `game.actors.get(id)` NÃO reflete no PV mostrado no token.
+ * Fallback: world actor.
+ */
+function resolveActorForCandidate(c: { tokenId: string; actorId: string }): FoundryActor | null {
+    type CanvasLike = { tokens?: { get(id: string): FoundryToken | null } };
+    const cv = canvas as unknown as CanvasLike;
+    const tok = cv.tokens?.get(c.tokenId);
+    if (tok?.actor) return tok.actor;
+    return game.actors?.get(c.actorId) ?? null;
+}
+
 /** Lista tokens elegíveis pra cura por uma aura — caster + aliados FRIENDLY dentro. */
 function listHealCandidates(template: AuraTpl, healAmount: number): HealCandidate[] {
     type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
@@ -978,7 +992,10 @@ async function applyHealsAndPostCard(opts: {
     const applied: HealCandidate[] = [];
     for (const c of candidates) {
         try {
-            const actor = game.actors?.get(c.actorId);
+            // IMPORTANTE: resolver via TOKEN (não via game.actors). Tokens
+            // unlinked (NPCs) têm um synthetic actor cujo PV é separado do
+            // world actor — atualizar o world actor NÃO reflete no token.
+            const actor = resolveActorForCandidate(c);
             if (!actor) continue;
             await actor.update({ "system.attributes.pv.value": c.pvAfter });
             applied.push(c);
@@ -1139,7 +1156,10 @@ async function applyBurnsAndPostCard(opts: {
     };
     const applied: Array<BurnCandidate & { pvAfter: number; dealt: number }> = [];
     for (const c of candidates) {
-        const actor = game.actors?.get(c.actorId) as ActorWithApply | undefined;
+        // IMPORTANTE: resolver via TOKEN (synthetic actor pra unlinked NPCs).
+        // Aparição é o caso clássico: NPC unlinked, applyDamage no world actor
+        // não move o PV do token na cena.
+        const actor = resolveActorForCandidate(c) as ActorWithApply | null;
         if (!actor) continue;
         try {
             // applyRD=false — dano de luz é elemental, ignora RD genérica
