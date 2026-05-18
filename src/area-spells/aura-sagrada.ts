@@ -1085,64 +1085,180 @@ function pickBurnTargetsDialog(opts: {
     });
 }
 
+// ── Sustentar (1 PM por turno do caster) ─────────────────────────────────────
+//
+// Aura Sagrada tem "duração sustentada" no T20: o caster gasta 1 PM toda vez
+// que o turno volta a ele, ou a aura cai. Se NÃO tiver 1 PM disponível na hora
+// de pagar, a aura é cancelada automaticamente (delete template → cleanup AEs).
+
+async function spendSustainPM(caster: FoundryActor, auras: AuraTpl[]): Promise<{
+    survivedAuras: AuraTpl[];
+    cancelledCount: number;
+}> {
+    type PmShape = { value?: number; max?: number };
+    const pm  = (caster.system?.attributes?.pm ?? {}) as PmShape;
+    let pmCur = Number(pm.value ?? 0);
+    if (!Number.isFinite(pmCur)) pmCur = 0;
+
+    const need = auras.length;          // 1 PM por aura ativa do caster
+    const canSustain = Math.max(0, Math.min(need, pmCur));
+    const survived   = auras.slice(0, canSustain);
+    const cancelled  = auras.slice(canSustain);
+
+    // Cobra os PMs que conseguiu pagar
+    if (canSustain > 0) {
+        const newPm = Math.max(0, pmCur - canSustain);
+        try {
+            await caster.update({ "system.attributes.pm.value": newPm });
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao debitar PM:`, err);
+        }
+    }
+
+    // Cancela as auras que não couberam ser sustentadas
+    if (cancelled.length > 0) {
+        type SceneLike = { deleteEmbeddedDocuments?(t: string, ids: string[]): Promise<unknown> };
+        const scene = (canvas as unknown as { scene?: SceneLike }).scene;
+        if (scene?.deleteEmbeddedDocuments) {
+            try {
+                await scene.deleteEmbeddedDocuments("MeasuredTemplate", cancelled.map(t => t.id));
+            } catch (err) {
+                console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao cancelar aura por falta de PM:`, err);
+            }
+        }
+        // Posta aviso no chat
+        const casterName = (cancelled[0].flags?.[MODULE_ID]?.["casterName"] as string | undefined)
+            ?? caster.name ?? "Paladino";
+        try {
+            await ChatMessage.create({
+                content: `
+                    <div class="tormenta20 chat-card item-card" style="border-color:#cc4444;">
+                        <header class="card-header flexrow">
+                            <h3 class="item-name"><div>Aura Sagrada cancelada — sem PM</div></h3>
+                        </header>
+                        <div class="card-content" style="padding:6px 10px;color:#d0c4a8;">
+                            <p style="margin:0;">
+                                <b>${escHtml(casterName)}</b> não tinha PM suficiente para sustentar
+                                a aura (precisava ${need}, tinha ${pmCur}).
+                                ${cancelled.length === 1 ? "Aura encerrada." : `${cancelled.length} auras encerradas.`}
+                            </p>
+                        </div>
+                    </div>`,
+                speaker: { alias: casterName },
+            });
+        } catch { /* ignore */ }
+        ui.notifications?.warn(
+            `${casterName}: sem PM para sustentar Aura Sagrada. ${cancelled.length === 1 ? "Aura encerrada." : `${cancelled.length} auras encerradas.`}`
+        );
+    }
+
+    return { survivedAuras: survived, cancelledCount: cancelled.length };
+}
+
+// ── Tick por alvo (cura/dano no turno do alvo) ───────────────────────────────
+//
+// Quando o turno é do ALVO (caster ou outra criatura), checamos:
+//   - Para cada aura ativa cuja `Aura de Cura` está ativa no SEU caster:
+//     este alvo está dentro + é elegível pra cura? Aplica.
+//   - Idem pra `Aura Ardente`.
+// O caster também é elegível pra cura no SEU PRÓPRIO turno (já que ele se
+// inclui como aliado dentro). Isso preserva o texto "você e os aliados".
+
+async function applyHealForTarget(opts: {
+    casterName: string;
+    healAmount: number;
+    target:     HealCandidate;
+    alwaysPrompt: boolean;
+}): Promise<void> {
+    const { casterName, healAmount, target, alwaysPrompt } = opts;
+    if (alwaysPrompt) {
+        const chosen = await pickHealTargetsDialog({ casterName, candidates: [target] });
+        if (!chosen || chosen.length === 0) return;
+    }
+    await applyHealsAndPostCard({ casterName, healAmount, candidates: [target] });
+}
+
+async function applyBurnForTarget(opts: {
+    casterName: string;
+    damage:     number;
+    target:     BurnCandidate;
+    alwaysPrompt: boolean;
+}): Promise<void> {
+    const { casterName, damage, target, alwaysPrompt } = opts;
+    if (alwaysPrompt) {
+        const chosen = await pickBurnTargetsDialog({ casterName, candidates: [target] });
+        if (!chosen || chosen.length === 0) return;
+    }
+    await applyBurnsAndPostCard({ casterName, damage, candidates: [target] });
+}
+
 /**
- * Processa o início do turno de um combatant. Se ele é caster de aura(s)
- * sagrada(s), avalia cada aprimoramento de tick ativo:
- *   - Aura de Cura: cura aliados elegíveis dentro da aura
- *   - Aura Ardente: dano em mortos-vivos/espíritos dentro da aura
- * Ambos respeitam o setting `alwaysPromptStartOfTurn` (auto vs picker).
- * Os dois são independentes — o caster pode ter um, o outro, ou ambos.
+ * Processa o início do turno de QUALQUER combatant:
+ *
+ * 1. Se o combatant é caster de aura(s): gasta 1 PM por aura ativa pra
+ *    sustentar. Auras que não couberem ser pagas são canceladas.
+ * 2. Para cada aura ainda ativa na cena: se este combatant é alvo elegível
+ *    da cura ou dano (Aura de Cura / Aura Ardente do caster dessa aura),
+ *    aplica o efeito agora — neste turno do alvo.
+ *
+ * Nota: a sequência (sustain ANTES de aplicar) garante que se a aura caiu
+ * por falta de PM, ela não cura nem dana ninguém neste turno.
  */
 async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
     if (!isActiveGM()) return;
     const actorId = (actor as unknown as { id?: string }).id ?? "";
     if (!actorId) return;
 
-    const myAuras = getAuraTemplates().filter(t =>
+    // (1) Sustain: gasta 1 PM por aura própria; cancela as que não couberem
+    const ownAuras = getAuraTemplates().filter(t =>
         t.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] === actorId
     );
-    if (myAuras.length === 0) return;
+    if (ownAuras.length > 0) {
+        await spendSustainPM(actor, ownAuras);
+        // Pequena pausa pra deletes propagarem (deleteMeasuredTemplate é async)
+        await new Promise(r => setTimeout(r, 50));
+    }
 
-    const wantsCure = hasAuraDeCura(actor);
-    const wantsBurn = hasAuraArdente(actor);
-    if (!wantsCure && !wantsBurn) return;
+    // (2) Tick por alvo: para cada aura ainda ativa, este actor é elegível?
+    const targetToken = findTokenForActor(actorId);
+    if (!targetToken) return;
 
     let alwaysPrompt = false;
     try {
         alwaysPrompt = Boolean(game.settings.get(MODULE_ID, "auraSagrada.alwaysPromptStartOfTurn"));
     } catch { /* setting indisponível — usa default */ }
 
-    for (const tpl of myAuras) {
+    const allAuras = getAuraTemplates();
+    for (const tpl of allAuras) {
+        const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
+        if (!casterAid) continue;
+        const casterActor = game.actors?.get(casterAid);
+        if (!casterActor) continue;
+
         const cha = getCasterChaFromTemplate(tpl);
         const amount = 5 + cha;
         const casterName = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined)
-            ?? actor.name ?? "Paladino";
+            ?? casterActor.name ?? "Paladino";
 
-        if (wantsCure) {
-            const healCands = listHealCandidates(tpl, amount);
-            if (healCands.length > 0) {
-                if (alwaysPrompt) {
-                    const chosen = await pickHealTargetsDialog({ casterName, candidates: healCands });
-                    if (chosen && chosen.length > 0) {
-                        await applyHealsAndPostCard({ casterName, healAmount: amount, candidates: chosen });
-                    }
-                } else {
-                    await applyHealsAndPostCard({ casterName, healAmount: amount, candidates: healCands });
-                }
+        // ─ Aura de Cura ─
+        if (hasAuraDeCura(casterActor)) {
+            // Reusa listHealCandidates passando UM token só (filtra internamente
+            // por inside + disposition + PV não cheio).
+            const cands = listHealCandidates(tpl, amount).filter(c => c.actorId === actorId);
+            if (cands.length > 0) {
+                await applyHealForTarget({
+                    casterName, healAmount: amount, target: cands[0], alwaysPrompt,
+                });
             }
         }
 
-        if (wantsBurn) {
-            const burnCands = listBurnCandidates(tpl, amount);
-            if (burnCands.length > 0) {
-                if (alwaysPrompt) {
-                    const chosen = await pickBurnTargetsDialog({ casterName, candidates: burnCands });
-                    if (chosen && chosen.length > 0) {
-                        await applyBurnsAndPostCard({ casterName, damage: amount, candidates: chosen });
-                    }
-                } else {
-                    await applyBurnsAndPostCard({ casterName, damage: amount, candidates: burnCands });
-                }
+        // ─ Aura Ardente ─
+        if (hasAuraArdente(casterActor)) {
+            const cands = listBurnCandidates(tpl, amount).filter(c => c.actorId === actorId);
+            if (cands.length > 0) {
+                await applyBurnForTarget({
+                    casterName, damage: amount, target: cands[0], alwaysPrompt,
+                });
             }
         }
     }
