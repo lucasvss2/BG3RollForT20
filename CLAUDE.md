@@ -278,8 +278,23 @@ Aprimoramento (item `"Aura Antimagia"` normalizado nos poderes do caster; pre-re
 - `spell-resistance/index.ts` consulta esse helper ao construir o dialog unificado. Se há contexto, renderiza badge `.smf-aura-antimagia-badge` (gradient dourado, borda esquerda destacada) acima do form de resistência: `"Aura Antimagia disponível — <caster> permite re-roll deste teste"`.
 - O dialog JÁ permitia re-roll livre (botão "Rerolar" após a primeira tentativa); a badge dá contexto narrativo do POR QUE o re-roll é gratuito agora. Não muda mecânica do dialog.
 
+### Aura de Invencibilidade (v1.11.0) — Fase 5
+
+Aprimoramento (item `"Aura de Invencibilidade"` normalizado nos poderes do caster; pre-req paladino nível 18). Quando ativo + a Aura Sagrada do mesmo caster está ativa:
+- Você e cada aliado dentro da aura podem ignorar o PRIMEIRO dano sofrido na cena. Sem custo extra.
+
+**Implementação**:
+- `aura-sagrada.ts` exporta:
+  - `getAuraInvencibilidadeContextForActor(actorId, tokenId?): Array<{ casterName, casterActorId }>` — filtra: ator dentro de aura ativa cujo caster tem o aprimoramento + mesma disposition + ATOR AINDA NÃO USOU NESTA CENA. `tokenId` é preferido pra resolver synthetic actors de NPCs unlinked.
+  - `markAuraInvencibilidadeUsed({actorId, tokenId?, casterName, targetName, damageIgnored})` — seta flag `flags.aeris-bg3-rolls-t20.auraInvencibilidadeUsedSceneId = <sceneId>` no ator + posta chat card dourado descritivo.
+- `auto-damage/index.ts` consulta `getAuraInvencibilidadeContextForActor` em `openDamagePrompt`. Se elegível: renderiza badge `.aad-invenc-badge` (gradient dourado) + adiciona botão extra `Ignorar (Aura de Invencibilidade)` antes do `Forçar Rerolar Ataque`. Click → marca uso + ignora 100% do dano (PM ainda é debitado se preenchido).
+
+**Tracking "primeira vez na cena"**: flag no ator com o `sceneId` atual. Comparação contra `canvas.scene.id` no momento da checagem — quando a cena muda, a flag fica stale e a comparação falha naturalmente, dando direito a nova imunidade. Não precisa de cleanup explícito.
+
+**NPCs unlinked**: `markAuraInvencibilidadeUsed` resolve o ator via `canvas.tokens.get(tokenId).actor` quando `tokenId` é fornecido — necessário pra setar a flag no synthetic actor (não no world actor compartilhado entre tokens).
+
 ### Phases not yet implemented
-Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
+Égide Sagrada · Escudo Fraterno.
 
 ### Encerrar animação ao cancelar a aura (v1.9.2)
 
@@ -288,9 +303,6 @@ O autoanimations cria um efeito persistente do Sequencer atrelado ao TOKEN do ca
 2. **Fallback no delete**: além de terminar pelos IDs salvos, o handler do `deleteMeasuredTemplate` varre TODOS efeitos do Sequencer atrelados ao caster cujo `file` casa `autoanimations.*\.(spell|aura)\.` e termina também — cobre race conditions.
 
 **Gotcha da API**: `Sequencer.EffectManager.endEffects({ effects: [...] })` exige `string[]` (IDs) ou `CanvasEffect[]`. Passar `[{ id: "..." }]` (objeto plain) falha com "collections in inFilter.effects must be of type string or CanvasEffect". Os helpers `endSequencerEffectsByIds` e `endAutoanimSpellEffectsForCasterToken` passam IDs como strings.
-
-### Phases not yet implemented
-Aura Antimagia · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
 
 ### Skills Menu (v1.8.0)
 

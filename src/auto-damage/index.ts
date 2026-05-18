@@ -1,5 +1,9 @@
 import { MODULE_ID } from "@/constants";
 import type { AutoDamageRequest, AttackRerollRequest, AttackMissNotify, AutoDamageSocketData } from "./types";
+import {
+    getAuraInvencibilidadeContextForActor,
+    markAuraInvencibilidadeUsed,
+} from "@/area-spells/aura-sagrada";
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -124,6 +128,38 @@ const AUTO_DAMAGE_STYLES = `
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+/* ── Aura de Invencibilidade badge ─────────────────────────────────────── */
+
+.aad-invenc-badge {
+    margin: 6px 12px 4px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--bg3-accent, #c8a96e);
+    background: linear-gradient(135deg,
+        rgba(200, 169, 110, 0.18),
+        rgba(106, 78, 24, 0.12));
+    color: var(--bg3-text-primary, #f0ebe0);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    border-radius: 0 4px 4px 0;
+}
+.aad-invenc-badge b {
+    color: var(--bg3-accent-bright, #ffe89a);
+}
+.aad-dialog button[data-button="invenc"] {
+    background: linear-gradient(180deg,
+        rgba(200, 169, 110, 0.28),
+        rgba(106, 78, 24, 0.16));
+    border-color: var(--bg3-accent, #c8a96e) !important;
+    color: var(--bg3-accent-bright, #ffe89a) !important;
+    font-weight: 700;
+}
+.aad-dialog button[data-button="invenc"]:hover {
+    background: linear-gradient(180deg,
+        rgba(200, 169, 110, 0.42),
+        rgba(106, 78, 24, 0.22));
+    box-shadow: 0 0 12px rgba(200, 169, 110, 0.4);
 }
 `;
 
@@ -317,6 +353,20 @@ function openDamagePrompt(req: AutoDamageRequest): void {
     const targetName  = targetActor?.name ?? "Alvo";
     const halfDmg     = Math.floor(req.damageTotal / 2);
 
+    // Aura de Invencibilidade — quando o alvo está dentro de uma aura cujo
+    // caster tem o aprimoramento E ainda não usou nesta cena, oferecemos um
+    // botão extra que ignora 100% do dano (e do RD) e marca o uso.
+    const invencContext = getAuraInvencibilidadeContextForActor(req.targetActorId, req.targetTokenId);
+    const hasInvenc     = invencContext.length > 0;
+    const invencCasters = invencContext.map(c => c.casterName).join(" + ");
+
+    const invencBadgeHtml = hasInvenc
+        ? `<div class="aad-invenc-badge">
+                <b>Aura de Invencibilidade</b> disponível — <b>${esc(invencCasters)}</b> permite
+                ignorar este dano (primeira vez na cena).
+            </div>`
+        : "";
+
     const content = `
         <div class="aad-body">
             <div class="aad-banner">
@@ -339,6 +389,7 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 <div class="aad-label-sm">DANO</div>
                 <div class="aad-damage-total">${req.damageTotal}</div>
             </div>
+            ${invencBadgeHtml}
             <div class="aad-pm-row">
                 <span class="aad-label-sm">RD</span>
                 <input type="number" name="rd" value="0" min="0" max="999" class="aad-pm-input" />
@@ -351,61 +402,89 @@ function openDamagePrompt(req: AutoDamageRequest): void {
         </div>
     `;
 
+    type DialogButton = {
+        icon: string;
+        label: string;
+        callback: ($html: JQuery) => void;
+    };
+    const buttons: Record<string, DialogButton> = {
+        full: {
+            icon:  '<i class="fas fa-sword"></i>',
+            label: `Aplicar Integral (${req.damageTotal})`,
+            callback: ($html: JQuery) => {
+                const finalDmg = applyRd(req.damageTotal, readRdInput($html));
+                void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
+            },
+        },
+        half: {
+            icon:  '<i class="fas fa-shield-halved"></i>',
+            label: `Aplicar Metade (${halfDmg})`,
+            callback: ($html: JQuery) => {
+                const finalDmg = applyRd(halfDmg, readRdInput($html));
+                void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
+            },
+        },
+        none: {
+            icon:  '<i class="fas fa-ban"></i>',
+            label: "Não Aplicar",
+            callback: ($html: JQuery) => {
+                const pm = readPmInput($html);
+                if (pm > 0) void applyDamage(req.targetTokenId, req.targetActorId, 0, pm);
+            },
+        },
+    };
+
+    if (hasInvenc) {
+        buttons["invenc"] = {
+            icon:  '<i class="fas fa-shield-heart"></i>',
+            label: `Ignorar (Aura de Invencibilidade)`,
+            callback: ($html: JQuery) => {
+                const pm = readPmInput($html);
+                // Marca o uso + posta chat card (ignora antes de qualquer RD/PM)
+                void markAuraInvencibilidadeUsed({
+                    actorId:       req.targetActorId,
+                    tokenId:       req.targetTokenId,
+                    casterName:    invencCasters,
+                    targetName,
+                    damageIgnored: req.damageTotal,
+                });
+                // PM ainda é debitado se o usuário tiver colocado algo
+                if (pm > 0) void applyDamage(req.targetTokenId, req.targetActorId, 0, pm);
+            },
+        };
+    }
+
+    buttons["reroll"] = {
+        icon:  '<i class="fas fa-dice-d20"></i>',
+        label: "Forçar Rerolar Ataque",
+        callback: () => {
+            const rerollReq: AttackRerollRequest = {
+                type:           "attack-reroll-request",
+                requestId:      req.requestId,
+                attackerUserId: req.attackerUserId,
+                targetUserId:   req.targetUserId,
+                targetActorId:  req.targetActorId,
+                targetTokenId:  req.targetTokenId,
+                attackFormula:  req.attackFormula,
+                damageFormula:  req.damageFormula,
+                attackerName:   req.attackerName,
+                rollLabel:      req.rollLabel,
+                targetDef:      req.targetDef,
+            };
+
+            if (req.attackerUserId === game.user?.id) {
+                void handleReroll(rerollReq);
+            } else {
+                game.socket?.emit(`module.${MODULE_ID}`, rerollReq);
+            }
+        },
+    };
+
     new Dialog(
         {
             title: `Dano — ${targetName}`,
             content,
-            buttons: {
-                full: {
-                    icon:  '<i class="fas fa-sword"></i>',
-                    label: `Aplicar Integral (${req.damageTotal})`,
-                    callback: ($html: JQuery) => {
-                        const finalDmg = applyRd(req.damageTotal, readRdInput($html));
-                        void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
-                    },
-                },
-                half: {
-                    icon:  '<i class="fas fa-shield-halved"></i>',
-                    label: `Aplicar Metade (${halfDmg})`,
-                    callback: ($html: JQuery) => {
-                        const finalDmg = applyRd(halfDmg, readRdInput($html));
-                        void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
-                    },
-                },
-                none: {
-                    icon:  '<i class="fas fa-ban"></i>',
-                    label: "Não Aplicar",
-                    callback: ($html: JQuery) => {
-                        const pm = readPmInput($html);
-                        if (pm > 0) void applyDamage(req.targetTokenId, req.targetActorId, 0, pm);
-                    },
-                },
-                reroll: {
-                    icon:  '<i class="fas fa-dice-d20"></i>',
-                    label: "Forçar Rerolar Ataque",
-                    callback: () => {
-                        const rerollReq: AttackRerollRequest = {
-                            type:           "attack-reroll-request",
-                            requestId:      req.requestId,
-                            attackerUserId: req.attackerUserId,
-                            targetUserId:   req.targetUserId,
-                            targetActorId:  req.targetActorId,
-                            targetTokenId:  req.targetTokenId,
-                            attackFormula:  req.attackFormula,
-                            damageFormula:  req.damageFormula,
-                            attackerName:   req.attackerName,
-                            rollLabel:      req.rollLabel,
-                            targetDef:      req.targetDef,
-                        };
-
-                        if (req.attackerUserId === game.user?.id) {
-                            void handleReroll(rerollReq);
-                        } else {
-                            game.socket?.emit(`module.${MODULE_ID}`, rerollReq);
-                        }
-                    },
-                },
-            },
+            buttons,
             default: "full",
             render: ($html: JQuery) => {
                 const $rd     = $html.find('[name="rd"]');

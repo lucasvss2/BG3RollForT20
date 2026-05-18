@@ -41,6 +41,8 @@ const POWERFUL_AURA_NORMALIZED   = "aura poderosa";  // (idem: sem hífen)
 const HEALING_AURA_NORMALIZED    = "aura de cura";   // cura por turno
 const BURNING_AURA_NORMALIZED    = "aura ardente";   // dano por turno em undead/espíritos
 const ANTIMAGIC_AURA_NORMALIZED  = "aura antimagia"; // re-roll de resistência contra magia
+const INVINCIBILITY_AURA_NORMALIZED = "aura de invencibilidade"; // ignora 1º dano na cena
+const FLAG_INVENC_USED_SCENE = "auraInvencibilidadeUsedSceneId"; // actor flag
 
 const RAIO_PADRAO_M  = 9;
 const RAIO_PODEROSA_M = 30;
@@ -1312,6 +1314,127 @@ export function getAuraAntimagiaContextForActor(actorId: string): Array<{
         seenCasters.add(casterAid);
     }
     return out;
+}
+
+// ── Aura de Invencibilidade ───────────────────────────────────────────────────
+//
+// Aprimoramento: você e cada aliado dentro da aura ignoram o PRIMEIRO dano que
+// sofrerem na cena. Tracking via flag no ator: `auraInvencibilidadeUsedSceneId
+// = sceneId`. Quando a cena muda, comparar contra o novo sceneId naturalmente
+// invalida — não precisa cleanup explícito.
+
+/** True se o ator (caster) tem o item "Aura de Invencibilidade" nos poderes. */
+function hasAuraInvencibilidade(actor: FoundryActor | null | undefined): boolean {
+    if (!actor) return false;
+    type ItemLike = { type?: string; name?: string };
+    const items = (actor as unknown as { items?: { contents?: ItemLike[] } }).items?.contents ?? [];
+    return items.some(it => normalizeCondName(it.name ?? "") === INVINCIBILITY_AURA_NORMALIZED);
+}
+
+function getCurrentSceneId(): string {
+    type CanvasLike = { scene?: { id?: string } };
+    return (canvas as unknown as CanvasLike).scene?.id ?? "";
+}
+
+/**
+ * Se o ator está dentro de UMA OU MAIS auras sagradas ativas cujo caster tem
+ * Aura de Invencibilidade, retorna a lista de casters elegíveis. Vazio se não
+ * há ou se o ator já usou a imunidade nesta cena. Considera disposition.
+ *
+ * Resolução do token: prefere `canvas.tokens.get(tokenId)` quando disponível
+ * (para NPCs unlinked, onde múltiplos tokens compartilham actor.id).
+ */
+export function getAuraInvencibilidadeContextForActor(
+    actorId: string,
+    tokenId?: string,
+): Array<{ casterName: string; casterActorId: string }> {
+    if (!actorId) return [];
+    const auras = getAuraTemplates();
+    if (auras.length === 0) return [];
+
+    // Resolve token específico (preferindo o passado por id, pra unlinked)
+    type CanvasLike = { tokens?: { get(id: string): FoundryToken | undefined } };
+    const cv = canvas as unknown as CanvasLike;
+    const targetToken = (tokenId ? cv.tokens?.get(tokenId) : null) ?? findTokenForActor(actorId);
+    if (!targetToken) return [];
+
+    // Já usou nesta cena?
+    const targetActor = (targetToken as unknown as { actor?: FoundryActor | null }).actor ?? null;
+    const sceneId = getCurrentSceneId();
+    type FlagBag = { flags?: Record<string, Record<string, unknown>> };
+    const usedScene = (targetActor as unknown as FlagBag | null)?.flags?.[MODULE_ID]?.[FLAG_INVENC_USED_SCENE];
+    if (usedScene && usedScene === sceneId) return [];
+
+    const out: Array<{ casterName: string; casterActorId: string }> = [];
+    const seenCasters = new Set<string>();
+    for (const tpl of auras) {
+        const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
+        const casterTid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER]     as string | undefined;
+        if (!casterAid || !casterTid || seenCasters.has(casterAid)) continue;
+        const casterActor = game.actors?.get(casterAid);
+        if (!casterActor) continue;
+        if (!hasAuraInvencibilidade(casterActor)) continue;
+
+        const casterToken = findTokenForActor(casterAid);
+        const casterDisp  = casterToken ? getTokenDisposition(casterToken) : 0;
+        if (!isAuraTarget(targetToken, casterTid, casterDisp)) continue;
+        if (!isTokenInsideTemplate(targetToken, tpl)) continue;
+
+        out.push({
+            casterName:    (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? casterActor.name ?? "Paladino",
+            casterActorId: casterAid,
+        });
+        seenCasters.add(casterAid);
+    }
+    return out;
+}
+
+/**
+ * Marca o ator como "já usou Aura de Invencibilidade nesta cena" e posta um
+ * chat card descritivo. Aceita tokenId pra resolver o ator SYNTHETIC correto
+ * em NPCs unlinked.
+ */
+export async function markAuraInvencibilidadeUsed(opts: {
+    actorId: string;
+    tokenId?: string;
+    casterName: string;
+    targetName: string;
+    damageIgnored: number;
+}): Promise<void> {
+    const { actorId, tokenId, casterName, targetName, damageIgnored } = opts;
+    type CanvasLike = { tokens?: { get(id: string): FoundryToken | undefined } };
+    const cv = canvas as unknown as CanvasLike;
+    const tok = tokenId ? cv.tokens?.get(tokenId) : null;
+    const actor = (tok as unknown as { actor?: FoundryActor | null } | null)?.actor
+        ?? game.actors?.get(actorId)
+        ?? null;
+    if (!actor) return;
+
+    const sceneId = getCurrentSceneId();
+    try {
+        await (actor as FoundryActor & { setFlag(s: string, k: string, v: unknown): Promise<unknown> })
+            .setFlag(MODULE_ID, FLAG_INVENC_USED_SCENE, sceneId);
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Aura de Invencibilidade: falha ao marcar uso:`, err);
+    }
+
+    try {
+        await ChatMessage.create({
+            content: `
+                <div class="tormenta20 chat-card item-card" style="border-color:#c8a96e;">
+                    <header class="card-header flexrow">
+                        <h3 class="item-name"><div>Aura de Invencibilidade — ${escHtml(casterName)}</div></h3>
+                    </header>
+                    <div class="card-content" style="padding:6px 10px;color:#d0c4a8;">
+                        <p style="margin:0;">
+                            <b>${escHtml(targetName)}</b> ignora <b>${damageIgnored}</b> de dano
+                            (primeira vez nesta cena).
+                        </p>
+                    </div>
+                </div>`,
+            speaker: { alias: casterName },
+        });
+    } catch { /* ignore */ }
 }
 
 // ── Sustentar (1 PM por turno do caster) ─────────────────────────────────────
