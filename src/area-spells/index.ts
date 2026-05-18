@@ -4,7 +4,9 @@
  */
 
 import { setupConsagrar } from "./consagrar";
+import { setupAuraSagrada } from "./aura-sagrada";
 
 export function setupAreaSpells(): void {
     setupConsagrar();
+    setupAuraSagrada();
 }
