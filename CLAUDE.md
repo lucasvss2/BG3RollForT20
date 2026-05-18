@@ -252,8 +252,21 @@ Aprimoramento (item separado no actor, nome `"Aura de Cura"` normalizado). Quand
 - Aplica via `actor.update({ "system.attributes.pv.value": Math.min(max, cur + heal) })`.
 - Posta chat card resumo: `Aura de Cura — <caster>` + lista `<aliado>: +N`.
 
+### Aura Ardente (v1.9.0) — Fase 3
+
+Aprimoramento gêmeo (inverso) da Aura de Cura. Item `"Aura Ardente"` normalizado nos poderes do caster. Quando ativo + a Aura Sagrada do mesmo caster está ativa:
+- Mesmos hooks `combatStart` / `combatTurn` / `combatRound`; mesma setting `auraSagrada.alwaysPromptStartOfTurn`.
+- Aplica `5 + CHA` de **dano de luz** em mortos-vivos e espíritos dentro da aura.
+- Alvos = tokens `inside` cuja raça (`actor.system.detalhes.raca`, normalizada) é `"morto-vivo"` ou contém `"espír"`. Disposition NÃO é checada (texto: "à sua escolha" — picker resolve).
+- Aplicação via `actor.applyDamage(amount, 1, false)` — sem RD (luz é elemental). T20 ActorT20 expõe `applyDamage(amount, multiplier=1, applyRD=false)`.
+- Skip de quem está com PV ≤ 0.
+- Posta chat card `Aura Ardente — <caster>` (border `#ff8a4a`) com lista `<alvo>: -N`.
+- CSS suplementar: `.bg3-aura-ardente-picker` com texto laranja.
+
+O hook `onCombatTurnStart` agora aplica AMBOS aprimoramentos em paralelo — caster pode ter um, outro ou ambos; cada aprimoramento checa seus próprios candidatos antes de rodar.
+
 ### Phases not yet implemented
-Aura Antimagia · Aura Ardente · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
+Aura Antimagia · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
 
 ### Skills Menu (v1.8.0)
 
