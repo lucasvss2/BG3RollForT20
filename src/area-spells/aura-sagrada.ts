@@ -947,13 +947,17 @@ function listHealCandidates(template: AuraTpl, healAmount: number): HealCandidat
     const casterToken = findTokenForActor(casterActorId);
     const casterDisp  = casterToken ? getTokenDisposition(casterToken) : 0;
 
+    // IMPORTANTE: dedup por TOKEN ID, não actor ID. Múltiplos tokens unlinked
+    // do mesmo NPC base compartilham `actor.id` (todos herdam o id do world
+    // actor), mas cada um tem seu próprio synthetic actor com PV independente.
+    // Deduplicar por actorId fazia só UM token ser candidato.
     const out: HealCandidate[] = [];
-    const seenActor = new Set<string>();
+    const seenToken = new Set<string>();
 
     for (const tk of tokens) {
         if (!tk.actor) continue;
-        const aid = (tk.actor as unknown as { id?: string }).id ?? "";
-        if (!aid || seenActor.has(aid)) continue; // 1 cura por ator (cobre tokens duplicados)
+        const tid = (tk as unknown as { id?: string }).id ?? "";
+        if (!tid || seenToken.has(tid)) continue;
         if (!isAuraTarget(tk, casterTokenId, casterDisp)) continue;
         if (!isTokenInsideTemplate(tk, template)) continue;
 
@@ -967,15 +971,15 @@ function listHealCandidates(template: AuraTpl, healAmount: number): HealCandidat
 
         const after = Math.min(max, cur + healAmount);
         out.push({
-            actorId:   aid,
+            actorId:   (tk.actor as unknown as { id?: string }).id ?? "",
             actorName: tk.actor.name ?? tk.name ?? "Ator",
-            tokenId:   (tk as unknown as { id?: string }).id ?? "",
+            tokenId:   tid,
             pvBefore:  cur,
             pvMax:     max,
             pvAfter:   after,
             healed:    after - cur,
         });
-        seenActor.add(aid);
+        seenToken.add(tid);
     }
     return out;
 }
@@ -1116,13 +1120,16 @@ function listBurnCandidates(template: AuraTpl, damage: number): BurnCandidate[] 
     const cv = canvas as unknown as CanvasLike;
     const tokens = cv.tokens?.placeables ?? [];
 
+    // Dedup por TOKEN ID (não actor ID) — múltiplos tokens unlinked do mesmo
+    // NPC base compartilham `actor.id` mas têm PV independentes (synthetic
+    // actor por token). Antes ficava só o primeiro como candidato.
     const out: BurnCandidate[] = [];
-    const seenActor = new Set<string>();
+    const seenToken = new Set<string>();
 
     for (const tk of tokens) {
         if (!tk.actor) continue;
-        const aid = (tk.actor as unknown as { id?: string }).id ?? "";
-        if (!aid || seenActor.has(aid)) continue;
+        const tid = (tk as unknown as { id?: string }).id ?? "";
+        if (!tid || seenToken.has(tid)) continue;
         if (!isUndeadOrSpirit(tk.actor)) continue;
         if (!isTokenInsideTemplate(tk, template)) continue;
 
@@ -1132,13 +1139,13 @@ function listBurnCandidates(template: AuraTpl, damage: number): BurnCandidate[] 
         if (!Number.isFinite(cur) || cur <= 0) continue; // já morto / sem PV → não inclui
 
         out.push({
-            actorId:   aid,
-            actorName: tk.actor.name ?? tk.name ?? "Ator",
-            tokenId:   (tk as unknown as { id?: string }).id ?? "",
+            actorId:   (tk.actor as unknown as { id?: string }).id ?? "",
+            actorName: tk.name ?? tk.actor.name ?? "Ator",
+            tokenId:   tid,
             pvBefore:  cur,
             damage,
         });
-        seenActor.add(aid);
+        seenToken.add(tid);
     }
     return out;
 }
@@ -1411,7 +1418,7 @@ async function applyBurnForTarget(opts: {
  * Nota: a sequência (sustain ANTES de aplicar) garante que se a aura caiu
  * por falta de PM, ela não cura nem dana ninguém neste turno.
  */
-async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
+async function onCombatTurnStart(actor: FoundryActor, combatantTokenId: string): Promise<void> {
     if (!isActiveGM()) {
         console.debug(`[${MODULE_ID}] turn skip: não sou o active GM`);
         return;
@@ -1421,22 +1428,22 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
         console.debug(`[${MODULE_ID}] turn skip: actor sem id`);
         return;
     }
+    if (!combatantTokenId) {
+        console.debug(`[${MODULE_ID}] turn skip: combatant sem token na cena`);
+        return;
+    }
 
     // (1) Sustain: gasta 1 PM por aura própria; cancela as que não couberem
+    //    Nota: dedupado por casterTokenId, não casterActorId — caso o caster
+    //    tenha múltiplos tokens com a mesma actor.id (extremamente raro pra
+    //    paladino, mas correto por simetria).
     const ownAuras = getAuraTemplates().filter(t =>
-        t.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] === actorId
+        t.flags?.[MODULE_ID]?.[FLAG_CASTER] === combatantTokenId
     );
     if (ownAuras.length > 0) {
         await spendSustainPM(actor, ownAuras);
         // Pequena pausa pra deletes propagarem (deleteMeasuredTemplate é async)
         await new Promise(r => setTimeout(r, 50));
-    }
-
-    // (2) Tick por alvo: para cada aura ainda ativa, este actor é elegível?
-    const targetToken = findTokenForActor(actorId);
-    if (!targetToken) {
-        console.debug(`[${MODULE_ID}] turn skip: ${actor.name} sem token na cena`);
-        return;
     }
 
     let alwaysPrompt = false;
@@ -1450,6 +1457,9 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
         return;
     }
 
+    // (2) Tick por alvo: para cada aura, ESTE token específico é elegível?
+    //    Filtragem por TOKEN id (não actor id) — múltiplos tokens unlinked do
+    //    mesmo NPC base têm actor.id idêntico mas PV independentes.
     for (const tpl of allAuras) {
         const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
         if (!casterAid) {
@@ -1467,37 +1477,35 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
         const casterName = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined)
             ?? casterActor.name ?? "Paladino";
 
-        // Detecta cada aprimoramento NO MOMENTO (não cacheia) — assim adicionar/
-        // remover o item da ficha do caster reflete na próxima rodada.
         const haveCura = hasAuraDeCura(casterActor);
         const haveBurn = hasAuraArdente(casterActor);
 
-        // ─ Aura de Cura ─
+        // ─ Aura de Cura ─ (este TOKEN específico recebe cura?)
         if (haveCura) {
-            const cands = listHealCandidates(tpl, amount).filter(c => c.actorId === actorId);
+            const cands = listHealCandidates(tpl, amount).filter(c => c.tokenId === combatantTokenId);
             if (cands.length > 0) {
                 await applyHealForTarget({
                     casterName, healAmount: amount, target: cands[0], alwaysPrompt,
                 });
             } else {
-                console.debug(`[${MODULE_ID}] cura skip ${actor.name}: não é candidato (inside? disposition? PV cheio?)`);
+                console.debug(`[${MODULE_ID}] cura skip token=${combatantTokenId} (${actor.name}): inside? disposition? PV cheio?`);
             }
         }
 
-        // ─ Aura Ardente ─
+        // ─ Aura Ardente ─ (este TOKEN específico recebe dano?)
         if (haveBurn) {
-            const cands = listBurnCandidates(tpl, amount).filter(c => c.actorId === actorId);
+            const cands = listBurnCandidates(tpl, amount).filter(c => c.tokenId === combatantTokenId);
             if (cands.length > 0) {
                 await applyBurnForTarget({
                     casterName, damage: amount, target: cands[0], alwaysPrompt,
                 });
             } else {
-                console.debug(`[${MODULE_ID}] ardente skip ${actor.name}: não é candidato (undead/spirit? inside? PV>0?)`);
+                console.debug(`[${MODULE_ID}] ardente skip token=${combatantTokenId} (${actor.name}): undead/spirit? inside? PV>0?`);
             }
         }
 
         if (!haveCura && !haveBurn) {
-            console.debug(`[${MODULE_ID}] caster ${casterActor.name} não tem Aura de Cura nem Ardente entre seus poderes — verifica nome exato do item`);
+            console.debug(`[${MODULE_ID}] caster ${casterActor.name} sem Aura de Cura/Ardente entre poderes — verifica nome do item`);
         }
     }
 }
@@ -1698,13 +1706,23 @@ export function setupAuraSagrada(): void {
     //     round dispara) E início do combate (priorRound=0 + currentRound=1).
     //     Por isso NÃO precisamos mais hooks separados pra combatStart/Round.
     type CombatLike = {
-        combatant?: { actor?: FoundryActor | null } | null;
+        combatant?: {
+            actor?: FoundryActor | null;
+            // `tokenId` é o ID do token na cena — único pra cada token, mesmo
+            // que múltiplos tokens unlinked compartilhem o mesmo actor.id.
+            tokenId?: string | null;
+            token?: { id?: string | null } | null;
+        } | null;
     };
     Hooks.on("combatTurnChange", (...args: unknown[]) => {
         if (!isActiveGM()) return;
         const combat = args[0] as CombatLike | undefined;
-        const actor  = combat?.combatant?.actor ?? null;
+        const cmb    = combat?.combatant;
+        const actor  = cmb?.actor ?? null;
         if (!actor) return;
-        void onCombatTurnStart(actor);
+        // Identifica o TOKEN específico deste combatant — crítico pra cenas
+        // com múltiplos tokens unlinked do mesmo NPC base.
+        const tokenId = cmb?.tokenId ?? cmb?.token?.id ?? "";
+        void onCombatTurnStart(actor, tokenId);
     });
 }
