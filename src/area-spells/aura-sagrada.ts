@@ -1392,9 +1392,15 @@ async function applyBurnForTarget(opts: {
  * por falta de PM, ela não cura nem dana ninguém neste turno.
  */
 async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
-    if (!isActiveGM()) return;
+    if (!isActiveGM()) {
+        console.debug(`[${MODULE_ID}] turn skip: não sou o active GM`);
+        return;
+    }
     const actorId = (actor as unknown as { id?: string }).id ?? "";
-    if (!actorId) return;
+    if (!actorId) {
+        console.debug(`[${MODULE_ID}] turn skip: actor sem id`);
+        return;
+    }
 
     // (1) Sustain: gasta 1 PM por aura própria; cancela as que não couberem
     const ownAuras = getAuraTemplates().filter(t =>
@@ -1408,7 +1414,10 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
 
     // (2) Tick por alvo: para cada aura ainda ativa, este actor é elegível?
     const targetToken = findTokenForActor(actorId);
-    if (!targetToken) return;
+    if (!targetToken) {
+        console.debug(`[${MODULE_ID}] turn skip: ${actor.name} sem token na cena`);
+        return;
+    }
 
     let alwaysPrompt = false;
     try {
@@ -1416,39 +1425,114 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
     } catch { /* setting indisponível — usa default */ }
 
     const allAuras = getAuraTemplates();
+    if (allAuras.length === 0) {
+        console.debug(`[${MODULE_ID}] turn ${actor.name}: sem auras ativas na cena`);
+        return;
+    }
+
     for (const tpl of allAuras) {
         const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
-        if (!casterAid) continue;
+        if (!casterAid) {
+            console.debug(`[${MODULE_ID}] aura ${tpl.id}: sem casterActorId no flag`);
+            continue;
+        }
         const casterActor = game.actors?.get(casterAid);
-        if (!casterActor) continue;
+        if (!casterActor) {
+            console.debug(`[${MODULE_ID}] aura ${tpl.id}: casterActor não encontrado (id=${casterAid})`);
+            continue;
+        }
 
         const cha = getCasterChaFromTemplate(tpl);
         const amount = 5 + cha;
         const casterName = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined)
             ?? casterActor.name ?? "Paladino";
 
+        // Detecta cada aprimoramento NO MOMENTO (não cacheia) — assim adicionar/
+        // remover o item da ficha do caster reflete na próxima rodada.
+        const haveCura = hasAuraDeCura(casterActor);
+        const haveBurn = hasAuraArdente(casterActor);
+
         // ─ Aura de Cura ─
-        if (hasAuraDeCura(casterActor)) {
-            // Reusa listHealCandidates passando UM token só (filtra internamente
-            // por inside + disposition + PV não cheio).
+        if (haveCura) {
             const cands = listHealCandidates(tpl, amount).filter(c => c.actorId === actorId);
             if (cands.length > 0) {
                 await applyHealForTarget({
                     casterName, healAmount: amount, target: cands[0], alwaysPrompt,
                 });
+            } else {
+                console.debug(`[${MODULE_ID}] cura skip ${actor.name}: não é candidato (inside? disposition? PV cheio?)`);
             }
         }
 
         // ─ Aura Ardente ─
-        if (hasAuraArdente(casterActor)) {
+        if (haveBurn) {
             const cands = listBurnCandidates(tpl, amount).filter(c => c.actorId === actorId);
             if (cands.length > 0) {
                 await applyBurnForTarget({
                     casterName, damage: amount, target: cands[0], alwaysPrompt,
                 });
+            } else {
+                console.debug(`[${MODULE_ID}] ardente skip ${actor.name}: não é candidato (undead/spirit? inside? PV>0?)`);
             }
         }
+
+        if (!haveCura && !haveBurn) {
+            console.debug(`[${MODULE_ID}] caster ${casterActor.name} não tem Aura de Cura nem Ardente entre seus poderes — verifica nome exato do item`);
+        }
     }
+}
+
+// ── Diagnóstico (chamado via macro pelo user quando algo parece quebrado) ────
+//
+// Imprime no console um snapshot do estado completo das auras na cena:
+// templates ativos, caster, aprimoramentos detectados, candidatos a cura/dano.
+// Use: `game.modules.get('aeris-bg3-rolls-t20').api.diagnoseAuras()`
+
+export function diagnoseAuras(): unknown {
+    const auras = getAuraTemplates();
+    const report: Array<Record<string, unknown>> = [];
+    type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+    const cv = canvas as unknown as CanvasLike;
+    const tokens = cv.tokens?.placeables ?? [];
+
+    for (const tpl of auras) {
+        const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
+        const casterActor = casterAid ? game.actors?.get(casterAid) : null;
+        const cha = getCasterChaFromTemplate(tpl);
+
+        const insideTokens = tokens.filter(t => t.actor && isTokenInsideTemplate(t, tpl));
+        const insideDetail = insideTokens.map(t => {
+            const a = t.actor!;
+            type PVShape = { value?: number; max?: number };
+            const pv = (a.system?.attributes?.pv ?? {}) as PVShape;
+            type DetalhesShape = { detalhes?: { raca?: string } };
+            const raca = (a.system as DetalhesShape | undefined)?.detalhes?.raca;
+            return {
+                name:        a.name,
+                disposition: getTokenDisposition(t),
+                pv:          { value: pv.value, max: pv.max },
+                raca,
+                isUndeadOrSpirit: isUndeadOrSpirit(a),
+            };
+        });
+
+        report.push({
+            templateId: tpl.id,
+            casterName:    (tpl.flags?.[MODULE_ID]?.["casterName"] as string) ?? "?",
+            casterActorId: casterAid,
+            casterFound:   !!casterActor,
+            casterCHA_inFlag: cha,
+            tickAmount: 5 + cha,
+            radius_m: tpl.distance,
+            hasAuraDeCura:    hasAuraDeCura(casterActor),
+            hasAuraArdente:   hasAuraArdente(casterActor),
+            hasAuraAntimagia: hasAuraAntimagia(casterActor),
+            insideTokens: insideDetail,
+        });
+    }
+
+    console.log(`[${MODULE_ID}] DIAGNOSE AURAS:`, report);
+    return report;
 }
 
 // ── Setup (hooks) ────────────────────────────────────────────────────────────

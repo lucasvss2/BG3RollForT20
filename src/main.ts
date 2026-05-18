@@ -20,6 +20,7 @@ import { setupSpellResistance } from "./spell-resistance/index";
 import { setupBuffApply } from "./buff-apply/index";
 import { setupWeaponAETransfer } from "./weapon-ae-transfer/index";
 import { setupAreaSpells } from "./area-spells/index";
+import { diagnoseAuras } from "./area-spells/aura-sagrada";
 import { setupSkillsMenu } from "./ui/skills-menu";
 import { setupSheetRedesign } from "./sheet/index";
 import { log, warn } from "./utils/logging";
@@ -57,10 +58,20 @@ Hooks.once("setup", () => {
     setupSheetRedesign();
 });
 
-// ── Ready: confirm everything loaded ─────────────────────────────────────────
+// ── Ready: expose diagnostic API + confirm everything loaded ──────────────────
 
 Hooks.once("ready", () => {
     if (game.system.id !== SYSTEM_ID) return;
+    // API de diagnóstico — útil quando algo parece quebrado em mesa.
+    // Uso: `game.modules.get("aeris-bg3-rolls-t20").api.diagnoseAuras()`
+    const mod = game.modules.get(MODULE_ID) as
+        | (FoundryModule & { api?: Record<string, unknown> })
+        | undefined;
+    if (mod) {
+        (mod as unknown as { api: Record<string, unknown> }).api = {
+            diagnoseAuras,
+        };
+    }
     log("Pronto — overlay cinemático de dados Tormenta20 ativo.");
 });
 
