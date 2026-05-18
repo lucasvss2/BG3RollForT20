@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-Foundry VTT module for the **Tormenta20** system (`game.system.id = "tormenta20"`). Adds a BG3-inspired dark theme: cinematic roll overlay, restyled dialogs, chat cards, hidden skill tests, auto damage prompts, and a character sheet redesign.
+Foundry VTT module for the **Tormenta20** system (`game.system.id = "tormenta20"`). Adds a BG3-inspired dark theme: cinematic roll overlay, restyled dialogs, chat cards, hidden skill tests, auto damage prompts, area spells, and a character sheet redesign.
 
-- **Module ID:** `t20-theme-overhaul`
+- **Module ID:** `aeris-bg3-rolls-t20`
 - **Foundry:** v13.351+
 - **Repo:** https://github.com/lucasvss2/T20ThemeOverhaul
 - **Local module path:** `C:\Users\lucas\AppData\Local\FoundryVTT\Data\modules\aeris-bg3-rolls-t20\`
@@ -17,7 +17,7 @@ Foundry VTT module for the **Tormenta20** system (`game.system.id = "tormenta20"
 
 ```bash
 npm run typecheck   # tsc --noEmit — must pass before any commit/tag
-npm test            # vitest run — 150 tests must pass
+npm test            # vitest run — 75 tests must pass
 npm run build       # Vite → dist/main.bundle.js
 npm run dev         # watch mode
 npm run lint        # eslint src
@@ -40,10 +40,10 @@ Version scheme: `MAJOR.MINOR.PATCH`
 ```
 1.  npm run typecheck && npm test && npm run build   ← all must pass
 2.  Bump "version" in module.json  (e.g. "1.7.0")
-3.  git add module.json
-4.  git commit -m "chore: bump version to X.Y.Z"    ← or squash with feature commit
+3.  git add module.json + changed files
+4.  git commit -m "feat/fix: description (vX.Y.Z)"
 5.  git tag vX.Y.Z
-6.  git push origin master && git push origin vX.Y.Z
+6.  git push origin <branch>:master && git push origin vX.Y.Z
         ↳ triggers .github/workflows/release.yml
           • runs typecheck + test + build on CI
           • patches module.json version + download URL
@@ -57,6 +57,7 @@ Version scheme: `MAJOR.MINOR.PATCH`
 **Rules:**
 - Never push a tag without `npm run typecheck` passing locally first.
 - Never report a deploy as done before step 8 (green CI).
+- Work is done in a **worktree branch** (`claude/adoring-johnson-bbb8c4`), NOT directly on `master`. Push with `git push origin <branch>:master`.
 - If CI fails post-push: fix → push new commit → re-tag:
   ```bash
   git tag -d vX.Y.Z
@@ -84,9 +85,11 @@ src/
   auto-damage/index.ts         — Auto damage application prompt (attack-based weapons)
   spell-resistance/index.ts    — Automatic saving throw + damage dialog for spells
   spell-resistance/types.ts    — SpellResistRequest, SpellConditionData, ResistSkill
+  area-spells/index.ts         — Entry point for area-persistent spells (calls setupConsagrar)
+  area-spells/consagrar.ts     — Consagrar: MeasuredTemplate claim, AE apply/remove, movement sync
   sheet/index.ts               — Character sheet redesign (BG3 aesthetic)
   tests/
-    parser/t20.test.ts         — Vitest unit tests for parseT20 (150 tests)
+    parser/t20.test.ts         — Vitest unit tests for parseT20 (75 tests)
     setup.ts                   — Test environment setup
 ```
 
@@ -94,16 +97,17 @@ src/
 
 ## Systems
 
-| #   | File                          | Hook                | Notes                                                                                   |
-| --- | ----------------------------- | ------------------- | --------------------------------------------------------------------------------------- |
-| 1   | `overlay/BG3Overlay.ts`       | `createChatMessage` | 1 000 ms delay, auto-dismiss 3 000 ms, CSS id `bg3-t20-styles`                          |
-| 2   | `dialogs/bg3-dialog.ts`       | `renderApplication` | Detects `.ability-use-form` / `.attribute-use-form`, CSS id `bg3-t20-dialog-styles`     |
-| 3   | `chat/chatStyles.ts`          | `renderChatMessage` | Target: `.tormenta20.chat-card.item-card` in `#chat-log`, CSS id `bg3-t20-chat-styles`  |
-| 4   | `integration/index.ts`        | `createChatMessage` | `resolveFlavorText` → `parseT20` → `BG3Overlay.show`                                    |
-| 5   | `hidden-test/index.ts`        | socket              | GM emits per-target; each player sees only their own result                             |
-| 6   | `auto-damage/index.ts`        | `createChatMessage` | Triggers on attack+damage rolls (weapons). Skips spells (no attack roll).               |
-| 7   | `spell-resistance/index.ts`   | `createChatMessage` | Triggers on spell rolls (tipo arc/div/uni, damage only, no attack). Rolls saving throw, sends dialog via socket. |
-| 8   | `sheet/index.ts`              | —                   | Character sheet redesign                                                                |
+| #   | File                          | Hook                     | Notes                                                                                   |
+| --- | ----------------------------- | ------------------------ | --------------------------------------------------------------------------------------- |
+| 1   | `overlay/BG3Overlay.ts`       | `createChatMessage`      | 1 000 ms delay, auto-dismiss 3 000 ms, CSS id `bg3-t20-styles`                          |
+| 2   | `dialogs/bg3-dialog.ts`       | `renderApplication`      | Detects `.ability-use-form` / `.attribute-use-form`, CSS id `bg3-t20-dialog-styles`     |
+| 3   | `chat/chatStyles.ts`          | `renderChatMessage`      | Target: `.tormenta20.chat-card.item-card` in `#chat-log`, CSS id `bg3-t20-chat-styles`  |
+| 4   | `integration/index.ts`        | `createChatMessage`      | `resolveFlavorText` → `parseT20` → `BG3Overlay.show`                                    |
+| 5   | `hidden-test/index.ts`        | socket                   | GM emits per-target; each player sees only their own result                             |
+| 6   | `auto-damage/index.ts`        | `createChatMessage`      | Triggers on attack+damage rolls (weapons). Skips spells (no attack roll).               |
+| 7   | `spell-resistance/index.ts`   | `createChatMessage`      | Triggers on spell rolls (tipo arc/div/uni, damage only, no attack). Rolls saving throw, sends dialog via socket. |
+| 8   | `sheet/index.ts`              | —                        | Character sheet redesign                                                                |
+| 9   | `area-spells/consagrar.ts`    | multiple (see below)     | Persistent area spell: MeasuredTemplate + AE management + movement sync                |
 
 ### Spell Resistance System (v1.6.5+)
 
@@ -126,6 +130,77 @@ Detects spell chat messages and auto-rolls saving throws for targeted tokens.
 
 ---
 
+### Consagrar Area Spell System (v1.6.63+)
+
+Persistent area spell using a MeasuredTemplate (circle, 9m radius). Manages Active Effects on tokens inside the area.
+
+**Hooks used:**
+- `createChatMessage` — detects spell cast, registers `_pendingCasts` entry with `undeadPenalty`
+- `createMeasuredTemplate` — claims T20's template (adds our flags via `doc.update`); applies AEs if already flagged (scene reload)
+- `updateMeasuredTemplate` — (a) flag just added → apply AEs; (b) geometry changed → re-sync all tokens
+- `deleteMeasuredTemplate` — removes all AEs created by this template
+- `updateToken` — movement sync (see v13 quirk below)
+- `createToken` — token placed in scene → sync against all templates
+- `createActiveEffect` — dedup/adopt orphan AEs from `chat-apply-ae` button
+- `canvasReady` — re-sync all tokens on scene load/switch
+- `renderSceneControls` / `ready` — refresh remove-area button visibility
+- `updateWorldTime` — expire templates after 1 in-game day (86 400 s)
+
+**Template claim strategy:**
+T20 creates its own MeasuredTemplate when a spell with area is cast. We detect this via `createMeasuredTemplate` (comparing `authorUid` vs `game.user.id`) and claim it by calling `doc.update({ flags.aeris-bg3-rolls-t20: {...} })`. This fires `updateMeasuredTemplate` which triggers AE application. Fallback: if no template appears within 4 s, prompt manual placement.
+
+**Template flags (`flags.aeris-bg3-rolls-t20`):**
+```
+spell: "consagrar"          — identifies this as a Consagrar template
+casterActorId               — actor ID of the caster
+casterName                  — display name for UI
+undeadPenalty               — penalty value (0 = no aprimoramento active)
+createdAtGameTime           — game.time.worldTime at cast (for expiry)
+creatorUserId               — game.user.id at cast (for remove button filtering)
+```
+
+**AE flags (`flags.aeris-bg3-rolls-t20`):**
+```
+consagrarTemplateOrigin: templateId  — links AE to its source template
+consagrarHealingBoost: true          — marks the living-token boost AE
+```
+
+**Undead detection:**
+- NPC: `actor.system.detalhes.raca === "Morto-vivo"` (normalized)
+- PC: item of `type === "race"` with name `"Osteon"` or `"Soterrado"`
+
+**Penalty computation (`computeUndeadPenaltyFromMessage`):**
+Reads `message.flags.tormenta20.onUseEffects[]` (user-selected aprimoramentos with qty).
+- Do NOT use `flags.tormenta20.effects` — it contains the baseline -2 AE regardless of selection.
+- 1PM entry detected by: `/[-–−]\s*2\b.*?\btestes\b.*?\bdefesa\b/i` on `description`
+- 2PM entry detected by: `/aumenta\s+(?:as\s+)?penalidades/i` on `description`
+- If 1PM not activated → return 0 (no penalty at all)
+- Final penalty = 2 + (qty × 1 for each 2PM entry)
+
+**Multi-GM election (`isActiveGM()`):**
+When multiple GMs are active, all receive hooks. To avoid duplicate AE creation, only the GM with the lexicographically smallest `user.id` (among active GMs) executes mutations. Pattern:
+```typescript
+function isActiveGM(): boolean {
+    const myId = game.user?.id;
+    if (!myId || !game.user?.isGM) return false;
+    const activeGMs = (game.users?.contents ?? [])
+        .filter(u => u.isGM && u.active)
+        .map(u => u.id)
+        .sort();
+    return activeGMs[0] === myId;
+}
+```
+
+**Dedup / adoption of orphan AEs:**
+If the user clicks `chat-apply-ae` from the T20 chat card:
+- If our AE for this template already exists → delete the new one (`createActiveEffect` hook)
+- If our AE doesn't exist yet → adopt the new one by writing our `consagrarTemplateOrigin` flag
+
+**Floating remove-area button:**
+Injected as the last `<li>` in `menu#scene-controls-layers`. Visible to GM (all areas) and to the caster (`creatorUserId` flag match). CSS id: `bg3-t20-consagrar-remove-btn`. Dialogs use `.bg3-dialog` class + `CONSAGRAR_STYLES_ID` supplement.
+
+---
+
 ## Foundry v13 Gotchas
 
 ### Rolls in createChatMessage
@@ -145,6 +220,21 @@ Roll.fromData((message as any)._source.rolls[0]);
 
 `args[1]` is a direct `HTMLElement` in v13, NOT a jQuery array.
 
+### updateToken — doc.x/y is OLD position during animation
+
+When `updateToken` fires, `tokenDoc.x` and `tokenDoc.y` still hold the **pre-move** position. The destination is in `args[1].x` / `args[1].y` (the `changes` object). Pass these as `overrideXY` to any position-based check; only use `doc.x/y` when called outside of `updateToken` (e.g. `canvasReady`, `createToken`).
+
+```typescript
+Hooks.on("updateToken", (...args) => {
+    const tokenDoc = args[0] as { object?: FoundryToken };
+    const changes  = args[1] as Record<string, unknown> | undefined;
+    const destX = typeof changes?.["x"] === "number" ? changes["x"] as number : undefined;
+    const destY = typeof changes?.["y"] === "number" ? changes["y"] as number : undefined;
+    const overrideXY = (destX !== undefined || destY !== undefined) ? { x: destX, y: destY } : undefined;
+    void syncTokenWithTemplates(tokenDoc.object!, overrideXY);
+});
+```
+
 ---
 
 ## T20 Data Structures
@@ -157,13 +247,21 @@ actor.system.pericias.refl.value; // total Reflexos bonus
 actor.system.pericias.vont.value; // total Vontade bonus
 actor.system.attributes.pv; // { value, max, temp }
 actor.system.nivel.value; // character level
+actor.system.detalhes.raca; // NPC race string, e.g. "Morto-vivo"
 
 // Spell item (from message.getFlag("tormenta20","itemData"))
 itemData.type; // "magia"
 itemData.system.escola; // "evo"|"nec"|"con"|"tra"|"abj"|"enc"|"ilu"|"adv"
+itemData.system.tipo;   // "arc"|"div"|"uni"
 itemData.system.circulo; // 1–5
 itemData.system.resistencia.txt; // "Vontade parcial (CD 18)"
 itemData.system.resistencia.cd; // may be 0 — parse from txt as fallback
+
+// message.flags.tormenta20 (T20 spell cast message)
+flags.tormenta20.onUseEffects; // Array of { cost, description, qty } — user-selected aprimoramentos
+flags.tormenta20.effects;      // Array<Array<AEData>> — baseline AEs regardless of selection (DON'T use for penalty)
+flags.tormenta20.itemData;     // Full item data at cast time
+flags.tormenta20.template;     // Template data if spell has area
 
 // Roll object
 roll.formula / roll.total;
