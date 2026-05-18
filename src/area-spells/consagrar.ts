@@ -105,16 +105,22 @@ function computeUndeadPenaltyFromMessage(message: ChatMessage): number {
 /**
  * Detecta se o ator é morto-vivo.
  *
- * NPCs: `actor.system.detalhes.raca === "Morto-vivo"` (campo direto)
- * PCs:  item de tipo "race" com nome "Osteon" ou "Soterrado"
+ * NPCs: T20 usa DOIS campos no bestiário pra essa info:
+ *   - `detalhes.raca === "Morto-vivo"` (nome completo, ex.: Aparição, Esqueleto)
+ *   - `detalhes.tipo === "mor"`         (código curto, ex.: Lich, Ravarimm)
+ * Checagem precisa cobrir AMBOS — Lich tem `raca: ""` e `tipo: "mor"`.
+ *
+ * PCs: item de tipo "race" com nome "Osteon" ou "Soterrado".
  */
 function isUndead(actor: FoundryActor): boolean {
-    // NPCs — campo direto
-    type DetalhesShape = { detalhes?: { raca?: string } };
-    const raca = (actor.system as DetalhesShape | undefined)?.detalhes?.raca;
-    if (typeof raca === "string" && raca !== "" && normalizeCondName(raca) === "morto-vivo") {
-        return true;
-    }
+    // NPCs — campos detalhes.raca / detalhes.tipo
+    type DetalhesShape = { detalhes?: { raca?: string; tipo?: string } };
+    const det  = (actor.system as DetalhesShape | undefined)?.detalhes;
+    const raca = typeof det?.raca === "string" ? normalizeCondName(det.raca) : "";
+    const tipo = typeof det?.tipo === "string" ? det.tipo.toLowerCase().trim() : "";
+    if (raca === "morto-vivo") return true;
+    if (tipo === "mor")        return true; // Lich, Ravarimm, etc.
+
     // PCs — item de raça undead (Osteon, Soterrado)
     type ItemLike = { type?: string; name?: string };
     const items = (actor as unknown as { items?: { contents?: ItemLike[] } }).items?.contents ?? [];

@@ -1097,13 +1097,28 @@ function hasAuraArdente(actor: FoundryActor | null | undefined): boolean {
     return items.some(it => normalizeCondName(it.name ?? "") === BURNING_AURA_NORMALIZED);
 }
 
-/** True se o ator é morto-vivo OU espírito (alvo da Aura Ardente). */
+/**
+ * True se o ator é morto-vivo OU espírito (alvo da Aura Ardente).
+ *
+ * T20 usa DOIS lugares pra essa info no bestiário:
+ *   - `detalhes.raca` = nome completo, ex. "Morto-vivo", "Espírito", "Anão"
+ *   - `detalhes.tipo` = código curto, ex. "mor", "esp", "hum", "con", "ani"
+ *
+ * NPCs como Lich têm `raca: ""` mas `tipo: "mor"` — só checar `raca` faz a
+ * detecção falhar. Ravarimm é exemplo de humanoide-morto-vivo: `raca: "Anão"`
+ * + `tipo: "mor"`. A solução robusta é OU `raca` indicar morto-vivo/espírito
+ * OU `tipo` ser "mor"/"esp".
+ */
 function isUndeadOrSpirit(actor: FoundryActor): boolean {
-    type DetalhesShape = { detalhes?: { raca?: string } };
-    const raca = (actor.system as DetalhesShape | undefined)?.detalhes?.raca;
-    if (typeof raca !== "string" || raca === "") return false;
-    const norm = normalizeCondName(raca);
-    return norm === "morto-vivo" || /\bespir/.test(norm);
+    type DetalhesShape = { detalhes?: { raca?: string; tipo?: string } };
+    const det  = (actor.system as DetalhesShape | undefined)?.detalhes;
+    const raca = typeof det?.raca === "string" ? normalizeCondName(det.raca) : "";
+    const tipo = typeof det?.tipo === "string" ? det.tipo.toLowerCase().trim() : "";
+    if (raca === "morto-vivo")  return true;
+    if (/\bespir/.test(raca))    return true;
+    if (tipo === "mor")          return true; // Lich, Ravarimm, ...
+    if (tipo === "esp")          return true; // Sílfide, Nandara, ...
+    return false;
 }
 
 type BurnCandidate = {
