@@ -266,6 +266,14 @@ Itens normalizados nos poderes do caster: `"aura de cura"` (cura aliados elegív
 
 **Hooks**: `combatStart` / `combatTurn` / `combatRound` (`isActiveGM()` é o único que roda; sequência: sustain → tick).
 
+### Encerrar animação ao cancelar a aura (v1.9.2)
+
+O autoanimations cria um efeito persistente do Sequencer atrelado ao TOKEN do caster (não ao MeasuredTemplate). Deletar o template NÃO encerra essa animação. Solução em 2 camadas:
+1. **Captura preciso no cast**: snapshot dos IDs do Sequencer atrelados ao caster antes do cast, depois 1.5 s após. O diff é salvo em `template.flags.aeris-bg3-rolls-t20.sequencerEffectIds`.
+2. **Fallback no delete**: além de terminar pelos IDs salvos, o handler do `deleteMeasuredTemplate` varre TODOS efeitos do Sequencer atrelados ao caster cujo `file` casa `autoanimations.*\.(spell|aura)\.` e termina também — cobre race conditions.
+
+**Gotcha da API**: `Sequencer.EffectManager.endEffects({ effects: [...] })` exige `string[]` (IDs) ou `CanvasEffect[]`. Passar `[{ id: "..." }]` (objeto plain) falha com "collections in inFilter.effects must be of type string or CanvasEffect". Os helpers `endSequencerEffectsByIds` e `endAutoanimSpellEffectsForCasterToken` passam IDs como strings.
+
 ### Phases not yet implemented
 Aura Antimagia · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
 
