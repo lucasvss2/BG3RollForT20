@@ -1,5 +1,6 @@
 import { MODULE_ID } from "@/constants";
 import { computeSkillTotal } from "@/hidden-test/skills";
+import { getAuraAntimagiaContextForActor } from "@/area-spells/aura-sagrada";
 import {
     getActivatableItems,
     type ActivatableItem,
@@ -344,6 +345,46 @@ const SPELL_RESIST_STYLES = `
     display: flex;
     gap: 8px;
 }
+
+/* ── Aura Antimagia badge ────────────────────────────────────────────────── */
+.smf-aura-antimagia-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0 6px;
+    padding: 10px 12px;
+    background: linear-gradient(90deg, rgba(106, 78, 24, 0.22), rgba(106, 78, 24, 0.08));
+    border: 1px solid rgba(200, 169, 110, 0.55);
+    border-left: 3px solid #ffd86b;
+    border-radius: 4px;
+    color: #f0ebe0;
+}
+.smf-aura-antimagia-badge > i {
+    font-size: 1.3rem;
+    color: #ffd86b;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 0 4px rgba(255, 216, 107, 0.6));
+}
+.smf-aura-antimagia-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.smf-aura-antimagia-title {
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #ffd86b;
+}
+.smf-aura-antimagia-sub {
+    color: #d0c4a8;
+    font-family: "Palatino Linotype", serif;
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+.smf-aura-antimagia-sub b { color: #ffd86b; font-weight: 700; }
 `;
 
 function ensureStyles(): void {
@@ -857,11 +898,33 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         `;
     }
 
+    // Aura Antimagia (Paladino): se o alvo está dentro de uma aura sagrada
+    // ativa cujo caster tem o aprimoramento "Aura Antimagia", mostra uma badge
+    // dourada informativa avisando que o re-roll já permitido pelo dialog
+    // (botão "Rerolar" após a primeira tentativa) é gratuito por esse motivo.
+    const antimagiaContexts = targetActor
+        ? getAuraAntimagiaContextForActor((targetActor as unknown as { id?: string }).id ?? "")
+        : [];
+    const antimagiaBadgeHtml = antimagiaContexts.length > 0 ? `
+        <div class="smf-aura-antimagia-badge" title="Aura Antimagia permite ${esc(targetName)} rolar novamente o teste de resistência contra a magia sem custo adicional.">
+            <i class="fas fa-sparkles"></i>
+            <div class="smf-aura-antimagia-text">
+                <div class="smf-aura-antimagia-title">Aura Antimagia disponível</div>
+                <div class="smf-aura-antimagia-sub">
+                    ${antimagiaContexts.length === 1
+                        ? `<b>${esc(antimagiaContexts[0].casterName)}</b> permite re-roll deste teste`
+                        : `${antimagiaContexts.map(c => `<b>${esc(c.casterName)}</b>`).join(" e ")} permitem re-roll`}
+                </div>
+            </div>
+        </div>
+    ` : "";
+
     const resistSectionHtml = `
         <div class="smf-section-title">
             <i class="fas fa-shield-halved"></i>
             RESISTÊNCIA${skillKey ? ` — ${esc(skillLabel.toUpperCase())} (CD ${preReq.cd})` : ""}
         </div>
+        ${antimagiaBadgeHtml}
         ${resistBodyHtml}
     `;
 

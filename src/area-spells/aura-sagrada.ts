@@ -37,9 +37,10 @@ const FLAG_SPELL     = "spell";               // template flag: identifica a aur
 const FLAG_ORIGIN    = "auraSagradaTemplateOrigin"; // AE flag: liga AE ao template
 const FLAG_CASTER    = "casterTokenId";       // template flag: token que emite
 const FLAG_CASTER_AID = "casterActorId";      // template flag: actor do caster
-const POWERFUL_AURA_NORMALIZED = "aura poderosa"; // (idem: sem hífen)
-const HEALING_AURA_NORMALIZED  = "aura de cura";  // aprimoramento de cura por turno
-const BURNING_AURA_NORMALIZED  = "aura ardente";  // aprimoramento de dano por turno em undead/espíritos
+const POWERFUL_AURA_NORMALIZED   = "aura poderosa";  // (idem: sem hífen)
+const HEALING_AURA_NORMALIZED    = "aura de cura";   // cura por turno
+const BURNING_AURA_NORMALIZED    = "aura ardente";   // dano por turno em undead/espíritos
+const ANTIMAGIC_AURA_NORMALIZED  = "aura antimagia"; // re-roll de resistência contra magia
 
 const RAIO_PADRAO_M  = 9;
 const RAIO_PODEROSA_M = 30;
@@ -1216,6 +1217,61 @@ function pickBurnTargetsDialog(opts: {
     });
 }
 
+// ── API pública: detecção de aprimoramentos pra outros sistemas ──────────────
+//
+// Outros módulos (ex.: spell-resistance) precisam saber "este ator é elegível
+// pra Aura Antimagia agora?" pra renderizar UI condicional. Expomos uma API
+// pequena que encapsula a lógica de "ator dentro de uma aura sagrada cujo
+// caster tem o aprimoramento X". Mantém spell-resistance sem ler flags
+// internos do nosso template.
+
+/** True se o ator tem o item "Aura Antimagia" entre seus poderes. */
+function hasAuraAntimagia(actor: FoundryActor | null | undefined): boolean {
+    if (!actor) return false;
+    type ItemLike = { type?: string; name?: string };
+    const items = (actor as unknown as { items?: { contents?: ItemLike[] } }).items?.contents ?? [];
+    return items.some(it => normalizeCondName(it.name ?? "") === ANTIMAGIC_AURA_NORMALIZED);
+}
+
+/**
+ * Se o ator está dentro de UMA OU MAIS auras sagradas ativas cujo caster tem
+ * Aura Antimagia, retorna a lista de casters elegíveis. Vazio se não há.
+ * Considera disposition (mesma do caster = aliado), igual ao tick.
+ */
+export function getAuraAntimagiaContextForActor(actorId: string): Array<{
+    casterName: string;
+    casterActorId: string;
+}> {
+    if (!actorId) return [];
+    const auras = getAuraTemplates();
+    if (auras.length === 0) return [];
+    const targetToken = findTokenForActor(actorId);
+    if (!targetToken) return [];
+
+    const out: Array<{ casterName: string; casterActorId: string }> = [];
+    const seenCasters = new Set<string>();
+    for (const tpl of auras) {
+        const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
+        const casterTid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER]     as string | undefined;
+        if (!casterAid || !casterTid || seenCasters.has(casterAid)) continue;
+        const casterActor = game.actors?.get(casterAid);
+        if (!casterActor) continue;
+        if (!hasAuraAntimagia(casterActor)) continue;
+
+        const casterToken = findTokenForActor(casterAid);
+        const casterDisp  = casterToken ? getTokenDisposition(casterToken) : 0;
+        if (!isAuraTarget(targetToken, casterTid, casterDisp)) continue;
+        if (!isTokenInsideTemplate(targetToken, tpl)) continue;
+
+        out.push({
+            casterName:    (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? casterActor.name ?? "Paladino",
+            casterActorId: casterAid,
+        });
+        seenCasters.add(casterAid);
+    }
+    return out;
+}
+
 // ── Sustentar (1 PM por turno do caster) ─────────────────────────────────────
 //
 // Aura Sagrada tem "duração sustentada" no T20: o caster gasta 1 PM toda vez
@@ -1524,27 +1580,26 @@ export function setupAuraSagrada(): void {
         void resyncAllTokens();
     });
 
-    // 8. Início do turno do combatant → se for caster com Aura de Cura, cura aliados
-    //    `combatTurn` é chamado quando o turno avança DENTRO de um round; usamos
-    //    `combatRound` também porque a virada de round não dispara combatTurn pro
-    //    primeiro combatant no novo round em todas as versões.
+    // 8. Início do turno do combatant → tick (cura/dano) + sustain (1 PM)
+    //
+    // `combatTurnChange(combat, prior, current)` é o hook correto pra ESTE
+    // caso. Diferenças dos outros:
+    //   - `combatTurn` dispara com `combat.combatant` = combatant ANTERIOR
+    //     (o que está terminando o turno). Aplicar tick aqui causa o efeito
+    //     no FIM do turno do recebedor — bug que era visível ao usuário.
+    //   - `combatTurnChange` dispara DEPOIS da transição, com
+    //     `combat.combatant` = NOVO combatant (o que está começando). Isso é
+    //     "início do turno do alvo", que é o que queremos.
+    //   - `combatTurnChange` também cobre: virada de round (próximo turno do
+    //     round dispara) E início do combate (priorRound=0 + currentRound=1).
+    //     Por isso NÃO precisamos mais hooks separados pra combatStart/Round.
     type CombatLike = {
         combatant?: { actor?: FoundryActor | null } | null;
-        turns?: Array<{ actor?: FoundryActor | null }>;
     };
-    const handleTurnAdvance = (...args: unknown[]): void => {
+    Hooks.on("combatTurnChange", (...args: unknown[]) => {
         if (!isActiveGM()) return;
         const combat = args[0] as CombatLike | undefined;
         const actor  = combat?.combatant?.actor ?? null;
-        if (!actor) return;
-        void onCombatTurnStart(actor);
-    };
-    Hooks.on("combatTurn",  handleTurnAdvance);
-    Hooks.on("combatRound", handleTurnAdvance);
-    Hooks.on("combatStart", (...args: unknown[]) => {
-        if (!isActiveGM()) return;
-        const combat = args[0] as CombatLike | undefined;
-        const actor  = combat?.combatant?.actor ?? combat?.turns?.[0]?.actor ?? null;
         if (!actor) return;
         void onCombatTurnStart(actor);
     });
