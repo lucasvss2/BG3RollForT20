@@ -78,8 +78,11 @@ function computeUndeadPenaltyFromMessage(message: ChatMessage): number {
         const desc = String(e?.description ?? "");
 
         // 1PM: "além do normal, mortos-vivos na área sofrem –2 em testes e Defesa"
-        // — detectamos pelo "-2" próximo a "testes e Defesa".
-        if (/[-–−]\s*2[^a-z]+testes\s+e\s+defesa/i.test(desc)) {
+        // Match generoso: "-2" + ... + "testes" + ... + "defesa" (qualquer
+        // ordem de palavras entre eles, incluindo "em"). A versão anterior
+        // usava [^a-z]+ que com /i bloqueia QUALQUER letra — não casava
+        // porque " em " tem letras.
+        if (/[-–−]\s*2\b.*?\btestes\b.*?\bdefesa\b/i.test(desc)) {
             baseFromFirst = 2;
             continue;
         }
