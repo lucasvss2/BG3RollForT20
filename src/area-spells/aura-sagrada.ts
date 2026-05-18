@@ -39,6 +39,7 @@ const FLAG_CASTER    = "casterTokenId";       // template flag: token que emite
 const FLAG_CASTER_AID = "casterActorId";      // template flag: actor do caster
 const POWERFUL_AURA_NORMALIZED = "aura poderosa"; // (idem: sem hífen)
 const HEALING_AURA_NORMALIZED  = "aura de cura";  // aprimoramento de cura por turno
+const BURNING_AURA_NORMALIZED  = "aura ardente";  // aprimoramento de dano por turno em undead/espíritos
 
 const RAIO_PADRAO_M  = 9;
 const RAIO_PODEROSA_M = 30;
@@ -723,6 +724,23 @@ const AURA_STYLES = `
     font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
     margin: 0 0 10px;
 }
+/* Aura Ardente: variação alaranjada (dano de luz) do mesmo layout */
+.window-app.bg3-dialog .bg3-aura-ardente-picker { padding: 12px 16px 8px; }
+.window-app.bg3-dialog .bg3-aura-ardente-picker .burn-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-bottom: 1px solid rgba(106, 78, 24, 0.18);
+    color: #d0c4a8; font-family: "Palatino Linotype", serif; font-size: 0.95rem;
+}
+.window-app.bg3-dialog .bg3-aura-ardente-picker .burn-row:last-child { border-bottom: none; }
+.window-app.bg3-dialog .bg3-aura-ardente-picker .burn-row .burn-amount {
+    color: #ff8a4a; font-weight: 700; margin-left: auto;
+}
+.window-app.bg3-dialog .bg3-aura-ardente-picker .intro {
+    color: #8a7450;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
+    margin: 0 0 10px;
+}
 `;
 
 function ensureAuraStyles(): void {
@@ -905,9 +923,175 @@ function pickHealTargetsDialog(opts: {
     });
 }
 
+// ── Aura Ardente (aprimoramento) ─────────────────────────────────────────────
+//
+// Quando o caster TEM o aprimoramento "Aura Ardente" entre seus poderes E sua
+// Aura Sagrada está ativa, no INÍCIO DE CADA TURNO dele, mortos-vivos e
+// espíritos (à sua escolha) dentro da aura sofrem dano de luz = 5 + CHA do
+// caster.
+//
+// Detecção de undead: `actor.system.detalhes.raca === "Morto-vivo"`
+// Detecção de espírito: raça contém "espír" (case+accent-insensitive). Em
+// T20 não existe raça padrão "Espírito", mas mantemos a detecção robusta —
+// quando aparecer, é detectado. Disposition não é checada porque o texto
+// fala explicitamente "à sua escolha" (o picker resolve casos ambíguos).
+
+/** True se o ator tem o item "Aura Ardente" entre seus poderes. */
+function hasAuraArdente(actor: FoundryActor | null | undefined): boolean {
+    if (!actor) return false;
+    type ItemLike = { type?: string; name?: string };
+    const items = (actor as unknown as { items?: { contents?: ItemLike[] } }).items?.contents ?? [];
+    return items.some(it => normalizeCondName(it.name ?? "") === BURNING_AURA_NORMALIZED);
+}
+
+/** True se o ator é morto-vivo OU espírito (alvo da Aura Ardente). */
+function isUndeadOrSpirit(actor: FoundryActor): boolean {
+    type DetalhesShape = { detalhes?: { raca?: string } };
+    const raca = (actor.system as DetalhesShape | undefined)?.detalhes?.raca;
+    if (typeof raca !== "string" || raca === "") return false;
+    const norm = normalizeCondName(raca);
+    return norm === "morto-vivo" || /\bespir/.test(norm);
+}
+
+type BurnCandidate = {
+    actorId:   string;
+    actorName: string;
+    tokenId:   string;
+    pvBefore:  number;
+    damage:    number;  // dano final (sem RD — passamos applyRD=false)
+};
+
+/** Lista mortos-vivos e espíritos dentro da aura. */
+function listBurnCandidates(template: AuraTpl, damage: number): BurnCandidate[] {
+    type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+    const cv = canvas as unknown as CanvasLike;
+    const tokens = cv.tokens?.placeables ?? [];
+
+    const out: BurnCandidate[] = [];
+    const seenActor = new Set<string>();
+
+    for (const tk of tokens) {
+        if (!tk.actor) continue;
+        const aid = (tk.actor as unknown as { id?: string }).id ?? "";
+        if (!aid || seenActor.has(aid)) continue;
+        if (!isUndeadOrSpirit(tk.actor)) continue;
+        if (!isTokenInsideTemplate(tk, template)) continue;
+
+        type PVShape = { value?: number; max?: number };
+        const pv = (tk.actor.system?.attributes?.pv ?? {}) as PVShape;
+        const cur = Number(pv.value ?? NaN);
+        if (!Number.isFinite(cur) || cur <= 0) continue; // já morto / sem PV → não inclui
+
+        out.push({
+            actorId:   aid,
+            actorName: tk.actor.name ?? tk.name ?? "Ator",
+            tokenId:   (tk as unknown as { id?: string }).id ?? "",
+            pvBefore:  cur,
+            damage,
+        });
+        seenActor.add(aid);
+    }
+    return out;
+}
+
+async function applyBurnsAndPostCard(opts: {
+    casterName: string;
+    damage:     number;
+    candidates: BurnCandidate[];
+}): Promise<void> {
+    const { casterName, damage, candidates } = opts;
+    if (candidates.length === 0) return;
+
+    type ActorWithApply = FoundryActor & {
+        applyDamage?(amount: number, multiplier?: number, applyRD?: boolean): Promise<unknown>;
+    };
+    const applied: Array<BurnCandidate & { pvAfter: number; dealt: number }> = [];
+    for (const c of candidates) {
+        const actor = game.actors?.get(c.actorId) as ActorWithApply | undefined;
+        if (!actor) continue;
+        try {
+            // applyRD=false — dano de luz é elemental, ignora RD genérica
+            await actor.applyDamage?.(damage, 1, false);
+            const pvAfter = Number(actor.system?.attributes?.pv?.value ?? c.pvBefore);
+            applied.push({ ...c, pvAfter, dealt: Math.max(0, c.pvBefore - pvAfter) });
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Aura Ardente: falha ao aplicar dano em ${c.actorName}:`, err);
+        }
+    }
+    if (applied.length === 0) return;
+
+    const rows = applied.map(c => `
+        <li style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span>${escHtml(c.actorName)}</span>
+            <span style="color:#ff8a4a;font-weight:700;">-${c.dealt}</span>
+        </li>`).join("");
+    const content = `
+        <div class="tormenta20 chat-card item-card" style="border-color:#ff8a4a;">
+            <header class="card-header flexrow">
+                <h3 class="item-name"><div>Aura Ardente — ${escHtml(casterName)}</div></h3>
+            </header>
+            <div class="card-content" style="padding: 6px 10px;">
+                <p style="margin: 0 0 6px;color:#9a8e7a;font-size:0.85rem;">
+                    Dano de luz: <b>${damage}</b>
+                </p>
+                <ul style="list-style:none;padding:0;margin:0;">${rows}</ul>
+            </div>
+        </div>`;
+    try {
+        await ChatMessage.create({ content, speaker: { alias: casterName } });
+    } catch { /* ignore — dano já aplicado */ }
+}
+
+function pickBurnTargetsDialog(opts: {
+    casterName: string;
+    candidates: BurnCandidate[];
+}): Promise<BurnCandidate[] | null> {
+    return new Promise<BurnCandidate[] | null>((resolve) => {
+        if (opts.candidates.length === 0) { resolve([]); return; }
+        const rows = opts.candidates.map((c, i) => `
+            <label class="burn-row">
+                <input type="checkbox" data-idx="${i}" checked />
+                <span>${escHtml(c.actorName)} <small style="color:#8a7450;">(${c.pvBefore} PV)</small></span>
+                <span class="burn-amount">-${c.damage}</span>
+            </label>`).join("");
+        new Dialog({
+            title: `Aura Ardente — ${opts.casterName}`,
+            content: `
+                <div class="bg3-aura-ardente-picker">
+                    <p class="intro">Mortos-vivos e espíritos na aura — desmarque quem poupar</p>
+                    ${rows}
+                </div>`,
+            buttons: {
+                burn: {
+                    icon:  '<i class="fas fa-fire"></i>',
+                    label: "Queimar selecionados",
+                    callback: ($html: JQuery) => {
+                        const root = ($html as unknown as { 0?: HTMLElement })[0] ?? ($html as unknown as HTMLElement);
+                        const idxs = Array.from(
+                            (root as HTMLElement).querySelectorAll<HTMLInputElement>("input[data-idx]:checked")
+                        ).map(el => Number(el.getAttribute("data-idx") ?? -1)).filter(i => i >= 0);
+                        resolve(idxs.map(i => opts.candidates[i]).filter(Boolean));
+                    },
+                },
+                skip: {
+                    icon:  '<i class="fas fa-forward"></i>',
+                    label: "Pular tick",
+                    callback: () => resolve(null),
+                },
+            },
+            default: "burn",
+            close:   () => resolve(null),
+        }, { classes: ["bg3-dialog"] }).render(true);
+    });
+}
+
 /**
  * Processa o início do turno de um combatant. Se ele é caster de aura(s)
- * sagrada(s) com aprimoramento "Aura de Cura", aplica/pergunta cura.
+ * sagrada(s), avalia cada aprimoramento de tick ativo:
+ *   - Aura de Cura: cura aliados elegíveis dentro da aura
+ *   - Aura Ardente: dano em mortos-vivos/espíritos dentro da aura
+ * Ambos respeitam o setting `alwaysPromptStartOfTurn` (auto vs picker).
+ * Os dois são independentes — o caster pode ter um, o outro, ou ambos.
  */
 async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
     if (!isActiveGM()) return;
@@ -918,7 +1102,10 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
         t.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] === actorId
     );
     if (myAuras.length === 0) return;
-    if (!hasAuraDeCura(actor)) return;
+
+    const wantsCure = hasAuraDeCura(actor);
+    const wantsBurn = hasAuraArdente(actor);
+    if (!wantsCure && !wantsBurn) return;
 
     let alwaysPrompt = false;
     try {
@@ -927,19 +1114,36 @@ async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
 
     for (const tpl of myAuras) {
         const cha = getCasterChaFromTemplate(tpl);
-        const healAmount = 5 + cha;
-        const candidates = listHealCandidates(tpl, healAmount);
-        if (candidates.length === 0) continue;
-
+        const amount = 5 + cha;
         const casterName = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined)
             ?? actor.name ?? "Paladino";
 
-        if (alwaysPrompt) {
-            const chosen = await pickHealTargetsDialog({ casterName, candidates });
-            if (!chosen || chosen.length === 0) continue;
-            await applyHealsAndPostCard({ casterName, healAmount, candidates: chosen });
-        } else {
-            await applyHealsAndPostCard({ casterName, healAmount, candidates });
+        if (wantsCure) {
+            const healCands = listHealCandidates(tpl, amount);
+            if (healCands.length > 0) {
+                if (alwaysPrompt) {
+                    const chosen = await pickHealTargetsDialog({ casterName, candidates: healCands });
+                    if (chosen && chosen.length > 0) {
+                        await applyHealsAndPostCard({ casterName, healAmount: amount, candidates: chosen });
+                    }
+                } else {
+                    await applyHealsAndPostCard({ casterName, healAmount: amount, candidates: healCands });
+                }
+            }
+        }
+
+        if (wantsBurn) {
+            const burnCands = listBurnCandidates(tpl, amount);
+            if (burnCands.length > 0) {
+                if (alwaysPrompt) {
+                    const chosen = await pickBurnTargetsDialog({ casterName, candidates: burnCands });
+                    if (chosen && chosen.length > 0) {
+                        await applyBurnsAndPostCard({ casterName, damage: amount, candidates: chosen });
+                    }
+                } else {
+                    await applyBurnsAndPostCard({ casterName, damage: amount, candidates: burnCands });
+                }
+            }
         }
     }
 }
@@ -955,7 +1159,7 @@ export function setupAuraSagrada(): void {
     try {
         game.settings.register(MODULE_ID, "auraSagrada.alwaysPromptStartOfTurn", {
             name: "Aura Sagrada: sempre perguntar no início do turno",
-            hint: "Quando ativado, abre um diálogo de escolha de alvos no início do turno do paladino para Aura de Cura (e futura Aura Ardente). Caso contrário, aplica em todos os elegíveis automaticamente.",
+            hint: "Quando ativado, abre um diálogo de escolha de alvos no início do turno do paladino para Aura de Cura e Aura Ardente. Caso contrário, aplica em todos os elegíveis automaticamente.",
             scope: "client",
             config: true,
             type: Boolean,
