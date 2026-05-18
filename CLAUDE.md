@@ -87,7 +87,8 @@ src/
   spell-resistance/types.ts    — SpellResistRequest, SpellConditionData, ResistSkill
   area-spells/index.ts         — Entry point for area-persistent spells (calls setupConsagrar + setupAuraSagrada)
   area-spells/consagrar.ts     — Consagrar: MeasuredTemplate claim, AE apply/remove, movement sync
-  area-spells/aura-sagrada.ts  — Aura Sagrada (Paladino): ghost template attached to caster token, ally-only via disposition
+  area-spells/aura-sagrada.ts  — Aura Sagrada (Paladino): ghost template + Aura de Cura (combatTurn heal)
+  ui/skills-menu.ts            — Toolbar button that aggregates active skill actions (register/refresh API)
   sheet/index.ts               — Character sheet redesign (BG3 aesthetic)
   tests/
     parser/t20.test.ts         — Vitest unit tests for parseT20 (75 tests)
@@ -110,6 +111,7 @@ src/
 | 8   | `sheet/index.ts`              | —                        | Character sheet redesign                                                                |
 | 9   | `area-spells/consagrar.ts`    | multiple (see below)     | Persistent area spell: MeasuredTemplate + AE management + movement sync                |
 | 10  | `area-spells/aura-sagrada.ts` | multiple (see below)     | Paladin aura emitted from caster token, follows movement, ally-only via disposition    |
+| 11  | `ui/skills-menu.ts`           | renderSceneControls, ready, canvasReady | Single toolbar button aggregating active skill actions (Consagrar remove, Aura cancel, ...) |
 
 ### Spell Resistance System (v1.6.5+)
 
@@ -237,10 +239,32 @@ baseEffectData         — AE template cloned per recipient
 - `updateToken` (secondary listener) → disposition changed → resync token (ally/foe flip)
 - `canvasReady` → resync everything on scene load
 
-**Client setting:** `auraSagrada.alwaysPromptStartOfTurn` — registered now, not yet consumed. Placeholder for future phases (Aura de Cura / Aura Ardente target picker).
+**Client setting:** `auraSagrada.alwaysPromptStartOfTurn` — when **false** (default), Aura de Cura applies automatically to all eligible allies at the caster's turn start. When **true**, opens a dialog with checkboxes pre-marked (player can deselect targets). Same setting will be reused by future Aura Ardente.
 
-**Phases not yet implemented (in `aura-sagrada.ts` file header):**
-Aura Antimagia · Aura Ardente · Aura de Cura · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
+### Aura de Cura (v1.8.0) — Fase 2
+
+Aprimoramento (item separado no actor, nome `"Aura de Cura"` normalizado). Quando ativo + a Aura Sagrada do mesmo caster está ativa:
+- No início de cada turno do caster (hooks `combatStart` / `combatTurn` / `combatRound`), cura aliados elegíveis em `5 + CHA do caster`.
+- Elegíveis = tokens (caster + mesma `disposition`) **dentro** da aura.
+- Skip de quem está com PV cheio.
+- Multi-GM: só o `isActiveGM()` aplica.
+- CHA do caster lido de `template.flags.aeris-bg3-rolls-t20.baseEffectData.changes[0].value` (T20 já resolveu `@car` no momento do cast).
+- Aplica via `actor.update({ "system.attributes.pv.value": Math.min(max, cur + heal) })`.
+- Posta chat card resumo: `Aura de Cura — <caster>` + lista `<aliado>: +N`.
+
+### Phases not yet implemented
+Aura Antimagia · Aura Ardente · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
+
+### Skills Menu (v1.8.0)
+
+`src/ui/skills-menu.ts` é a camada compartilhada que substituiu botões avulsos na toolbar. Cada sistema chama `registerSkillAction({ id, label, icon, color, isVisible(), onClick() })` em seu `setup*()` e `refreshSkillsMenu()` depois de mudar estado relevante (cast/cancel/delete template, etc.).
+
+Comportamento:
+- 0 ações visíveis → o botão da toolbar é removido.
+- 1 ação visível → click executa direto (sem menu intermediário); tooltip mostra o label da ação.
+- 2+ ações visíveis → click abre um Dialog `.bg3-dialog` com lista; tooltip vira `"Skills ativas (N)"`.
+
+Setup global em `main.ts` antes de `setupAreaSpells` — também re-refresh em `renderSceneControls`, `ready` e `canvasReady`.
 
 ---
 
