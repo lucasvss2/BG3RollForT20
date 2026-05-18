@@ -19,6 +19,7 @@
 
 import { MODULE_ID } from "@/constants";
 import { extractSpellName, normalizeCondName, getMsgAuthorId } from "@/spell-resistance/index";
+import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
 
 const SPELL_KEY = "consagrar";
 const FLAG_SPELL = "spell";                          // template flag: identifica como Consagrar
@@ -665,15 +666,13 @@ async function removeAEsForTemplate(templateId: string): Promise<void> {
     if (removed > 0) ui.notifications?.info(`Consagrar removida (${removed} efeito(s) limpos)`);
 }
 
-// ── Floating button: remover área ────────────────────────────────────────────
+// ── Ação "Remover área" (registrada no skills-menu) ──────────────────────────
 //
-// Botão injetado no <menu id="scene-controls-layers"> (mesma "lista" do botão
-// de teste secreto). Aparece como ÚLTIMO item, e só fica visível enquanto há
-// pelo menos uma área Consagrar ativa que o usuário pode remover:
-//   - GM: vê o botão se existir QUALQUER área Consagrar na cena
-//   - Jogador: vê o botão se for o creatorUserId de pelo menos uma área
+// O botão na toolbar vem do skills-menu — aqui apenas declaramos o handler
+// (onClickRemoveArea + dialogs). Visibilidade:
+//   - GM: vê a ação se existir QUALQUER área Consagrar na cena
+//   - Jogador: vê a ação se for o creatorUserId de pelo menos uma área
 
-const REMOVE_BTN_ID = "bg3-t20-consagrar-remove-btn";
 const CONSAGRAR_STYLES_ID = "bg3-t20-consagrar-styles";
 
 // CSS específico do dialog Consagrar — pequeno complemento ao tema bg3-dialog
@@ -778,57 +777,11 @@ function getMyConsagrarTemplates(): ConsagrarTpl[] {
     });
 }
 
-function findSceneControlsMenu(): Element | null {
-    return (
-        document.querySelector("menu#scene-controls-layers") ??
-        document.querySelector("aside#scene-controls menu") ??
-        document.querySelector("#ui-left menu")
-    );
-}
-
-function removeRemoveAreaButton(): void {
-    const btn = document.getElementById(REMOVE_BTN_ID);
-    btn?.parentElement?.remove();
-}
-
-function injectRemoveAreaButton(): void {
-    if (document.getElementById(REMOVE_BTN_ID)) return;
-    const menu = findSceneControlsMenu();
-    if (!menu) return;
-
-    const btn = document.createElement("button");
-    btn.id = REMOVE_BTN_ID;
-    btn.type = "button";
-    btn.className = "control ui-control layer icon fa-solid fa-circle-xmark";
-    btn.style.color = "#ffb84d"; // âmbar pra destacar de outros botões
-    btn.setAttribute("data-tooltip", "Remover área de Consagrar");
-    btn.setAttribute("aria-label", "Remover área de Consagrar");
-    btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void onClickRemoveArea();
-    });
-
-    const li = document.createElement("li");
-    li.appendChild(btn);
-    // appendChild → garantido ser o ÚLTIMO item do menu
-    menu.appendChild(li);
-}
-
-/** Reflete o estado atual (área(s) ativa(s) ou não) no botão. */
-function refreshRemoveAreaButton(): void {
-    if (getMyConsagrarTemplates().length === 0) {
-        removeRemoveAreaButton();
-    } else {
-        injectRemoveAreaButton();
-    }
-}
-
 async function onClickRemoveArea(): Promise<void> {
     const mine = getMyConsagrarTemplates();
     if (mine.length === 0) {
         ui.notifications?.info("Nenhuma área de Consagrar ativa para remover.");
-        refreshRemoveAreaButton();
+        refreshSkillsMenu();
         return;
     }
 
@@ -932,6 +885,16 @@ export function setupConsagrar(): void {
     // CSS específico dos dialogs Consagrar (complementa o tema bg3-dialog)
     ensureConsagrarStyles();
 
+    // Ação no skills-menu (botão único na toolbar)
+    registerSkillAction({
+        id:    "consagrar-remove",
+        label: "Remover área de Consagrar",
+        icon:  "fa-solid fa-circle-xmark",
+        color: "#ffb84d",
+        isVisible: () => getMyConsagrarTemplates().length > 0,
+        onClick:   () => onClickRemoveArea(),
+    });
+
     // 1. Detecta cast → registra "pending" para reclamar o template do T20
     //    (NÃO mais cria template aqui — antes resultava em 2 áreas no canvas).
     Hooks.on("createChatMessage", (...args: unknown[]) => {
@@ -978,7 +941,7 @@ export function setupConsagrar(): void {
                     clearPending(currentUid);
                     void claimTemplate(tplDoc, pending);
                     // applyAEs virá via updateMeasuredTemplate quando o flag propagar.
-                    refreshRemoveAreaButton();
+                    refreshSkillsMenu();
                     return;
                 }
             }
@@ -987,7 +950,7 @@ export function setupConsagrar(): void {
         if (hasConsagrar && isActiveGM()) {
             void applyAEsForTemplate(tplDoc);
         }
-        refreshRemoveAreaButton();
+        refreshSkillsMenu();
     });
 
     // 3. Template deletado → GM remove AEs criados por ele
@@ -995,7 +958,7 @@ export function setupConsagrar(): void {
         const template = args[0] as { id: string; flags?: Record<string, Record<string, unknown>> };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
         void removeAEsForTemplate(template.id);
-        refreshRemoveAreaButton();
+        refreshSkillsMenu();
     });
 
     // 4. Token atualizado → resincroniza com todos os templates Consagrar.
@@ -1097,7 +1060,7 @@ export function setupConsagrar(): void {
         const flagChange = (changes["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
         if (flagChange && flagChange[FLAG_SPELL] === SPELL_KEY) {
             if (isActiveGM()) void applyAEsForTemplate(tplDoc);
-            refreshRemoveAreaButton();
+            refreshSkillsMenu();
             return;
         }
 
@@ -1124,7 +1087,7 @@ export function setupConsagrar(): void {
     Hooks.on("canvasReady", () => {
         // Botão de remover precisa refletir o estado da cena recém-carregada
         // (vale para GM e jogadores; por isso vem antes do early-return de GM).
-        refreshRemoveAreaButton();
+        refreshSkillsMenu();
 
         if (!isActiveGM()) return;
         const templates = getConsagrarTemplates();
@@ -1141,10 +1104,8 @@ export function setupConsagrar(): void {
         })();
     });
 
-    // 8b. Toolbar re-renderizada (mudou de layer, etc.) → re-injeta o botão
-    Hooks.on("renderSceneControls", () => refreshRemoveAreaButton());
-    // 8c. Estado inicial assim que a UI estiver pronta
-    Hooks.once("ready", () => refreshRemoveAreaButton());
+    // 8b. Toolbar re-render / ready / canvasReady: cobertos pelo skills-menu
+    //     setup global — não precisamos duplicar aqui.
 
     // 8. FASE 3: Tempo do mundo avança → remove templates cujo 1 dia expirou
     const ONE_DAY_SECONDS = 86400;

@@ -26,6 +26,7 @@
 
 import { MODULE_ID } from "@/constants";
 import { extractSpellName, normalizeCondName, getMsgAuthorId } from "@/spell-resistance/index";
+import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
 
 // Valor RETORNADO por normalizeCondName("Aura Sagrada") — esse helper só
 // faz lowercase + remove acentos, NÃO substitui espaço por hífen. Manter o
@@ -37,6 +38,7 @@ const FLAG_ORIGIN    = "auraSagradaTemplateOrigin"; // AE flag: liga AE ao templ
 const FLAG_CASTER    = "casterTokenId";       // template flag: token que emite
 const FLAG_CASTER_AID = "casterActorId";      // template flag: actor do caster
 const POWERFUL_AURA_NORMALIZED = "aura poderosa"; // (idem: sem hífen)
+const HEALING_AURA_NORMALIZED  = "aura de cura";  // aprimoramento de cura por turno
 
 const RAIO_PADRAO_M  = 9;
 const RAIO_PODEROSA_M = 30;
@@ -550,16 +552,410 @@ async function moveAuraWithCaster(
     }
 }
 
+// ── Cancelar aura (skills-menu) ──────────────────────────────────────────────
+//
+// Visibilidade: o GM vê todas as auras ativas. O jogador só vê as auras que
+// ELE lançou (creatorUserId). Comportamento idêntico ao do Consagrar:
+//   - 1 aura → dialog de confirmação
+//   - 2+      → dialog picker com checkboxes
+
+/** Templates Aura Sagrada visíveis pra cancelamento pelo usuário atual. */
+function getMyAuras(): AuraTpl[] {
+    const all = getAuraTemplates();
+    if (game.user?.isGM) return all;
+    const uid = game.user?.id;
+    if (!uid) return [];
+    return all.filter(t => t.flags?.[MODULE_ID]?.["creatorUserId"] === uid);
+}
+
+function escHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function onClickCancelAura(): Promise<void> {
+    const mine = getMyAuras();
+    if (mine.length === 0) {
+        ui.notifications?.info("Nenhuma aura sagrada ativa para cancelar.");
+        refreshSkillsMenu();
+        return;
+    }
+    type SceneLike = { deleteEmbeddedDocuments?(t: string, ids: string[]): Promise<unknown> };
+    const scene = (canvas as unknown as { scene?: SceneLike }).scene;
+    if (!scene?.deleteEmbeddedDocuments) {
+        ui.notifications?.warn("Cena não disponível.");
+        return;
+    }
+    const idsToRemove = mine.length === 1
+        ? await confirmCancelAura(mine[0])
+        : await pickAurasDialog(mine);
+    if (!idsToRemove || idsToRemove.length === 0) return;
+    try {
+        await scene.deleteEmbeddedDocuments("MeasuredTemplate", idsToRemove);
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao cancelar:`, err);
+        ui.notifications?.error("Falha ao cancelar aura (veja console).");
+    }
+}
+
+function confirmCancelAura(tpl: AuraTpl): Promise<string[] | null> {
+    const caster = escHtml((tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Paladino");
+    return new Promise<string[] | null>((resolve) => {
+        new Dialog({
+            title: "Cancelar Aura Sagrada",
+            content: `
+                <div class="bg3-aura-cancel">
+                    <p>Cancelar a aura sagrada de <b>${caster}</b>?</p>
+                    <p class="hint">Os efeitos aplicados aos aliados dentro da aura serão removidos.</p>
+                </div>`,
+            buttons: {
+                cancel: {
+                    icon:  '<i class="fas fa-circle-xmark"></i>',
+                    label: "Cancelar aura",
+                    callback: () => resolve([tpl.id]),
+                },
+                back: {
+                    icon:  '<i class="fas fa-times"></i>',
+                    label: "Voltar",
+                    callback: () => resolve(null),
+                },
+            },
+            default: "cancel",
+            close:   () => resolve(null),
+        }, { classes: ["bg3-dialog"] }).render(true);
+    });
+}
+
+function pickAurasDialog(templates: AuraTpl[]): Promise<string[] | null> {
+    return new Promise<string[] | null>((resolve) => {
+        const rows = templates.map((t, i) => {
+            const caster = escHtml((t.flags?.[MODULE_ID]?.["casterName"] as string | undefined) ?? "Paladino");
+            return `
+                <label class="picker-row">
+                    <input type="checkbox" data-tid="${t.id}" checked />
+                    <span class="row-idx">Aura #${i + 1}</span>
+                    <span class="row-name"><b>${caster}</b></span>
+                </label>`;
+        }).join("");
+        new Dialog({
+            title: "Cancelar auras sagradas",
+            content: `
+                <div class="bg3-aura-picker">
+                    <p class="picker-intro">Selecione as auras a cancelar</p>
+                    ${rows}
+                </div>`,
+            buttons: {
+                cancel: {
+                    icon:  '<i class="fas fa-circle-xmark"></i>',
+                    label: "Cancelar selecionadas",
+                    callback: ($html: JQuery) => {
+                        const root = ($html as unknown as { 0?: HTMLElement })[0] ?? ($html as unknown as HTMLElement);
+                        const ids = Array.from(
+                            (root as HTMLElement).querySelectorAll("input[data-tid]:checked")
+                        ).map(el => el.getAttribute("data-tid") ?? "").filter(Boolean);
+                        resolve(ids.length > 0 ? ids : null);
+                    },
+                },
+                back: {
+                    icon:  '<i class="fas fa-times"></i>',
+                    label: "Voltar",
+                    callback: () => resolve(null),
+                },
+            },
+            default: "cancel",
+            close:   () => resolve(null),
+        }, { classes: ["bg3-dialog"] }).render(true);
+    });
+}
+
+// Pequeno suplemento CSS pros dialogs de aura
+const AURA_STYLES_ID = "bg3-t20-aura-sagrada-styles";
+const AURA_STYLES = `
+.window-app.bg3-dialog .bg3-aura-cancel { padding: 14px 16px 6px; }
+.window-app.bg3-dialog .bg3-aura-cancel p {
+    margin: 0 0 8px; color: #d0c4a8;
+    font-family: "Palatino Linotype", "Book Antiqua", serif;
+    font-size: 0.95rem; line-height: 1.4;
+}
+.window-app.bg3-dialog .bg3-aura-cancel p b { color: #c8a96e; font-weight: 700; }
+.window-app.bg3-dialog .bg3-aura-cancel .hint {
+    color: #8a7450; font-size: 0.82rem; font-style: italic; margin-top: 4px;
+}
+.window-app.bg3-dialog .bg3-aura-picker { padding: 12px 16px 8px; }
+.window-app.bg3-dialog .bg3-aura-picker > .picker-intro {
+    color: #8a7450;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
+    margin: 0 0 10px;
+}
+.window-app.bg3-dialog .bg3-aura-picker .picker-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; cursor: pointer;
+    border-bottom: 1px solid rgba(106, 78, 24, 0.18);
+    transition: background 0.15s;
+}
+.window-app.bg3-dialog .bg3-aura-picker .picker-row:last-child { border-bottom: none; }
+.window-app.bg3-dialog .bg3-aura-picker .picker-row:hover { background: rgba(106, 78, 24, 0.12); }
+.window-app.bg3-dialog .bg3-aura-picker .picker-row .row-idx {
+    color: #8a7450;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase;
+    min-width: 56px;
+}
+.window-app.bg3-dialog .bg3-aura-picker .picker-row .row-name {
+    color: #d0c4a8; font-family: "Palatino Linotype", serif; font-size: 0.95rem;
+}
+.window-app.bg3-dialog .bg3-aura-picker .picker-row .row-name b {
+    color: #c8a96e; font-weight: 700;
+}
+.window-app.bg3-dialog .bg3-aura-cura-picker { padding: 12px 16px 8px; }
+.window-app.bg3-dialog .bg3-aura-cura-picker .heal-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px; border-bottom: 1px solid rgba(106, 78, 24, 0.18);
+    color: #d0c4a8; font-family: "Palatino Linotype", serif; font-size: 0.95rem;
+}
+.window-app.bg3-dialog .bg3-aura-cura-picker .heal-row:last-child { border-bottom: none; }
+.window-app.bg3-dialog .bg3-aura-cura-picker .heal-row .heal-amount {
+    color: #6ecf7a; font-weight: 700; margin-left: auto;
+}
+.window-app.bg3-dialog .bg3-aura-cura-picker .intro {
+    color: #8a7450;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
+    margin: 0 0 10px;
+}
+`;
+
+function ensureAuraStyles(): void {
+    if (document.getElementById(AURA_STYLES_ID)) return;
+    const el = document.createElement("style");
+    el.id = AURA_STYLES_ID;
+    el.textContent = AURA_STYLES;
+    document.head.appendChild(el);
+}
+
+// ── Aura de Cura (aprimoramento) ─────────────────────────────────────────────
+//
+// Quando o caster TEM o aprimoramento "Aura de Cura" entre seus poderes E sua
+// Aura Sagrada está ativa, no INÍCIO DE CADA TURNO dele, os aliados (à sua
+// escolha) dentro da aura recebem 5 + CHA do caster em PV.
+//
+// Comportamento UX (controlado por `auraSagrada.alwaysPromptStartOfTurn`):
+//   - false (default): aplica automaticamente em TODOS os elegíveis,
+//     posta um chat card resumindo. Tem botão "desfazer" no card.
+//   - true: abre dialog com checkboxes pra escolher quem cura.
+
+/** True se o ator tem o item "Aura de Cura" entre seus poderes. */
+function hasAuraDeCura(actor: FoundryActor | null | undefined): boolean {
+    if (!actor) return false;
+    type ItemLike = { type?: string; name?: string };
+    const items = (actor as unknown as { items?: { contents?: ItemLike[] } }).items?.contents ?? [];
+    return items.some(it => normalizeCondName(it.name ?? "") === HEALING_AURA_NORMALIZED);
+}
+
+/** CHA do caster: lemos do baseEffectData (T20 já calculou no momento do cast). */
+function getCasterChaFromTemplate(template: AuraTpl): number {
+    const base = template.flags?.[MODULE_ID]?.["baseEffectData"] as
+        | { changes?: Array<{ value?: string | number }> } | undefined;
+    const raw = base?.changes?.[0]?.value;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+}
+
+type HealCandidate = {
+    actorId:   string;
+    actorName: string;
+    tokenId:   string;
+    pvBefore:  number;
+    pvMax:     number;
+    pvAfter:   number;
+    healed:    number;  // quanto foi efetivamente curado (clamped)
+};
+
+/** Lista tokens elegíveis pra cura por uma aura — caster + aliados FRIENDLY dentro. */
+function listHealCandidates(template: AuraTpl, healAmount: number): HealCandidate[] {
+    type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+    const cv = canvas as unknown as CanvasLike;
+    const tokens = cv.tokens?.placeables ?? [];
+
+    const casterTokenId = template.flags?.[MODULE_ID]?.[FLAG_CASTER] as string | undefined;
+    const casterActorId = template.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
+    if (!casterTokenId || !casterActorId) return [];
+    const casterToken = findTokenForActor(casterActorId);
+    const casterDisp  = casterToken ? getTokenDisposition(casterToken) : 0;
+
+    const out: HealCandidate[] = [];
+    const seenActor = new Set<string>();
+
+    for (const tk of tokens) {
+        if (!tk.actor) continue;
+        const aid = (tk.actor as unknown as { id?: string }).id ?? "";
+        if (!aid || seenActor.has(aid)) continue; // 1 cura por ator (cobre tokens duplicados)
+        if (!isAuraTarget(tk, casterTokenId, casterDisp)) continue;
+        if (!isTokenInsideTemplate(tk, template)) continue;
+
+        type PVShape = { value?: number; max?: number };
+        const pv = (tk.actor.system?.attributes?.pv ?? {}) as PVShape;
+        const cur = Number(pv.value ?? NaN);
+        const max = Number(pv.max ?? NaN);
+        if (!Number.isFinite(cur) || !Number.isFinite(max)) continue;
+        if (max <= 0)  continue;        // sem PV configurado
+        if (cur >= max) continue;       // já cheio — pular
+
+        const after = Math.min(max, cur + healAmount);
+        out.push({
+            actorId:   aid,
+            actorName: tk.actor.name ?? tk.name ?? "Ator",
+            tokenId:   (tk as unknown as { id?: string }).id ?? "",
+            pvBefore:  cur,
+            pvMax:     max,
+            pvAfter:   after,
+            healed:    after - cur,
+        });
+        seenActor.add(aid);
+    }
+    return out;
+}
+
+async function applyHealsAndPostCard(opts: {
+    casterName:   string;
+    healAmount:   number;
+    candidates:   HealCandidate[];
+}): Promise<void> {
+    const { casterName, healAmount, candidates } = opts;
+    if (candidates.length === 0) return;
+
+    // Aplica
+    const applied: HealCandidate[] = [];
+    for (const c of candidates) {
+        try {
+            const actor = game.actors?.get(c.actorId);
+            if (!actor) continue;
+            await actor.update({ "system.attributes.pv.value": c.pvAfter });
+            applied.push(c);
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Aura de Cura: falha ao curar ${c.actorName}:`, err);
+        }
+    }
+    if (applied.length === 0) return;
+
+    // Chat card resumo
+    const rows = applied.map(c => `
+        <li style="display:flex;justify-content:space-between;padding:2px 0;">
+            <span>${escHtml(c.actorName)}</span>
+            <span style="color:#6ecf7a;font-weight:700;">+${c.healed}</span>
+        </li>`).join("");
+    const content = `
+        <div class="tormenta20 chat-card item-card" style="border-color:#c8a96e;">
+            <header class="card-header flexrow">
+                <h3 class="item-name"><div>Aura de Cura — ${escHtml(casterName)}</div></h3>
+            </header>
+            <div class="card-content" style="padding: 6px 10px;">
+                <p style="margin: 0 0 6px;color:#9a8e7a;font-size:0.85rem;">
+                    Cura: <b>${healAmount}</b> PV
+                </p>
+                <ul style="list-style:none;padding:0;margin:0;">${rows}</ul>
+            </div>
+        </div>`;
+    try {
+        await ChatMessage.create({ content, speaker: { alias: casterName } });
+    } catch { /* ignore — cura já aplicada */ }
+}
+
+/** Dialog picker (quando setting `alwaysPromptStartOfTurn` está ativa). */
+function pickHealTargetsDialog(opts: {
+    casterName: string;
+    candidates: HealCandidate[];
+}): Promise<HealCandidate[] | null> {
+    return new Promise<HealCandidate[] | null>((resolve) => {
+        if (opts.candidates.length === 0) { resolve([]); return; }
+        const rows = opts.candidates.map((c, i) => `
+            <label class="heal-row">
+                <input type="checkbox" data-idx="${i}" checked />
+                <span>${escHtml(c.actorName)} <small style="color:#8a7450;">(${c.pvBefore}/${c.pvMax})</small></span>
+                <span class="heal-amount">+${c.healed}</span>
+            </label>`).join("");
+        new Dialog({
+            title: `Aura de Cura — ${opts.casterName}`,
+            content: `
+                <div class="bg3-aura-cura-picker">
+                    <p class="intro">Aliados dentro da aura — desmarque quem não curar</p>
+                    ${rows}
+                </div>`,
+            buttons: {
+                heal: {
+                    icon:  '<i class="fas fa-heart"></i>',
+                    label: "Curar selecionados",
+                    callback: ($html: JQuery) => {
+                        const root = ($html as unknown as { 0?: HTMLElement })[0] ?? ($html as unknown as HTMLElement);
+                        const idxs = Array.from(
+                            (root as HTMLElement).querySelectorAll<HTMLInputElement>("input[data-idx]:checked")
+                        ).map(el => Number(el.getAttribute("data-idx") ?? -1)).filter(i => i >= 0);
+                        resolve(idxs.map(i => opts.candidates[i]).filter(Boolean));
+                    },
+                },
+                skip: {
+                    icon:  '<i class="fas fa-forward"></i>',
+                    label: "Pular tick",
+                    callback: () => resolve(null),
+                },
+            },
+            default: "heal",
+            close:   () => resolve(null),
+        }, { classes: ["bg3-dialog"] }).render(true);
+    });
+}
+
+/**
+ * Processa o início do turno de um combatant. Se ele é caster de aura(s)
+ * sagrada(s) com aprimoramento "Aura de Cura", aplica/pergunta cura.
+ */
+async function onCombatTurnStart(actor: FoundryActor): Promise<void> {
+    if (!isActiveGM()) return;
+    const actorId = (actor as unknown as { id?: string }).id ?? "";
+    if (!actorId) return;
+
+    const myAuras = getAuraTemplates().filter(t =>
+        t.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] === actorId
+    );
+    if (myAuras.length === 0) return;
+    if (!hasAuraDeCura(actor)) return;
+
+    let alwaysPrompt = false;
+    try {
+        alwaysPrompt = Boolean(game.settings.get(MODULE_ID, "auraSagrada.alwaysPromptStartOfTurn"));
+    } catch { /* setting indisponível — usa default */ }
+
+    for (const tpl of myAuras) {
+        const cha = getCasterChaFromTemplate(tpl);
+        const healAmount = 5 + cha;
+        const candidates = listHealCandidates(tpl, healAmount);
+        if (candidates.length === 0) continue;
+
+        const casterName = (tpl.flags?.[MODULE_ID]?.["casterName"] as string | undefined)
+            ?? actor.name ?? "Paladino";
+
+        if (alwaysPrompt) {
+            const chosen = await pickHealTargetsDialog({ casterName, candidates });
+            if (!chosen || chosen.length === 0) continue;
+            await applyHealsAndPostCard({ casterName, healAmount, candidates: chosen });
+        } else {
+            await applyHealsAndPostCard({ casterName, healAmount, candidates });
+        }
+    }
+}
+
 // ── Setup (hooks) ────────────────────────────────────────────────────────────
 
 export function setupAuraSagrada(): void {
+    ensureAuraStyles();
+
     // Setting: "sempre perguntar antes de aplicar efeitos de início de turno"
-    // (usado por aprimoramentos futuros — Aura de Cura, Aura Ardente — não
-    // tem efeito nesta fase mas já registramos pra UX consistente).
+    // (consumida por Aura de Cura — quando true, abre dialog picker em vez
+    // de auto-curar todos os elegíveis).
     try {
         game.settings.register(MODULE_ID, "auraSagrada.alwaysPromptStartOfTurn", {
             name: "Aura Sagrada: sempre perguntar no início do turno",
-            hint: "Quando ativado, abre um diálogo de escolha de alvos no início do turno do paladino para Aura de Cura e Aura Ardente. Caso contrário, aplica em todos os elegíveis automaticamente.",
+            hint: "Quando ativado, abre um diálogo de escolha de alvos no início do turno do paladino para Aura de Cura (e futura Aura Ardente). Caso contrário, aplica em todos os elegíveis automaticamente.",
             scope: "client",
             config: true,
             type: Boolean,
@@ -567,13 +963,23 @@ export function setupAuraSagrada(): void {
         });
     } catch { /* já registrado / config indisponível */ }
 
-    // 1. Detectar cast no chat
+    // Ação de cancelar registrada no skills-menu (botão único da toolbar)
+    registerSkillAction({
+        id:    "aura-sagrada-cancel",
+        label: "Cancelar Aura Sagrada",
+        icon:  "fa-solid fa-circle-xmark",
+        color: "#ffe89a",
+        isVisible: () => getMyAuras().length > 0,
+        onClick:   () => onClickCancelAura(),
+    });
+
+    // 1. Detectar cast no chat → cria a aura E refresha o skills-menu
     Hooks.on("createChatMessage", (...args: unknown[]) => {
         const message = args[0] as ChatMessage;
         if (!isAuraSagradaMessage(message)) return;
         const uid = getMsgAuthorId(message);
-        if (uid !== game.user?.id) return; // só o autor dispara a criação
-        void onAuraSagradaCast(message);
+        if (uid !== game.user?.id) return;
+        void onAuraSagradaCast(message).then(() => refreshSkillsMenu());
     });
 
     // 2. Movimento de qualquer token: re-sync (e se for o caster, mover template)
@@ -616,11 +1022,12 @@ export function setupAuraSagrada(): void {
         void resyncAllTokens();
     });
 
-    // 4. Template deletado → limpar AEs
+    // 4. Template deletado → limpar AEs e refresh do skills-menu (botão de cancelar
+    //    pode ter ficado sem ações visíveis).
     Hooks.on("deleteMeasuredTemplate", (...args: unknown[]) => {
         const template = args[0] as { id: string; flags?: Record<string, Record<string, unknown>> };
         if (template.flags?.[MODULE_ID]?.[FLAG_SPELL] !== SPELL_KEY) return;
-        void cleanupAEsForTemplate(template.id);
+        void cleanupAEsForTemplate(template.id).then(() => refreshSkillsMenu());
     });
 
     // 5. Novo token criado → checa se cai em alguma aura
@@ -651,5 +1058,30 @@ export function setupAuraSagrada(): void {
         const templates = getAuraTemplates();
         if (templates.length === 0) return;
         void resyncAllTokens();
+    });
+
+    // 8. Início do turno do combatant → se for caster com Aura de Cura, cura aliados
+    //    `combatTurn` é chamado quando o turno avança DENTRO de um round; usamos
+    //    `combatRound` também porque a virada de round não dispara combatTurn pro
+    //    primeiro combatant no novo round em todas as versões.
+    type CombatLike = {
+        combatant?: { actor?: FoundryActor | null } | null;
+        turns?: Array<{ actor?: FoundryActor | null }>;
+    };
+    const handleTurnAdvance = (...args: unknown[]): void => {
+        if (!isActiveGM()) return;
+        const combat = args[0] as CombatLike | undefined;
+        const actor  = combat?.combatant?.actor ?? null;
+        if (!actor) return;
+        void onCombatTurnStart(actor);
+    };
+    Hooks.on("combatTurn",  handleTurnAdvance);
+    Hooks.on("combatRound", handleTurnAdvance);
+    Hooks.on("combatStart", (...args: unknown[]) => {
+        if (!isActiveGM()) return;
+        const combat = args[0] as CombatLike | undefined;
+        const actor  = combat?.combatant?.actor ?? combat?.turns?.[0]?.actor ?? null;
+        if (!actor) return;
+        void onCombatTurnStart(actor);
     });
 }

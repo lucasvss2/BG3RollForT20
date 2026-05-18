@@ -20,6 +20,7 @@ import { setupSpellResistance } from "./spell-resistance/index";
 import { setupBuffApply } from "./buff-apply/index";
 import { setupWeaponAETransfer } from "./weapon-ae-transfer/index";
 import { setupAreaSpells } from "./area-spells/index";
+import { setupSkillsMenu } from "./ui/skills-menu";
 import { setupSheetRedesign } from "./sheet/index";
 import { log, warn } from "./utils/logging";
 
@@ -51,6 +52,7 @@ Hooks.once("setup", () => {
     setupSpellResistance();
     setupBuffApply();
     setupWeaponAETransfer();
+    setupSkillsMenu();   // antes de area-spells: estes registram ações no menu
     setupAreaSpells();
     setupSheetRedesign();
 });
