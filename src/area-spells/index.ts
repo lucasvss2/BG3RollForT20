@@ -5,8 +5,10 @@
 
 import { setupConsagrar } from "./consagrar";
 import { setupAuraSagrada } from "./aura-sagrada";
+import { setupEgideSagrada } from "./egide-sagrada";
 
 export function setupAreaSpells(): void {
     setupConsagrar();
     setupAuraSagrada();
+    setupEgideSagrada();
 }

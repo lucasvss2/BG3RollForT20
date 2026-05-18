@@ -85,9 +85,10 @@ src/
   auto-damage/index.ts         — Auto damage application prompt (attack-based weapons)
   spell-resistance/index.ts    — Automatic saving throw + damage dialog for spells
   spell-resistance/types.ts    — SpellResistRequest, SpellConditionData, ResistSkill
-  area-spells/index.ts         — Entry point for area-persistent spells (calls setupConsagrar + setupAuraSagrada)
+  area-spells/index.ts         — Entry point for area-persistent spells (calls setupConsagrar + setupAuraSagrada + setupEgideSagrada)
   area-spells/consagrar.ts     — Consagrar: MeasuredTemplate claim, AE apply/remove, movement sync
   area-spells/aura-sagrada.ts  — Aura Sagrada (Paladino): ghost template + Aura de Cura (combatTurn heal)
+  area-spells/egide-sagrada.ts — Égide Sagrada (Paladino): ghost template + Escudo Fraterno (raio dinâmico)
   ui/skills-menu.ts            — Toolbar button that aggregates active skill actions (register/refresh API)
   sheet/index.ts               — Character sheet redesign (BG3 aesthetic)
   tests/
@@ -112,6 +113,7 @@ src/
 | 9   | `area-spells/consagrar.ts`    | multiple (see below)     | Persistent area spell: MeasuredTemplate + AE management + movement sync                |
 | 10  | `area-spells/aura-sagrada.ts` | multiple (see below)     | Paladin aura emitted from caster token, follows movement, ally-only via disposition    |
 | 11  | `ui/skills-menu.ts`           | renderSceneControls, ready, canvasReady | Single toolbar button aggregating active skill actions (Consagrar remove, Aura cancel, ...) |
+| 12  | `area-spells/egide-sagrada.ts`| multiple (see Égide Sagrada section) | Paladin Égide: ghost template + AE on adjacent allies; 9m com Escudo Fraterno + escudo equipado |
 
 ### Spell Resistance System (v1.6.5+)
 
@@ -293,8 +295,42 @@ Aprimoramento (item `"Aura de Invencibilidade"` normalizado nos poderes do caste
 
 **NPCs unlinked**: `markAuraInvencibilidadeUsed` resolve o ator via `canvas.tokens.get(tokenId).actor` quando `tokenId` é fornecido — necessário pra setar a flag no synthetic actor (não no world actor compartilhado entre tokens).
 
-### Phases not yet implemented
-Égide Sagrada · Escudo Fraterno.
+### Égide Sagrada (v1.12.0) — Fase 5
+
+Poder do paladino. "Você gasta uma ação de movimento e 2 PM para recobrir de energia seu escudo ou símbolo sagrado. Até o fim da cena, você e todos os aliados adjacentes somam seu Carisma na Defesa". O T20 já debita os 2 PM no cast.
+
+**Arquivo:** `src/area-spells/egide-sagrada.ts`. Reusa o mesmo esqueleto de Aura Sagrada (template ghost seguindo o caster, AE clonada de `flags.tormenta20.effects[0][0]`, sync via `disposition`), mas SEM sustain, SEM tick, SEM tracking de Sequencer. Helpers genéricos (isActiveGM, getTokenCenterPx, isTokenInsideTemplate, findTokenForActor, isAuraTarget, extractBaseEffectData, escHtml) estão duplicados intencionalmente — refactor pra `_shared.ts` é uma fase futura.
+
+**Detecção:** `normalizeCondName(extractSpellName(message)) === "egide sagrada"` (acentos removidos).
+
+**Raio dinâmico (computeEgideRaioM):**
+- Padrão: **1,5 m** (adjacente — 1 quadrado de raio do centro do token).
+- Com aprimoramento **Escudo Fraterno** + escudo equipado: **9 m**.
+
+**Detecção de escudo equipado (`hasShieldEquipped`):** percorre `actor.items` procurando item `type === "equipamento"` com `system.equipado === true` (ou `equipped`) E (`system.tipo === "escudo"` OU `system.subtipo === "escudo"` OU nome normalizado contém `"escudo"`). Cobre variações conhecidas; pode precisar refinamento se T20 mudar shape.
+
+**Detecção de Escudo Fraterno:** item por nome — `normalizeCondName(item.name) === "escudo fraterno"`.
+
+**Template flags (`flags.aeris-bg3-rolls-t20`):**
+```
+spell: "egide-sagrada"
+casterTokenId / casterActorId / casterName
+raioM                  — 1.5 ou 9
+creatorUserId
+baseEffectData
+```
+
+**Cores do template:** `fillColor="#a8d2ff"` / `borderColor="#5a8bb8"` (azul-prateado, distinto do dourado da Aura Sagrada e do dourado-intenso do Consagrar).
+
+**Cancelar:** botão único registrado no skills-menu (`egide-sagrada-cancel`, ícone `fa-shield-halved`). 1 ativa → dialog de confirmação; 2+ → picker com checkboxes. Mesmo padrão do Aura Sagrada.
+
+**Hooks:** createChatMessage (cast), updateToken (movimento — sync ou move-with-caster), updateMeasuredTemplate (resync), deleteMeasuredTemplate (cleanup AEs + refresh menu), createToken, updateToken (disposition), canvasReady.
+
+**"Até fim da cena":** Foundry não tem evento "scene end" automático. Persiste até cancelamento manual via skills-menu. Usuário cancela quando o encontro acabar.
+
+### Não implementados (próximas fases)
+- **Égide Sagrada — reroll nv 11+** (5 PM, re-roll de resistência contra magia ao caster, com possível redirect ao conjurador se passar e a magia for single-target).
+- **Escudo Fraterno (talento de reação)**: redirecionar dano de aliado pro paladino — não confundir com o aprimoramento de raio implementado em v1.12.0.
 
 ### Encerrar animação ao cancelar a aura (v1.9.2)
 
