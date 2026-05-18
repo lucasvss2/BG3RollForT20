@@ -85,8 +85,9 @@ src/
   auto-damage/index.ts         — Auto damage application prompt (attack-based weapons)
   spell-resistance/index.ts    — Automatic saving throw + damage dialog for spells
   spell-resistance/types.ts    — SpellResistRequest, SpellConditionData, ResistSkill
-  area-spells/index.ts         — Entry point for area-persistent spells (calls setupConsagrar)
+  area-spells/index.ts         — Entry point for area-persistent spells (calls setupConsagrar + setupAuraSagrada)
   area-spells/consagrar.ts     — Consagrar: MeasuredTemplate claim, AE apply/remove, movement sync
+  area-spells/aura-sagrada.ts  — Aura Sagrada (Paladino): ghost template attached to caster token, ally-only via disposition
   sheet/index.ts               — Character sheet redesign (BG3 aesthetic)
   tests/
     parser/t20.test.ts         — Vitest unit tests for parseT20 (75 tests)
@@ -108,6 +109,7 @@ src/
 | 7   | `spell-resistance/index.ts`   | `createChatMessage`      | Triggers on spell rolls (tipo arc/div/uni, damage only, no attack). Rolls saving throw, sends dialog via socket. |
 | 8   | `sheet/index.ts`              | —                        | Character sheet redesign                                                                |
 | 9   | `area-spells/consagrar.ts`    | multiple (see below)     | Persistent area spell: MeasuredTemplate + AE management + movement sync                |
+| 10  | `area-spells/aura-sagrada.ts` | multiple (see below)     | Paladin aura emitted from caster token, follows movement, ally-only via disposition    |
 
 ### Spell Resistance System (v1.6.5+)
 
@@ -201,6 +203,47 @@ Injected as the last `<li>` in `menu#scene-controls-layers`. Visible to GM (all 
 
 ---
 
+### Aura Sagrada — Paladin Aura (v1.7.0, Fase 1)
+
+Aura emitted FROM the paladin's token (no clickable grid). Currently implements only the base power + **Aura Poderosa** improvement (radius 30 m vs default 9 m).
+
+**Architectural differences from Consagrar:**
+- **Ghost template, created by us**: T20 does NOT auto-create a template for `type:"poder"` items. We create our own MeasuredTemplate, centered on the caster's token. No prompt — no canvas click.
+- **Template follows the caster**: hooks on `updateToken` for the caster → we update template `x/y` to track. Result also re-syncs ALL other tokens (stationary tokens may enter/leave the aura when the emitter moves).
+- **Ally detection via disposition**: AE only applies to the caster + tokens whose `document.disposition` equals the caster's. Hostiles never get the bonus.
+- **No `onUseEffects`**: powers don't expose aprimoramentos in chat flags. "Aura Poderosa" is detected by checking the caster's items for an item named "Aura Poderosa" (normalized).
+- **AE re-use**: instead of building the AE from scratch, we clone `message.flags.tormenta20.effects[0][0]` — T20 already computed `system.modificadores.pericias.resistencia += "<caster CHA>"` there. Allies receive the caster's CHA, not their own.
+- **One aura per caster**: re-casting deletes the previous template (which cleans its AEs) then creates a new one.
+
+**Detection:** `normalizeCondName(extractSpellName(message)) === "aura sagrada"` (mind the SPACE — `normalizeCondName` does NOT replace spaces with hyphens).
+
+**Template flags (`flags.aeris-bg3-rolls-t20`):**
+```
+spell: "aura-sagrada"
+casterTokenId          — token that emits the aura
+casterActorId          — actor id (for re-finding token)
+casterName             — display name
+raioM                  — 9 or 30 (Aura Poderosa)
+creatorUserId          — who cast it
+baseEffectData         — AE template cloned per recipient
+```
+
+**Hooks:**
+- `createChatMessage` → detect cast, call `onAuraSagradaCast` (only the author runs this)
+- `updateToken` → caster moved? move template + resync all. Other token? resync just it.
+- `updateMeasuredTemplate` → x/y/distance/flags changed → resync all
+- `deleteMeasuredTemplate` → cleanup all AEs created by this template
+- `createToken` → new token? sync against active auras
+- `updateToken` (secondary listener) → disposition changed → resync token (ally/foe flip)
+- `canvasReady` → resync everything on scene load
+
+**Client setting:** `auraSagrada.alwaysPromptStartOfTurn` — registered now, not yet consumed. Placeholder for future phases (Aura de Cura / Aura Ardente target picker).
+
+**Phases not yet implemented (in `aura-sagrada.ts` file header):**
+Aura Antimagia · Aura Ardente · Aura de Cura · Aura de Invencibilidade · Égide Sagrada · Escudo Fraterno.
+
+---
+
 ## Foundry v13 Gotchas
 
 ### Rolls in createChatMessage
@@ -219,6 +262,14 @@ Roll.fromData((message as any)._source.rolls[0]);
 ### renderChatMessage args
 
 `args[1]` is a direct `HTMLElement` in v13, NOT a jQuery array.
+
+### `normalizeCondName` does NOT convert spaces to hyphens
+
+`normalizeCondName(s)` = `s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim()`. **No hyphen substitution.** Constants for matching multi-word power/spell names must keep the space: `"aura sagrada"`, NOT `"aura-sagrada"`. Got bitten by this writing Aura Sagrada detection.
+
+### `flags.tormenta20.itemData` lacks `name` for powers
+
+`message.flags.tormenta20.itemData` for `type:"poder"` items contains only the item's `.system` payload — there is no `name` top-level field. Always resolve the item name via `extractSpellName(message)` which parses `data-item-id` from the rendered content and looks it up via `actor.items.get(itemId).name`.
 
 ### updateToken — doc.x/y is OLD position during animation
 
