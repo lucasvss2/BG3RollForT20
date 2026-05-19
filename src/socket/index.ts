@@ -2,9 +2,15 @@
  * Central socketlib bootstrap for the module.
  *
  * socketlib is a hard dependency declared in module.json. It fires the
- * `socketlib.ready` hook once during boot — we register our module then,
- * collect a single `SocketlibSocket` instance, and let subsystems register
- * their handlers on it via `onSocketReady()`.
+ * `socketlib.ready` hook **during its own `init` listener** — which means
+ * any other module that tries to register a `socketlib.ready` listener
+ * *inside* its own `init` hook is too late: depending on module load
+ * order, socketlib's init can run first, fire the hook, and our `once`
+ * listener registered moments later never gets called.
+ *
+ * Fix: register the listener at TOP-LEVEL module load time (this file's
+ * side effect), which is guaranteed to happen before any Foundry `init`
+ * listener runs.
  *
  * Subsystems should NEVER access `game.socket` directly. They:
  *
@@ -17,8 +23,8 @@
  * await getSocket()?.executeAsUser("openDamagePrompt", targetUserId, payload);
  * ```
  *
- * `getSocket()` returns `null` until `socketlib.ready` has fired. After the
- * hook fires, all queued `onSocketReady` callbacks run synchronously.
+ * `getSocket()` returns `null` until `socketlib.ready` has fired. After
+ * the hook fires, all queued `onSocketReady` callbacks run synchronously.
  */
 
 import { MODULE_ID } from "@/constants";
@@ -41,20 +47,23 @@ export function getSocket(): SocketlibSocket | null {
     return socket;
 }
 
-/** Install the `socketlib.ready` listener. Call once from `Hooks.once("init", ...)`. */
-export function setupSocketlib(): void {
-    Hooks.once("socketlib.ready", () => {
-        if (typeof socketlib === "undefined") {
-            warn("socketlib hook fired but global is undefined — abortando.");
-            return;
+// ── Top-level side effect: register listener at module load time ─────────────
+// MUST be top-level (not inside Hooks.once("init")). socketlib fires the
+// `socketlib.ready` hook from its own `init` listener; if module load order
+// puts socketlib's init before ours, registering the listener inside our own
+// `init` would be too late.
+
+Hooks.once("socketlib.ready", () => {
+    if (typeof socketlib === "undefined") {
+        warn("socketlib hook fired but global is undefined — abortando.");
+        return;
+    }
+    socket = socketlib.registerModule(MODULE_ID);
+    log(`socketlib registrado (${pending.length} handler set(s) pendente(s)).`);
+    for (const fn of pending) {
+        try { fn(socket); } catch (err) {
+            console.error(`[${MODULE_ID}] erro registrando handler de socket:`, err);
         }
-        socket = socketlib.registerModule(MODULE_ID);
-        log(`socketlib registrado (${pending.length} handler set(s) pendente(s)).`);
-        for (const fn of pending) {
-            try { fn(socket); } catch (err) {
-                console.error(`[${MODULE_ID}] erro registrando handler de socket:`, err);
-            }
-        }
-        pending.length = 0;
-    });
-}
+    }
+    pending.length = 0;
+});

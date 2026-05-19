@@ -227,4 +227,4 @@ O workflow executa typecheck, testes, build, monta o ZIP e publica a release no 
 | Rerolar dano não funciona                     | Atacante desconectou após o ataque; sem atacante ativo, o reroll não pode ser enviado|
 | Tema visual não aplicado                      | Módulo desativado ou cache do browser — force reload com Ctrl+F5                     |
 
-Abra o console do navegador e filtre por `[aeris-bg3-rolls-t20]` para diagnóstico.
+Abra o console do navegador e filtre por `[t20-theme-overhaul]` para diagnóstico.

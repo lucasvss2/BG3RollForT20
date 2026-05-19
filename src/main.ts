@@ -21,7 +21,12 @@ import { setupAreaSpells } from "./area-spells/index";
 import { diagnoseAuras } from "./area-spells/aura-sagrada";
 import { setupSkillsMenu } from "./ui/skills-menu";
 import { setupSheetRedesign } from "./sheet/index";
-import { setupSocketlib } from "./socket/index";
+// Side-effect import: src/socket/index.ts registers the `socketlib.ready`
+// listener at top-level. This MUST happen at module load (before Foundry's
+// `init` hook fires) because socketlib emits the hook from its own `init`
+// listener; depending on module load order, registering the listener inside
+// our own `init` would be too late and the hook would never call us.
+import "./socket/index";
 import { log, warn } from "./utils/logging";
 
 // ── Init: sanity checks ───────────────────────────────────────────────────────
@@ -37,10 +42,6 @@ Hooks.once("init", () => {
         );
         return;
     }
-
-    // socketlib bootstrap — listens for `socketlib.ready` and registers the
-    // module. Subsystems queue handlers via onSocketReady() in their setup().
-    setupSocketlib();
 });
 
 // ── Setup: wire up roll integration and dialog styling ────────────────────────
