@@ -67,6 +67,10 @@ jobs:
           mkdir -p staging/aeris-bg3-rolls-t20
           cp module.json           staging/aeris-bg3-rolls-t20/module.json
           cp dist/main.bundle.js   staging/aeris-bg3-rolls-t20/main.bundle.js
+          # Assets (PNGs, ícones, etc.) — vite.config.ts copia public/ pra dist/
+          if [ -d dist/assets ]; then
+            cp -r dist/assets staging/aeris-bg3-rolls-t20/assets
+          fi
           cd staging
           zip -r ../aeris-bg3-rolls-t20.zip aeris-bg3-rolls-t20/
           cd ..

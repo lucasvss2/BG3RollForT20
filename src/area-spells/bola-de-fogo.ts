@@ -50,6 +50,7 @@ const TEMPLATE_LINGER_MS = 3500;
 const ESFERA_RAIO_M = 0.75;     // raio em metros (diâmetro 1.5m = 1 quadrado)
 const ESFERA_FILL_COLOR = "#ff7733";
 const ESFERA_BORDER_COLOR = "#cc4422";
+const ESFERA_TEXTURE = `modules/${MODULE_ID}/assets/esfera-flamejante.png`;
 
 // ── Helpers (geometria) ──────────────────────────────────────────────────────
 
@@ -367,6 +368,7 @@ async function placeEsfera(meta: EsferaMeta): Promise<void> {
         y:           pos.y,
         fillColor:   ESFERA_FILL_COLOR,
         borderColor: ESFERA_BORDER_COLOR,
+        texture:     ESFERA_TEXTURE,
         flags:       { [MODULE_ID]: buildEsferaFlags(meta) },
     };
 
