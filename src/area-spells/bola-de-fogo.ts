@@ -47,9 +47,7 @@ const ESFERA_KEY = "bola-de-fogo-esfera";
 const FLAG_SPELL = "spell";
 const PENDING_WINDOW_MS = 30_000;
 const TEMPLATE_LINGER_MS = 3500;
-const ESFERA_RAIO_M = 0.75;     // raio em metros (diâmetro 1.5m = 1 quadrado)
-const ESFERA_FILL_COLOR = "#ff7733";
-const ESFERA_BORDER_COLOR = "#cc4422";
+const ESFERA_DIAMETRO_M = 1.5;  // diâmetro em metros = 1 quadrado do tabuleiro
 const ESFERA_TEXTURE = `modules/${MODULE_ID}/assets/esfera-flamejante.png`;
 
 // ── Helpers (geometria) ──────────────────────────────────────────────────────
@@ -97,6 +95,36 @@ function tokensInTemplate(template: {
     const cv     = canvas as unknown as CanvasLike;
     const tokens = cv.tokens?.placeables ?? [];
     return tokens.filter(t => isTokenInsideTemplate(t, template));
+}
+
+// ── Geometria para Tile (FASE 2 — esfera flamejante) ────────────────────────
+//
+// A esfera flamejante é representada por uma Tile (imagem no canvas) de
+// 1×1 quadrado, ocupando UM espaço de tabuleiro. Detecção de "criatura no
+// mesmo espaço" é AABB: centro do token deve cair dentro do retângulo da
+// tile.
+
+function isTokenInTileBounds(
+    token: FoundryToken,
+    tile:  { x: number; y: number; width: number; height: number },
+): boolean {
+    type CanvasLike = { scene?: { grid?: { size?: number } } };
+    const cv       = canvas as unknown as CanvasLike;
+    const gridSize = cv.scene?.grid?.size ?? 100;
+    const pos      = getTokenPosPx(token);
+    const tcx      = pos.x + pos.widthSq  * gridSize / 2;
+    const tcy      = pos.y + pos.heightSq * gridSize / 2;
+    return tcx >= tile.x
+        && tcx <  tile.x + tile.width
+        && tcy >= tile.y
+        && tcy <  tile.y + tile.height;
+}
+
+function tokensInTile(tile: { x: number; y: number; width: number; height: number }): FoundryToken[] {
+    type CanvasLike = { tokens?: { placeables?: FoundryToken[] } };
+    const cv     = canvas as unknown as CanvasLike;
+    const tokens = cv.tokens?.placeables ?? [];
+    return tokens.filter(t => isTokenInTileBounds(t, tile));
 }
 
 // ── Detecção de aprimoramentos ───────────────────────────────────────────────
@@ -350,33 +378,47 @@ async function placeEsfera(meta: EsferaMeta): Promise<void> {
     type SceneLike = {
         createEmbeddedDocuments(t: string, data: unknown[], opts?: Record<string, unknown>): Promise<unknown[]>;
     };
-    type CanvasLike = { scene?: SceneLike };
-    const cv    = canvas as unknown as CanvasLike;
+    type CanvasLike = { scene?: SceneLike; grid?: { size?: number; distance?: number } };
+    const cv    = canvas as unknown as CanvasLike & { scene?: SceneLike & { grid?: { size?: number; distance?: number } } };
     const scene = cv.scene;
     if (!scene) {
         ui.notifications?.error("Esfera Flamejante: nenhuma cena ativa");
         return;
     }
 
-    const templateData = {
-        t:           "circle",
-        user:        game.user?.id,
-        distance:    ESFERA_RAIO_M,
-        direction:   0,
-        angle:       0,
-        x:           pos.x,
-        y:           pos.y,
-        fillColor:   ESFERA_FILL_COLOR,
-        borderColor: ESFERA_BORDER_COLOR,
-        texture:     ESFERA_TEXTURE,
-        flags:       { [MODULE_ID]: buildEsferaFlags(meta) },
+    // Tamanho da tile = 1 quadrado (1.5m). Em pixels: gridSize × (1.5/gridDist).
+    const gridSize = (scene as { grid?: { size?: number } }).grid?.size ?? 100;
+    const gridDist = (scene as { grid?: { distance?: number } }).grid?.distance ?? 1.5;
+    const sizePx   = (ESFERA_DIAMETRO_M / gridDist) * gridSize;
+
+    // Snap pra grid: centro da tile no quadrado onde clicou.
+    const snappedX = Math.floor(pos.x / gridSize) * gridSize;
+    const snappedY = Math.floor(pos.y / gridSize) * gridSize;
+
+    // Ownership: caster vira OWNER (3) da tile. GMs já têm acesso por padrão.
+    // Isso permite que o jogador dono do conjurador arraste a tile no canvas.
+    const ownership: Record<string, number> = { default: 0 };
+    if (meta.casterUserId) ownership[meta.casterUserId] = 3;
+
+    const tileData = {
+        texture: { src: ESFERA_TEXTURE, scaleX: 1, scaleY: 1 },
+        x:       snappedX,
+        y:       snappedY,
+        width:   sizePx,
+        height:  sizePx,
+        rotation: 0,
+        hidden:  false,
+        locked:  false,
+        sort:    100,           // garante que fique acima de tiles de cenário
+        ownership,
+        flags:   { [MODULE_ID]: buildEsferaFlags(meta) },
     };
 
     try {
-        await scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
-        ui.notifications?.info(`Esfera Flamejante criada (${meta.damageFormula} por hit).`);
+        await scene.createEmbeddedDocuments("Tile", [tileData]);
+        ui.notifications?.info(`Esfera Flamejante criada (${meta.damageFormula} por hit). Arraste a tile pra mover.`);
     } catch (err) {
-        console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao criar template:`, err);
+        console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao criar tile:`, err);
     }
 }
 
@@ -387,12 +429,12 @@ async function placeEsfera(meta: EsferaMeta): Promise<void> {
  *
  * Roda apenas no cliente do CASTER (que tem permissão de modificar o template).
  */
-async function applyEsferaDamage(tplDoc: {
-    id: string; uuid: string; x: number; y: number; distance: number;
+async function applyEsferaDamage(tileDoc: {
+    id: string; uuid: string; x: number; y: number; width: number; height: number;
     flags?: Record<string, Record<string, unknown>>;
     update(data: Record<string, unknown>): Promise<unknown>;
 }, trigger: "turn-start" | "moved"): Promise<void> {
-    const flags = tplDoc.flags?.[MODULE_ID];
+    const flags = tileDoc.flags?.[MODULE_ID];
     if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
 
     const casterUid = flags["casterUserId"] as string | undefined;
@@ -404,7 +446,7 @@ async function applyEsferaDamage(tplDoc: {
     const cd            = (flags["cd"]            as number) ?? 0;
     const casterName    = (flags["casterName"]    as string) ?? "Lançador";
 
-    const tokens = tokensInTemplate({ x: tplDoc.x, y: tplDoc.y, distance: tplDoc.distance });
+    const tokens = tokensInTile({ x: tileDoc.x, y: tileDoc.y, width: tileDoc.width, height: tileDoc.height });
     if (tokens.length === 0) return;
 
     // Filtra alvos elegíveis (não atingidos nesta rodada)
@@ -489,7 +531,7 @@ async function applyEsferaDamage(tplDoc: {
     }
 
     try {
-        await tplDoc.update({ [`flags.${MODULE_ID}.damagedThisRound`]: newDamaged });
+        await tileDoc.update({ [`flags.${MODULE_ID}.damagedThisRound`]: newDamaged });
     } catch (err) {
         console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao salvar damagedThisRound:`, err);
     }
@@ -545,18 +587,17 @@ async function postEsferaChatCard(
 
 // ── Skills menu (cancelar esfera) ────────────────────────────────────────────
 
-type EsferaTpl = {
+type EsferaTile = {
     id: string;
-    user?: string | { id?: string };
-    author?: { id?: string };
+    x?: number; y?: number; width?: number; height?: number;
     flags?: Record<string, Record<string, unknown>>;
     delete?(): Promise<unknown>;
 };
 
-function getMyEsferas(): EsferaTpl[] {
-    type CanvasLike = { scene?: { templates?: { contents?: EsferaTpl[] } } };
+function getMyEsferas(): EsferaTile[] {
+    type CanvasLike = { scene?: { tiles?: { contents?: EsferaTile[] } } };
     const cv  = canvas as unknown as CanvasLike;
-    const all = cv.scene?.templates?.contents ?? [];
+    const all = cv.scene?.tiles?.contents ?? [];
     const mine = all.filter(t => t.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY);
     if (game.user?.isGM) return mine;
     const uid = game.user?.id;
@@ -577,7 +618,7 @@ async function onClickCancelEsfera(): Promise<void> {
 
     if (mine.length === 1) {
         try {
-            await scene.deleteEmbeddedDocuments("MeasuredTemplate", [mine[0].id]);
+            await scene.deleteEmbeddedDocuments("Tile", [mine[0].id]);
             ui.notifications?.info("Esfera Flamejante apagada.");
         } catch (err) {
             console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao apagar:`, err);
@@ -618,7 +659,7 @@ async function onClickCancelEsfera(): Promise<void> {
     });
     if (!ids || ids.length === 0) return;
     try {
-        await scene.deleteEmbeddedDocuments("MeasuredTemplate", ids);
+        await scene.deleteEmbeddedDocuments("Tile", ids);
         ui.notifications?.info(`${ids.length} Esfera(s) Flamejante apagada(s).`);
     } catch (err) {
         console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao apagar múltiplas:`, err);
@@ -749,9 +790,7 @@ export function setupBolaDeFogo(): void {
         void claimTemplate(tplDoc, pending);
     });
 
-    // 3. updateMeasuredTemplate — duas semânticas:
-    //    a) FASE 1: nossas flags acabaram de ser adicionadas → dispatch explosão
-    //    b) FASE 2: esfera flamejante MOVEU (x ou y mudou) → aplica dano nos novos
+    // 3. updateMeasuredTemplate — FASE 1: dispatch da explosão após claim
     Hooks.on("updateMeasuredTemplate", (...args: unknown[]) => {
         const tplDoc  = args[0] as {
             id: string; uuid: string; x: number; y: number; distance: number;
@@ -761,38 +800,48 @@ export function setupBolaDeFogo(): void {
         };
         const changes = args[1] as Record<string, unknown> | undefined;
         const flags   = tplDoc.flags?.[MODULE_ID];
-        const ourFlag = flags?.[FLAG_SPELL];
+        if (!flags || flags[FLAG_SPELL] !== SPELL_KEY) return;
+        if (flags["dispatched"] === true) return;
 
-        if (!flags) return;
-
-        // FASE 1: explosão (apenas se claim recente)
-        if (ourFlag === SPELL_KEY && flags["dispatched"] !== true) {
-            const changedFlags = (changes?.["flags"] as Record<string, unknown> | undefined)?.[MODULE_ID];
-            if (!changedFlags) return;
-            const casterUid = flags["casterUserId"] as string | undefined;
-            if (casterUid !== game.user?.id) return;
-            void dispatchExplosion(tplDoc);
-            return;
-        }
-
-        // FASE 2: esfera moveu (apenas o caster aplica dano)
-        if (ourFlag === ESFERA_KEY) {
-            const casterUid = flags["casterUserId"] as string | undefined;
-            if (casterUid !== game.user?.id) return;
-            const moved = typeof changes?.["x"] === "number" || typeof changes?.["y"] === "number";
-            if (!moved) return;
-            void applyEsferaDamage(tplDoc, "moved");
-        }
+        const changedFlags = (changes?.["flags"] as Record<string, unknown> | undefined)?.[MODULE_ID];
+        if (!changedFlags) return;
+        const casterUid = flags["casterUserId"] as string | undefined;
+        if (casterUid !== game.user?.id) return;
+        void dispatchExplosion(tplDoc);
     });
 
-    // 4. deleteMeasuredTemplate — refresh skills menu (esfera apagada)
-    Hooks.on("deleteMeasuredTemplate", (...args: unknown[]) => {
-        const tplDoc = args[0] as { flags?: Record<string, Record<string, unknown>> };
-        const ourFlag = tplDoc.flags?.[MODULE_ID]?.[FLAG_SPELL];
-        if (ourFlag === ESFERA_KEY) refreshSkillsMenu();
+    // 4. createTile — refresh skills menu (esfera criada)
+    Hooks.on("createTile", (...args: unknown[]) => {
+        const tileDoc = args[0] as { flags?: Record<string, Record<string, unknown>> };
+        if (tileDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
     });
 
-    // 5. combatTurnChange — tick da esfera no início do turno do caster
+    // 5. updateTile — esfera moveu (x/y mudou) → aplica dano nos novos alvos
+    Hooks.on("updateTile", (...args: unknown[]) => {
+        const tileDoc = args[0] as {
+            id: string; uuid: string; x: number; y: number; width: number; height: number;
+            flags?: Record<string, Record<string, unknown>>;
+            update(data: Record<string, unknown>): Promise<unknown>;
+        };
+        const changes = args[1] as Record<string, unknown> | undefined;
+        const flags   = tileDoc.flags?.[MODULE_ID];
+        if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
+
+        const casterUid = flags["casterUserId"] as string | undefined;
+        if (casterUid !== game.user?.id) return;
+
+        const moved = typeof changes?.["x"] === "number" || typeof changes?.["y"] === "number";
+        if (!moved) return;
+        void applyEsferaDamage(tileDoc, "moved");
+    });
+
+    // 6. deleteTile — esfera apagada → refresh skills menu
+    Hooks.on("deleteTile", (...args: unknown[]) => {
+        const tileDoc = args[0] as { flags?: Record<string, Record<string, unknown>> };
+        if (tileDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
+    });
+
+    // 7. combatTurnChange — tick da esfera no início do turno do caster
     //    Aplica dano em quem está no espaço da esfera. Padrão Aura Sagrada:
     //    usar combatTurnChange (não combatTurn) para pegar o NOVO combatant.
     Hooks.on("combatTurnChange", (...args: unknown[]) => {
@@ -801,20 +850,21 @@ export function setupBolaDeFogo(): void {
         const newActorId   = newCombatant?.actor?.id;
         if (!newActorId) return;
 
-        type CanvasLike = { scene?: { templates?: { contents?: Array<{
-            id: string; uuid: string; x: number; y: number; distance: number;
+        type TileLike = {
+            id: string; uuid: string; x: number; y: number; width: number; height: number;
             flags?: Record<string, Record<string, unknown>>;
             update(data: Record<string, unknown>): Promise<unknown>;
-        }> } } };
-        const cv = canvas as unknown as CanvasLike;
-        const tpls = cv.scene?.templates?.contents ?? [];
-        for (const tpl of tpls) {
-            const flags = tpl.flags?.[MODULE_ID];
+        };
+        type CanvasLike = { scene?: { tiles?: { contents?: TileLike[] } } };
+        const cv    = canvas as unknown as CanvasLike;
+        const tiles = cv.scene?.tiles?.contents ?? [];
+        for (const tile of tiles) {
+            const flags = tile.flags?.[MODULE_ID];
             if (flags?.[FLAG_SPELL] !== ESFERA_KEY) continue;
             if ((flags["casterActorId"] as string | undefined) !== newActorId) continue;
             // Só o caster aplica
             if ((flags["casterUserId"] as string | undefined) !== game.user?.id) continue;
-            void applyEsferaDamage(tpl, "turn-start");
+            void applyEsferaDamage(tile, "turn-start");
         }
     });
 }
