@@ -487,113 +487,150 @@ async function placeEsfera(meta: EsferaMeta): Promise<void> {
 }
 
 /**
- * Aplica dano em tokens dentro da esfera (respeitando "1x por rodada").
- * Cada token elegível rola Reflexos auto, recebe metade (passa) ou integral.
- * Atualiza o flag `damagedThisRound` no template e posta um chat card.
+ * Samplea posições ao longo do segmento (fromPx → toPx) para coletar
+ * tokens-criatura que a esfera intersecta em qualquer ponto do trajeto.
+ * Step = gridSize/4 (4 samples por quadrado) — fino o suficiente pra
+ * pegar tokens menores em diagonais.
+ */
+function tokensAlongPath(
+    fromPx: { x: number; y: number },
+    toPx:   { x: number; y: number },
+    esferaW: number,
+    esferaH: number,
+): FoundryToken[] {
+    const dx = toPx.x - fromPx.x;
+    const dy = toPx.y - fromPx.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist === 0) {
+        return tokensInEsfera({ x: fromPx.x, y: fromPx.y, width: esferaW, height: esferaH });
+    }
+    type CanvasLike = { scene?: { grid?: { size?: number } } };
+    const cv       = canvas as unknown as CanvasLike;
+    const gridSize = cv.scene?.grid?.size ?? 100;
+    const steps    = Math.max(1, Math.ceil(dist / (gridSize / 4)));
+    const seen     = new Set<string>();
+    const result: FoundryToken[] = [];
+    for (let i = 0; i <= steps; i++) {
+        const t  = i / steps;
+        const sx = fromPx.x + dx * t;
+        const sy = fromPx.y + dy * t;
+        for (const tok of tokensInEsfera({ x: sx, y: sy, width: esferaW, height: esferaH })) {
+            const tid = (tok as unknown as { document?: { id?: string }; id?: string }).document?.id
+                     ?? (tok as unknown as { id?: string }).id
+                     ?? "";
+            if (tid && !seen.has(tid)) {
+                seen.add(tid);
+                result.push(tok);
+            }
+        }
+    }
+    return result;
+}
+
+/**
+ * Aplica dano da esfera nos tokens-alvo:
+ *  - Filtra "1x por rodada" via flag damagedThisRound:{tokId:round}
+ *  - Rola damageFormula UMA VEZ (todos os alvos veem o mesmo damageTotal)
+ *  - Dispatcha o MODAL DE RESISTÊNCIA pra cada alvo (não auto-roll); cada
+ *    dono decide se aplica metade (passou Reflexos) ou integral (falhou)
+ *  - Posta um chat card-resumo listando damage rolada + alvos afetados
+ *  - Atualiza damagedThisRound no token-esfera
  *
- * Roda apenas no cliente do CASTER (que tem permissão de modificar o template).
+ * GM-side only via isActiveGM (player não tem permissão de aplicar dano em
+ * NPCs alheios; o modal é dispatchado via socketlib ao dono de cada alvo).
+ *
+ * `affectedTokens` opcional: usa essa lista (ex.: tokens no trajeto do
+ * movimento). Sem ela, usa tokens na posição atual da esfera (tick por turno).
  */
 async function applyEsferaDamage(esferaTokenDoc: {
     id: string; uuid: string; x: number; y: number; width: number; height: number;
     flags?: Record<string, Record<string, unknown>>;
     update(data: Record<string, unknown>): Promise<unknown>;
-}, trigger: "turn-start" | "moved"): Promise<void> {
+}, trigger: "turn-start" | "moved", affectedTokens?: FoundryToken[]): Promise<void> {
     const flags = esferaTokenDoc.flags?.[MODULE_ID];
     if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
 
-    // GM-side only: aplica dano em atores (alguns não pertencem ao caster).
+    // GM-side only: aplica via modal-dispatch (socketlib executa nos donos).
     // Multi-GM dedup via isActiveGM (lowest sorted userId).
     if (!isActiveGM()) return;
 
-    const round = (game as unknown as { combat?: { round?: number } }).combat?.round ?? 0;
-    const damaged = (flags["damagedThisRound"] as Record<string, number> | undefined) ?? {};
-    const damageFormula = (flags["damageFormula"] as string) ?? "3d6";
-    const cd            = (flags["cd"]            as number) ?? 0;
-    const casterName    = (flags["casterName"]    as string) ?? "Lançador";
+    const round         = (game as unknown as { combat?: { round?: number } }).combat?.round ?? 0;
+    const damaged       = (flags["damagedThisRound"] as Record<string, number> | undefined) ?? {};
+    const damageFormula = (flags["damageFormula"]    as string) ?? "3d6";
+    const cd            = (flags["cd"]               as number) ?? 0;
+    const casterName    = (flags["casterName"]       as string) ?? "Lançador";
+    const casterUserId  = (flags["casterUserId"]     as string) ?? "";
+    const resistTxt     = (flags["resistTxt"]        as string) ?? "Reflexos reduz à metade";
+    const spellName     = (flags["spellName"]        as string) ?? "Bola de Fogo (Esfera Flamejante)";
 
-    const boundsPx = tokenBoundsPx(esferaTokenDoc);
-    const tokens   = tokensInEsfera(boundsPx);
+    const tokens = affectedTokens ?? tokensInEsfera(tokenBoundsPx(esferaTokenDoc));
     if (tokens.length === 0) return;
 
-    // Filtra alvos elegíveis (não atingidos nesta rodada)
-    const targets = tokens.filter(t => {
-        if (!t.actor) return false;
+    // Dedup + filtra "1x por rodada"
+    const seen = new Set<string>();
+    const targets: FoundryToken[] = [];
+    for (const t of tokens) {
+        if (!t.actor) continue;
         const tokId = (t as unknown as { document?: { id?: string }; id?: string }).document?.id
                    ?? (t as unknown as { id?: string }).id
                    ?? "";
-        return !tokId || damaged[tokId] !== round;
-    });
+        if (!tokId || seen.has(tokId)) continue;
+        seen.add(tokId);
+        if (damaged[tokId] === round) continue;
+        targets.push(t);
+    }
     if (targets.length === 0) return;
 
+    // Rola dano UMA VEZ — todos os alvos veem o mesmo damageTotal no modal
     type RollCtor = new (formula: string) => Roll & { evaluate(opts?: object): Promise<Roll> };
     const RollCls = (globalThis as unknown as { Roll: RollCtor }).Roll;
+    const dmgRoll = new RollCls(damageFormula);
+    await dmgRoll.evaluate({ async: true } as never);
+    const damageTotal = dmgRoll.total ?? 0;
 
-    type ActorWithPericias = FoundryActor & {
-        system?: { pericias?: { refl?: { value?: number } } };
-        applyDamage?(amount: number, multiplier?: number, applyRD?: boolean): Promise<void>;
-    };
-
-    type ResultRow = {
-        tokenName:  string;
-        actorName:  string;
-        passed:     boolean;
-        critFail:   boolean;
-        critPass:   boolean;
-        d20:        number;
-        reflexBonus: number;
-        reflexTotal: number;
-        damage:     number;
-        damageApplied: number;
-    };
-    const results: ResultRow[] = [];
+    const { skill, outcome } = parseResistance(resistTxt);
     const newDamaged: Record<string, number> = { ...damaged };
 
+    type RandomIDFn = () => string;
+    const rid = (globalThis as unknown as { randomID?: RandomIDFn }).randomID
+             ?? (() => Math.random().toString(36).slice(2, 18));
+
+    const targetNames: string[] = [];
     for (const token of targets) {
-        const actor = token.actor as ActorWithPericias | null;
+        const actor = token.actor;
         if (!actor) continue;
-        const reflexBonus = actor.system?.pericias?.refl?.value ?? 0;
-        const reflexRoll  = new RollCls(`1d20 + ${reflexBonus}`);
-        await reflexRoll.evaluate({ async: true } as never);
-        const d20Res = (reflexRoll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
-            ?.results?.find(r => r.active)?.result ?? 0;
-        const reflexTotal = reflexRoll.total ?? 0;
-        const critFail = d20Res === 1;
-        const critPass = d20Res === 20;
-        const passed   = critPass || (!critFail && cd > 0 && reflexTotal >= cd);
-
-        const dmgRoll = new RollCls(damageFormula);
-        await dmgRoll.evaluate({ async: true } as never);
-        const totalDmg = dmgRoll.total ?? 0;
-        const damageApplied = passed ? Math.floor(totalDmg / 2) : totalDmg;
-
-        if (damageApplied > 0) {
-            try {
-                if (typeof actor.applyDamage === "function") {
-                    await actor.applyDamage(damageApplied, 1, false);
-                } else {
-                    const pv = (actor.system as { attributes?: { pv?: { value?: number } } } | undefined)?.attributes?.pv?.value ?? 0;
-                    await (actor as FoundryActor).update({ "system.attributes.pv.value": Math.max(0, pv - damageApplied) });
-                }
-            } catch (err) {
-                console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao aplicar dano em ${actor.name}:`, err);
-            }
-        }
-
+        const targetUserId = getTargetUserId(actor);
+        if (!targetUserId) continue;
         const tokId = (token as unknown as { document?: { id?: string }; id?: string }).document?.id
                    ?? (token as unknown as { id?: string }).id
                    ?? "";
         if (tokId) newDamaged[tokId] = round;
+        targetNames.push(token.name ?? actor.name ?? "Alvo");
 
-        results.push({
-            tokenName: token.name ?? actor.name ?? "Alvo",
-            actorName: actor.name ?? "Alvo",
-            passed, critFail, critPass,
-            d20: d20Res,
-            reflexBonus,
-            reflexTotal,
-            damage: totalDmg,
-            damageApplied,
-        });
+        const preReq: SpellResistPreRollRequest = {
+            type:              "spell-resist-preroll",
+            requestId:         rid(),
+            targetUserId,
+            casterUserId,
+            targetActorId:     actor.id,
+            targetActorUuid:   actor.uuid,
+            casterName,
+            spellName,
+            resistTxt,
+            resistSkill:       skill,
+            resistOutcome:     outcome,
+            cd,
+            messageId:         "",
+            damageTotal,
+            damageFormula,
+            isHeal:            false,
+            maxHealValue:      0,
+            removeFadiga:      false,
+            truqueAtivo:       false,
+            conditions:        [],
+            customEffectNames: [],
+        };
+        dispatchSpellResistanceToTarget(preReq);
     }
 
     try {
@@ -602,50 +639,43 @@ async function applyEsferaDamage(esferaTokenDoc: {
         console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao salvar damagedThisRound:`, err);
     }
 
-    if (results.length > 0) {
-        await postEsferaChatCard(casterName, trigger, results, cd);
+    // Posta um chat card-resumo com o dano rolado + lista de alvos
+    if (targetNames.length > 0) {
+        await postEsferaSummaryCard(casterName, trigger, dmgRoll, damageTotal, cd, targetNames);
     }
 }
 
-async function postEsferaChatCard(
+async function postEsferaSummaryCard(
     casterName: string,
     trigger: "turn-start" | "moved",
-    results: Array<{
-        tokenName: string; actorName: string;
-        passed: boolean; critFail: boolean; critPass: boolean;
-        d20: number; reflexBonus: number; reflexTotal: number;
-        damage: number; damageApplied: number;
-    }>,
+    dmgRoll: Roll,
+    _damageTotal: number,
     cd: number,
+    targetNames: string[],
 ): Promise<void> {
     const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const triggerLabel = trigger === "turn-start"
         ? "Início do turno do conjurador"
         : "Movimento da esfera";
-    const rows = results.map(r => {
-        const verdict = r.critPass ? "✦ SUCESSO CRÍTICO"
-                      : r.critFail ? "☠ FALHA CRÍTICA"
-                      : r.passed   ? "✓ PASSOU (metade)"
-                                   : "✗ FALHOU (integral)";
-        const verdictColor = r.passed ? "#6ecf7a" : "#cc4444";
-        return `
-            <div style="display:flex; align-items:baseline; gap:6px; padding:3px 0; border-bottom:1px solid rgba(204,68,68,0.18); flex-wrap:wrap;">
-                <span style="color:#e8d8a8; font-weight:700;">${esc(r.tokenName)}</span>
-                <span style="color:#9a8e7a; font-size:0.78rem;">Reflexos: d20(${r.d20}) + ${r.reflexBonus} = <b>${r.reflexTotal}</b> vs CD ${cd}</span>
-                <span style="margin-left:auto; color:${verdictColor}; font-weight:700; font-size:0.78rem; letter-spacing:0.05em;">${verdict}</span>
-                <span style="width:100%; color:#e8a8a8; font-size:0.85rem;">→ Dano ${r.damage} → <b>${r.damageApplied}</b> aplicado</span>
-            </div>`;
-    }).join("");
+    const targetsHtml = targetNames.map(n =>
+        `<span style="display:inline-block; padding:2px 8px; margin:2px; background:rgba(204,68,68,0.12); border:1px solid rgba(204,68,68,0.35); border-radius:3px; color:#e8d8a8; font-size:0.82rem;">${esc(n)}</span>`
+    ).join("");
+    const rollRendered = await dmgRoll.render();
 
     const content = `
-        <div style="font-family:'Modesto Condensed','Palatino Linotype',serif; padding:8px 12px; background:linear-gradient(180deg, rgba(204,68,68,0.08) 0%, transparent 100%); border-left:3px solid #cc4422;">
-            <div style="color:#cc4422; font-size:0.7rem; letter-spacing:0.14em; text-transform:uppercase;">Esfera Flamejante — ${esc(casterName)}</div>
-            <div style="color:#8a7450; font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; font-style:italic; margin-bottom:6px;">${triggerLabel}</div>
-            ${rows}
+        <div class="t20-theme-chat-card" style="padding:10px 12px; background:linear-gradient(180deg, rgba(204,68,68,0.10) 0%, transparent 100%); border-left:3px solid #cc4422;">
+            <div style="color:#cc4422; font-size:0.7rem; letter-spacing:0.14em; text-transform:uppercase; font-weight:700;">Esfera Flamejante — ${esc(casterName)}</div>
+            <div style="color:#8a7450; font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; font-style:italic; margin: 2px 0 8px;">${triggerLabel}</div>
+            <div style="margin-bottom:8px;">${rollRendered}</div>
+            <div style="color:#8a7450; font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:4px;">Alvos atingidos (${targetNames.length}) — cada dono rola Reflexos no modal:</div>
+            <div>${targetsHtml}</div>
+            <div style="color:#9a8e7a; font-size:0.75rem; font-style:italic; margin-top:6px;">CD ${cd} · Falhar = dano integral, passar = metade</div>
         </div>`;
     type CMCreate = { create(data: Record<string, unknown>): Promise<unknown> };
     await (ChatMessage as unknown as CMCreate).create({
         content,
+        rolls:   [dmgRoll.toJSON()],
+        type:    5,
         speaker: { alias: casterName },
         flags:   { [MODULE_ID]: { esferaFlamejante: true } },
     });
@@ -883,9 +913,10 @@ export function setupBolaDeFogo(): void {
         if (tokDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
     });
 
-    // 5. updateToken — esfera-token moveu (x/y mudou) → aplica dano nos novos
-    //    alvos. Gating GM-side via isActiveGM dentro de applyEsferaDamage.
-    //    Filtra outras movimentações de token (não-esfera) cedo.
+    // 5. updateToken — esfera-token moveu (x/y mudou) → aplica dano em TODOS
+    //    os tokens-criatura que a esfera intersecta no TRAJETO (não só na
+    //    posição final). Gating GM-side via isActiveGM dentro de
+    //    applyEsferaDamage.
     Hooks.on("updateToken", (...args: unknown[]) => {
         const tokDoc  = args[0] as {
             id: string; uuid: string; x: number; y: number; width: number; height: number;
@@ -895,9 +926,30 @@ export function setupBolaDeFogo(): void {
         const flags = tokDoc.flags?.[MODULE_ID];
         if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
         const changes = args[1] as Record<string, unknown> | undefined;
-        const moved   = typeof changes?.["x"] === "number" || typeof changes?.["y"] === "number";
-        if (!moved) return;
-        void applyEsferaDamage(tokDoc, "moved");
+        const destX = typeof changes?.["x"] === "number" ? (changes["x"] as number) : undefined;
+        const destY = typeof changes?.["y"] === "number" ? (changes["y"] as number) : undefined;
+        if (destX === undefined && destY === undefined) return;
+
+        // Quirk v13: tokDoc.x/y é a posição ANTIGA (pré-move); destino vem em
+        // changes. Computamos o trajeto e samplemos posições intermediárias.
+        const oldX = tokDoc.x;
+        const oldY = tokDoc.y;
+        const newX = destX ?? oldX;
+        const newY = destY ?? oldY;
+        if (oldX === newX && oldY === newY) return;
+
+        type CanvasLike = { scene?: { grid?: { size?: number } } };
+        const cv       = canvas as unknown as CanvasLike;
+        const gridSize = cv.scene?.grid?.size ?? 100;
+        const esferaW  = tokDoc.width  * gridSize;
+        const esferaH  = tokDoc.height * gridSize;
+        const affected = tokensAlongPath(
+            { x: oldX, y: oldY },
+            { x: newX, y: newY },
+            esferaW,
+            esferaH,
+        );
+        void applyEsferaDamage(tokDoc, "moved", affected);
     });
 
     // 6. deleteToken — esfera-token deletada → refresh skills menu

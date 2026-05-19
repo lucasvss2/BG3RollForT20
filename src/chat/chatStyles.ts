@@ -24,6 +24,243 @@ const ATTR_LABELS: Record<string, string> = {
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
 const CHAT_STYLES = `
+/* ════════════════════════════════════════════════════════════════════════════
+   TEMA GLOBAL — todas as chat messages
+   Aplica o BG3-dark em qualquer .chat-message (rolls genéricos, whispers,
+   system messages, custom módulo, etc.). Especificidades pré-existentes
+   (item-card, resistance-roll, condition-card) sobrepõem onde necessário.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+#chat-log .chat-message,
+#chat .chat-message {
+    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    border: 1px solid rgba(106, 78, 24, 0.45) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 0 1px #2a1e08, 0 4px 14px rgba(0, 0, 0, 0.65) !important;
+    margin: 4px 6px !important;
+    padding: 4px 0 !important;
+    color: #c0b49a !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", "Book Antiqua", serif !important;
+}
+
+#chat-log .chat-message.whisper,
+#chat .chat-message.whisper {
+    background: radial-gradient(ellipse at top, #0e1822 0%, #050b14 100%) !important;
+    border-color: rgba(80, 130, 200, 0.45) !important;
+    box-shadow: 0 0 0 1px #0a1828, 0 4px 14px rgba(0, 0, 0, 0.65) !important;
+}
+
+#chat-log .chat-message .message-header,
+#chat .chat-message .message-header {
+    background: transparent !important;
+    border: none !important;
+    padding: 2px 8px !important;
+    color: #d4c4a0 !important;
+}
+#chat-log .chat-message .message-sender,
+#chat .chat-message .message-sender {
+    color: #d4c4a0 !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.7rem !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    text-shadow:
+        -1px -1px 0 rgba(0,0,0,0.85),
+         1px -1px 0 rgba(0,0,0,0.85),
+        -1px  1px 0 rgba(0,0,0,0.85),
+         1px  1px 0 rgba(0,0,0,0.85),
+        0 0 6px rgba(0,0,0,0.9) !important;
+}
+#chat-log .chat-message .message-metadata,
+#chat-log .chat-message .message-timestamp,
+#chat-log .chat-message .message-delete,
+#chat .chat-message .message-metadata,
+#chat .chat-message .message-timestamp,
+#chat .chat-message .message-delete {
+    color: #6a5e4a !important;
+    font-size: 0.62rem !important;
+}
+#chat-log .chat-message .message-delete:hover,
+#chat .chat-message .message-delete:hover {
+    color: #cc4444 !important;
+}
+#chat-log .chat-message .message-content,
+#chat .chat-message .message-content {
+    color: #c0b49a !important;
+    padding: 4px 10px !important;
+}
+#chat-log .chat-message .message-content a,
+#chat .chat-message .message-content a {
+    color: #c8a96e !important;
+    text-decoration: none !important;
+}
+#chat-log .chat-message .message-content a:hover,
+#chat .chat-message .message-content a:hover {
+    color: #e0c489 !important;
+    text-decoration: underline !important;
+}
+#chat-log .chat-message .message-content b,
+#chat-log .chat-message .message-content strong,
+#chat .chat-message .message-content b,
+#chat .chat-message .message-content strong {
+    color: #c8a96e !important;
+}
+#chat-log .chat-message .message-content em,
+#chat-log .chat-message .message-content i,
+#chat .chat-message .message-content em,
+#chat .chat-message .message-content i {
+    color: #9a8e7a !important;
+}
+#chat-log .chat-message .message-content hr,
+#chat .chat-message .message-content hr {
+    border: none !important;
+    border-top: 1px solid rgba(106, 78, 24, 0.4) !important;
+    margin: 4px 0 !important;
+}
+
+/* ── Generic dice roll (Foundry stock) ───────────────────────────────────── */
+
+#chat-log .chat-message .dice-roll,
+#chat .chat-message .dice-roll {
+    background: transparent !important;
+    border: none !important;
+    padding: 2px 0 !important;
+}
+#chat-log .chat-message .dice-roll .dice-flavor,
+#chat .chat-message .dice-roll .dice-flavor {
+    color: #c8a96e !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+    text-align: center !important;
+    margin: 4px 0 6px !important;
+    text-shadow: 0 0 10px rgba(200,169,110,0.25) !important;
+}
+#chat-log .chat-message .dice-roll .dice-formula,
+#chat .chat-message .dice-roll .dice-formula {
+    color: #c8b896 !important;
+    font-family: monospace !important;
+    font-size: 0.78rem !important;
+    background: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(106, 78, 24, 0.3) !important;
+    border-radius: 3px !important;
+    padding: 2px 10px !important;
+    text-align: center !important;
+}
+#chat-log .chat-message .dice-roll .dice-total,
+#chat .chat-message .dice-roll .dice-total {
+    color: #f0ebe0 !important;
+    background: transparent !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 2.4rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.08) !important;
+    border: none !important;
+    padding: 4px 8px 2px !important;
+    margin: 0 !important;
+}
+#chat-log .chat-message .dice-roll .dice-total.critical,
+#chat .chat-message .dice-roll .dice-total.critical {
+    color: #6ecf7a !important;
+    text-shadow: 0 0 24px rgba(110, 207, 122, 0.6) !important;
+}
+#chat-log .chat-message .dice-roll .dice-total.fumble,
+#chat .chat-message .dice-roll .dice-total.fumble {
+    color: #cc4444 !important;
+    text-shadow: 0 0 24px rgba(204, 68, 68, 0.6) !important;
+}
+#chat-log .chat-message .dice-tooltip,
+#chat .chat-message .dice-tooltip {
+    background: rgba(10, 6, 2, 0.85) !important;
+    border-top: 1px solid rgba(106, 78, 24, 0.25) !important;
+    margin-top: 4px !important;
+    padding: 6px 0 4px !important;
+}
+#chat-log .chat-message .dice-tooltip .part-header,
+#chat .chat-message .dice-tooltip .part-header {
+    background: rgba(106, 78, 24, 0.12) !important;
+    border-bottom: 1px solid rgba(106, 78, 24, 0.2) !important;
+    padding: 3px 8px !important;
+}
+#chat-log .chat-message .dice-tooltip .part-formula,
+#chat .chat-message .dice-tooltip .part-formula {
+    color: #a89880 !important;
+    font-family: monospace !important;
+    font-size: 0.72rem !important;
+}
+#chat-log .chat-message .dice-tooltip .part-flavor,
+#chat .chat-message .dice-tooltip .part-flavor {
+    color: #7a6e5a !important;
+    font-style: italic !important;
+    font-size: 0.7rem !important;
+}
+#chat-log .chat-message .dice-tooltip .part-total,
+#chat .chat-message .dice-tooltip .part-total {
+    color: #e8e0d0 !important;
+    background: rgba(0, 0, 0, 0.3) !important;
+    font-weight: 700 !important;
+    font-size: 0.78rem !important;
+}
+#chat-log .chat-message .dice-tooltip .dice-rolls,
+#chat .chat-message .dice-tooltip .dice-rolls {
+    list-style: none !important;
+    padding: 2px 8px 4px !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+}
+#chat-log .chat-message .dice-tooltip .roll.die,
+#chat .chat-message .dice-tooltip .roll.die {
+    color: #e8e0d0 !important;
+    background: rgba(30, 20, 8, 0.9) !important;
+    border: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border-radius: 3px !important;
+    padding: 2px 6px !important;
+    font-size: 0.78rem !important;
+    min-width: 22px !important;
+    text-align: center !important;
+}
+#chat-log .chat-message .dice-tooltip .roll.die.max,
+#chat .chat-message .dice-tooltip .roll.die.max {
+    color: #6ecf7a !important;
+    border-color: rgba(110, 207, 122, 0.5) !important;
+}
+#chat-log .chat-message .dice-tooltip .roll.die.min,
+#chat .chat-message .dice-tooltip .roll.die.min {
+    color: #cc4444 !important;
+    border-color: rgba(204, 68, 68, 0.5) !important;
+}
+
+/* ── Chat input area (textarea + send button) ───────────────────────────── */
+
+#chat-form,
+#chat-controls,
+section#chat .chat-control-icon,
+section#chat .roll-type-select,
+section#chat textarea#chat-message {
+    color: #c0b49a !important;
+}
+section#chat textarea#chat-message {
+    background: rgba(10, 6, 2, 0.85) !important;
+    border: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border-radius: 3px !important;
+}
+section#chat textarea#chat-message:focus {
+    outline: none !important;
+    border-color: rgba(200, 169, 110, 0.6) !important;
+}
+
+/* ── Combat-tracker announcement (System messages) ──────────────────────── */
+
+#chat-log .chat-message.no-border,
+#chat .chat-message.no-border {
+    /* System messages without sender header */
+    border-color: rgba(106, 78, 24, 0.3) !important;
+}
+
 /* ── BG3 Chat Card ──────────────────────────────────────────────────────── */
 
 .chat-message:has(.tormenta20.chat-card.item-card) {

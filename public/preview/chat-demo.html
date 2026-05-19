@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Chat Theme Preview — T20 Theme Overhaul</title>
+<style>
+  body {
+    background: #1a1a1a;
+    color: #c0b49a;
+    font-family: "Signika", "Modesto Condensed", "Palatino Linotype", serif;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    width: 100%;
+    color: #c8a96e;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(200,169,110,0.3);
+    padding-bottom: 8px;
+  }
+  /* Fake Foundry chat sidebar */
+  section#chat {
+    width: 360px;
+    background: #2a2520;
+    border: 1px solid rgba(200,169,110,0.2);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  section#chat header {
+    background: #1c1812;
+    padding: 8px 12px;
+    color: #c8a96e;
+    font-family: "Modesto Condensed", serif;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    border-bottom: 1px solid rgba(200,169,110,0.2);
+  }
+  #chat-log {
+    padding: 6px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow-y: auto;
+    max-height: 80vh;
+  }
+  /* Foundry's default chat-message structure */
+  .chat-message {
+    list-style: none;
+    background: #f1f1f1;
+    border: 1px solid #999;
+    padding: 6px;
+    border-radius: 3px;
+    margin: 2px 0;
+  }
+  .chat-message .message-header {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    padding-bottom: 2px;
+    margin-bottom: 4px;
+  }
+  .chat-message .message-sender {
+    font-weight: bold;
+  }
+  .chat-message .message-metadata {
+    display: flex;
+    gap: 6px;
+    font-size: 0.7rem;
+  }
+  .chat-message .message-content {
+    margin-top: 4px;
+  }
+  .dice-roll {
+    background: #eee;
+    padding: 4px;
+    border: 1px solid #ccc;
+    margin: 4px 0;
+  }
+  .dice-roll .dice-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .dice-roll .dice-formula {
+    background: #fff;
+    border: 1px solid #aaa;
+    padding: 1px 8px;
+    font-family: monospace;
+    border-radius: 2px;
+  }
+  .dice-roll .dice-total {
+    font-size: 2rem;
+    font-weight: bold;
+  }
+  .dice-tooltip {
+    background: #f8f8f8;
+    border-top: 1px solid #ccc;
+    padding: 4px;
+    margin-top: 4px;
+  }
+  .dice-tooltip .part-header {
+    background: #eee;
+    padding: 2px 6px;
+    border-bottom: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+  }
+  .dice-tooltip .dice-rolls {
+    list-style: none;
+    padding: 4px;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .dice-tooltip .roll.die {
+    background: #fff;
+    border: 1px solid #aaa;
+    padding: 2px 6px;
+    border-radius: 2px;
+    min-width: 22px;
+    text-align: center;
+  }
+</style>
+<style id="bg3-t20-chat-styles">
+/* ===== Inject our chat styles below — paste from chatStyles.ts ===== */
+PLACEHOLDER_CSS
+</style>
+</head>
+<body>
+
+<h1>T20 Theme Overhaul — Chat Preview</h1>
+
+<section id="chat">
+<header>Chat (Demo)</header>
+<ol id="chat-log">
+
+  <!-- 1. Mensagem de texto OOC -->
+  <li class="chat-message" data-message-id="m1">
+    <div class="message-header">
+      <span class="message-sender">Tiago</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:23</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      Vou tentar acertar o <b>Lich</b> agora. Cuidado com o aprimoramento <i>Escudo Fraterno</i>!
+    </div>
+  </li>
+
+  <!-- 2. Roll genérico (1d20+5) -->
+  <li class="chat-message" data-message-id="m2">
+    <div class="message-header">
+      <span class="message-sender">Vander</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:24</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <div class="dice-roll">
+        <div class="dice-flavor">Iniciativa</div>
+        <div class="dice-result">
+          <div class="dice-formula">1d20 + 5</div>
+          <h4 class="dice-total">14</h4>
+          <section class="dice-tooltip">
+            <div class="part-header">
+              <span class="part-formula">1d20</span>
+              <span class="part-total">9</span>
+            </div>
+            <ol class="dice-rolls">
+              <li class="roll die d20">9</li>
+            </ol>
+          </section>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <!-- 3. Critical roll -->
+  <li class="chat-message" data-message-id="m3">
+    <div class="message-header">
+      <span class="message-sender">Lich</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:25</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <div class="dice-roll">
+        <div class="dice-flavor">Ataque com Toque Vampírico</div>
+        <div class="dice-result">
+          <div class="dice-formula">1d20 + 18</div>
+          <h4 class="dice-total critical">38</h4>
+          <section class="dice-tooltip">
+            <ol class="dice-rolls">
+              <li class="roll die d20 max">20</li>
+            </ol>
+          </section>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <!-- 4. Fumble roll -->
+  <li class="chat-message" data-message-id="m4">
+    <div class="message-header">
+      <span class="message-sender">Esqueleto</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:26</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <div class="dice-roll">
+        <div class="dice-flavor">Reflexos</div>
+        <div class="dice-result">
+          <div class="dice-formula">1d20 + 4</div>
+          <h4 class="dice-total fumble">5</h4>
+          <section class="dice-tooltip">
+            <ol class="dice-rolls">
+              <li class="roll die d20 min">1</li>
+            </ol>
+          </section>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <!-- 5. T20 spell card -->
+  <li class="chat-message" data-message-id="m5">
+    <div class="message-header">
+      <span class="message-sender">Vander</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:27</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <div class="tormenta20 chat-card item-card" data-actor-id="x" data-item-id="y">
+        <header class="card-header">
+          <img src="" title="Bola de Fogo" width="36" height="36" style="background:#3a1810" />
+          <h3 class="item-name"><div>Bola de Fogo</div></h3>
+          <button class="chat-spend-mana">3 PM</button>
+        </header>
+        <div class="card-item-header">
+          <h4>Arcana 2º Círculo · Evocação</h4>
+          <p><b>Execução:</b> padrão · <b>Alcance:</b> médio · <b>Área:</b> esfera 6m · <b>Resistência:</b> Reflexos reduz à metade</p>
+        </div>
+        <div class="row">Dano</div>
+        <div class="dice-roll">
+          <div class="dice-result">
+            <div class="dice-formula">6d6[fogo]</div>
+            <h4 class="dice-total">22</h4>
+          </div>
+        </div>
+        <div class="card-item-effects">
+          <button class="chat-apply-ae"><i>★</i> Aplicar Bola de Fogo</button>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <!-- 6. Resistance roll (flag flag) -->
+  <li class="chat-message bg3-resistance-roll" data-message-id="m6">
+    <div class="message-header">
+      <span class="message-sender">Esqueleto</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:28</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <div class="dice-roll">
+        <div class="dice-flavor">Resistência — Reflexos (Esqueleto) vs CD 18 ☠ FALHA CRÍTICA</div>
+        <div class="dice-result">
+          <div class="dice-formula">1d20 + 10</div>
+          <h4 class="dice-total fumble">11</h4>
+        </div>
+      </div>
+    </div>
+  </li>
+
+  <!-- 7. Whisper -->
+  <li class="chat-message whisper" data-message-id="m7">
+    <div class="message-header">
+      <span class="message-sender">Gamemaster</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:29</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <em>(sussurro pra Tiago)</em><br>
+      O Lich percebe a sua presença, mas <b>ainda não age</b>.
+    </div>
+  </li>
+
+  <!-- 8. Esfera flamejante summary card (módulo) -->
+  <li class="chat-message" data-message-id="m8">
+    <div class="message-header">
+      <span class="message-sender">Vander</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:30</span>
+        <a class="message-delete">×</a>
+      </span>
+    </div>
+    <div class="message-content">
+      <div class="t20-theme-chat-card" style="padding:10px 12px; background:linear-gradient(180deg, rgba(204,68,68,0.10) 0%, transparent 100%); border-left:3px solid #cc4422;">
+        <div style="color:#cc4422; font-size:0.7rem; letter-spacing:0.14em; text-transform:uppercase; font-weight:700;">Esfera Flamejante — Vander</div>
+        <div style="color:#8a7450; font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; font-style:italic; margin: 2px 0 8px;">Movimento da esfera</div>
+        <div style="margin-bottom:8px;">
+          <div class="dice-roll">
+            <div class="dice-formula">5d6[fogo]</div>
+            <div class="dice-result"><h4 class="dice-total">18</h4></div>
+          </div>
+        </div>
+        <div style="color:#8a7450; font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:4px;">Alvos atingidos (2):</div>
+        <div>
+          <span style="display:inline-block; padding:2px 8px; margin:2px; background:rgba(204,68,68,0.12); border:1px solid rgba(204,68,68,0.35); border-radius:3px; color:#e8d8a8; font-size:0.82rem;">Esqueleto</span>
+          <span style="display:inline-block; padding:2px 8px; margin:2px; background:rgba(204,68,68,0.12); border:1px solid rgba(204,68,68,0.35); border-radius:3px; color:#e8d8a8; font-size:0.82rem;">Lich</span>
+        </div>
+        <div style="color:#9a8e7a; font-size:0.75rem; font-style:italic; margin-top:6px;">CD 18 · Falhar = dano integral, passar = metade</div>
+      </div>
+    </div>
+  </li>
+
+  <!-- 9. System / combat announcement -->
+  <li class="chat-message no-border" data-message-id="m9">
+    <div class="message-header">
+      <span class="message-sender">Combate</span>
+      <span class="message-metadata">
+        <span class="message-timestamp">14:31</span>
+      </span>
+    </div>
+    <div class="message-content">
+      <hr>
+      <b>Round 2</b> começou. Próximo turno: <b>Esqueleto</b>.
+      <hr>
+    </div>
+  </li>
+
+</ol>
+</section>
+
+</body>
+</html>
