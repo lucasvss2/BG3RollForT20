@@ -39,6 +39,7 @@ import {
     getTargetUserId,
     dispatchSpellResistanceToTarget,
 } from "@/spell-resistance/index";
+import { getSocket, onSocketReady } from "@/socket";
 import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
 import type { SpellResistPreRollRequest } from "@/spell-resistance/types";
 
@@ -49,6 +50,25 @@ const PENDING_WINDOW_MS = 30_000;
 const TEMPLATE_LINGER_MS = 3500;
 const ESFERA_DIAMETRO_M = 1.5;  // diâmetro em metros = 1 quadrado do tabuleiro
 const ESFERA_TEXTURE = `modules/${MODULE_ID}/assets/esfera-flamejante.png`;
+
+// ── socketlib handler names ──────────────────────────────────────────────────
+const SOCKET_CREATE_ESFERA = "bola-de-fogo/create-esfera";
+
+// ── GM election ──────────────────────────────────────────────────────────────
+//
+// Elege o GM "primário" para executar mutações compartilhadas (criação de
+// Tile, aplicação de dano, etc.). Quando há múltiplos GMs ativos, todos
+// recebem hooks; sem dedup haveria duplicação. Elegemos o GM ativo com o
+// menor ID lexicográfico — determinístico em todos os clientes.
+function isActiveGM(): boolean {
+    const myId = game.user?.id;
+    if (!myId || !game.user?.isGM) return false;
+    const activeGMs = (game.users?.contents ?? [])
+        .filter(u => u.isGM && u.active)
+        .map(u => u.id)
+        .sort();
+    return activeGMs[0] === myId;
+}
 
 // ── Helpers (geometria) ──────────────────────────────────────────────────────
 
@@ -369,29 +389,21 @@ async function promptCanvasClick(label: string): Promise<{ x: number; y: number 
     });
 }
 
-async function placeEsfera(meta: EsferaMeta): Promise<void> {
-    const pos = await promptCanvasClick(
-        `Clique no canvas para posicionar a Esfera Flamejante (1.5m de diâmetro). ESC cancela.`,
-    );
-    if (!pos) return;
-
-    type SceneLike = {
-        createEmbeddedDocuments(t: string, data: unknown[], opts?: Record<string, unknown>): Promise<unknown[]>;
-    };
-    type CanvasLike = { scene?: SceneLike; grid?: { size?: number; distance?: number } };
-    const cv    = canvas as unknown as CanvasLike & { scene?: SceneLike & { grid?: { size?: number; distance?: number } } };
-    const scene = cv.scene;
-    if (!scene) {
-        ui.notifications?.error("Esfera Flamejante: nenhuma cena ativa");
-        return;
-    }
-
-    // Tamanho da tile = 1 quadrado (1.5m). Em pixels: gridSize × (1.5/gridDist).
-    const gridSize = (scene as { grid?: { size?: number } }).grid?.size ?? 100;
-    const gridDist = (scene as { grid?: { distance?: number } }).grid?.distance ?? 1.5;
+/**
+ * Constrói os dados da Tile da esfera flamejante (sem persistir).
+ * Compartilhado entre o path do GM (cria direto) e o do player
+ * (delega via socket, mas a tileData é montada no GM-side).
+ */
+function buildEsferaTileData(
+    sceneGrid: { size?: number; distance?: number } | undefined,
+    pos: { x: number; y: number },
+    meta: EsferaMeta,
+): Record<string, unknown> {
+    const gridSize = sceneGrid?.size     ?? 100;
+    const gridDist = sceneGrid?.distance ?? 1.5;
     const sizePx   = (ESFERA_DIAMETRO_M / gridDist) * gridSize;
 
-    // Snap pra grid: centro da tile no quadrado onde clicou.
+    // Snap pra grid: tile alinhada no quadrado onde clicou.
     const snappedX = Math.floor(pos.x / gridSize) * gridSize;
     const snappedY = Math.floor(pos.y / gridSize) * gridSize;
 
@@ -400,7 +412,7 @@ async function placeEsfera(meta: EsferaMeta): Promise<void> {
     const ownership: Record<string, number> = { default: 0 };
     if (meta.casterUserId) ownership[meta.casterUserId] = 3;
 
-    const tileData = {
+    return {
         texture: { src: ESFERA_TEXTURE, scaleX: 1, scaleY: 1 },
         x:       snappedX,
         y:       snappedY,
@@ -409,16 +421,82 @@ async function placeEsfera(meta: EsferaMeta): Promise<void> {
         rotation: 0,
         hidden:  false,
         locked:  false,
-        sort:    100,           // garante que fique acima de tiles de cenário
+        sort:    100,
         ownership,
         flags:   { [MODULE_ID]: buildEsferaFlags(meta) },
     };
+}
 
+type CreateEsferaSocketRequest = {
+    type:    "create-esfera";
+    sceneId: string;
+    pos:     { x: number; y: number };
+    meta:    EsferaMeta;
+};
+
+/** Handler GM-side: cria a Tile a pedido de um player. */
+async function handleCreateEsferaSocket(req: CreateEsferaSocketRequest): Promise<void> {
+    if (!game.user?.isGM) return;
+    type SceneLike = {
+        grid?: { size?: number; distance?: number };
+        createEmbeddedDocuments(t: string, data: unknown[], opts?: Record<string, unknown>): Promise<unknown[]>;
+    };
+    const scene = (game as unknown as { scenes?: { get(id: string): SceneLike | undefined } })
+        .scenes?.get(req.sceneId);
+    if (!scene) {
+        console.warn(`[t20-theme-overhaul] Esfera Flamejante: GM não achou a cena ${req.sceneId}`);
+        return;
+    }
+    const tileData = buildEsferaTileData(scene.grid, req.pos, req.meta);
     try {
         await scene.createEmbeddedDocuments("Tile", [tileData]);
-        ui.notifications?.info(`Esfera Flamejante criada (${meta.damageFormula} por hit). Arraste a tile pra mover.`);
+        ui.notifications?.info(`${req.meta.casterName} criou Esfera Flamejante (via GM).`);
     } catch (err) {
-        console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao criar tile:`, err);
+        console.warn(`[t20-theme-overhaul] Esfera Flamejante: GM falhou ao criar tile:`, err);
+    }
+}
+
+async function placeEsfera(meta: EsferaMeta): Promise<void> {
+    const pos = await promptCanvasClick(
+        `Clique no canvas para posicionar a Esfera Flamejante (1.5m de diâmetro). ESC cancela.`,
+    );
+    if (!pos) return;
+
+    type SceneLike = {
+        id?: string;
+        grid?: { size?: number; distance?: number };
+        createEmbeddedDocuments(t: string, data: unknown[], opts?: Record<string, unknown>): Promise<unknown[]>;
+    };
+    type CanvasLike = { scene?: SceneLike };
+    const cv    = canvas as unknown as CanvasLike;
+    const scene = cv.scene;
+    if (!scene) {
+        ui.notifications?.error("Esfera Flamejante: nenhuma cena ativa");
+        return;
+    }
+
+    // Players não têm permissão TILE_CREATE no Foundry v13 — delega ao GM.
+    // GMs criam direto (e disparam a notificação local).
+    if (game.user?.isGM) {
+        const tileData = buildEsferaTileData(scene.grid, pos, meta);
+        try {
+            await scene.createEmbeddedDocuments("Tile", [tileData]);
+            ui.notifications?.info(`Esfera Flamejante criada (${meta.damageFormula} por hit). Arraste a tile pra mover.`);
+        } catch (err) {
+            console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha ao criar tile:`, err);
+        }
+        return;
+    }
+    // Player: delega ao GM via socketlib
+    const sceneId = scene.id;
+    if (!sceneId) return;
+    const req: CreateEsferaSocketRequest = { type: "create-esfera", sceneId, pos, meta };
+    try {
+        await getSocket()?.executeAsGM(SOCKET_CREATE_ESFERA, req);
+        ui.notifications?.info(`Esfera Flamejante (${meta.damageFormula} por hit). Arraste a tile pra mover.`);
+    } catch (err) {
+        console.warn(`[t20-theme-overhaul] Esfera Flamejante: falha no socket:`, err);
+        ui.notifications?.error("Esfera Flamejante: GM precisa estar online para criar a esfera.");
     }
 }
 
@@ -437,8 +515,9 @@ async function applyEsferaDamage(tileDoc: {
     const flags = tileDoc.flags?.[MODULE_ID];
     if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
 
-    const casterUid = flags["casterUserId"] as string | undefined;
-    if (casterUid !== game.user?.id) return;
+    // GM-side only: aplica dano em atores (alguns não pertencem ao caster).
+    // Multi-GM dedup via isActiveGM (lowest sorted userId).
+    if (!isActiveGM()) return;
 
     const round = (game as unknown as { combat?: { round?: number } }).combat?.round ?? 0;
     const damaged = (flags["damagedThisRound"] as Record<string, number> | undefined) ?? {};
@@ -679,6 +758,14 @@ export function setupBolaDeFogo(): void {
         onClick:   () => onClickCancelEsfera(),
     });
 
+    // Socket: GM cria a Tile da esfera a pedido de player (que não tem
+    // TILE_CREATE no Foundry v13). socketlib.executeAsGM seleciona 1 GM.
+    onSocketReady((socket) => {
+        socket.register(SOCKET_CREATE_ESFERA, (...args: unknown[]) => {
+            void handleCreateEsferaSocket(args[0] as CreateEsferaSocketRequest);
+        });
+    });
+
     // 0. preCreateChatMessage — suprime o roll de damage quando imp 2 ativo
     //    (a esfera tem dano próprio rolado por hit; a "explosão" não acontece).
     Hooks.on("preCreateChatMessage", (...args: unknown[]) => {
@@ -817,6 +904,7 @@ export function setupBolaDeFogo(): void {
     });
 
     // 5. updateTile — esfera moveu (x/y mudou) → aplica dano nos novos alvos
+    //    Gating GM-side (applyEsferaDamage tem isActiveGM check interno).
     Hooks.on("updateTile", (...args: unknown[]) => {
         const tileDoc = args[0] as {
             id: string; uuid: string; x: number; y: number; width: number; height: number;
@@ -826,10 +914,6 @@ export function setupBolaDeFogo(): void {
         const changes = args[1] as Record<string, unknown> | undefined;
         const flags   = tileDoc.flags?.[MODULE_ID];
         if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
-
-        const casterUid = flags["casterUserId"] as string | undefined;
-        if (casterUid !== game.user?.id) return;
-
         const moved = typeof changes?.["x"] === "number" || typeof changes?.["y"] === "number";
         if (!moved) return;
         void applyEsferaDamage(tileDoc, "moved");
@@ -841,9 +925,9 @@ export function setupBolaDeFogo(): void {
         if (tileDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
     });
 
-    // 7. combatTurnChange — tick da esfera no início do turno do caster
-    //    Aplica dano em quem está no espaço da esfera. Padrão Aura Sagrada:
-    //    usar combatTurnChange (não combatTurn) para pegar o NOVO combatant.
+    // 7. combatTurnChange — tick da esfera no início do turno do caster.
+    //    Padrão Aura Sagrada: usar combatTurnChange (não combatTurn) para
+    //    pegar o NOVO combatant. Gating GM-side via applyEsferaDamage.
     Hooks.on("combatTurnChange", (...args: unknown[]) => {
         const combat = args[0] as { round?: number; combatant?: { actor?: { id?: string }; tokenId?: string } } | null;
         const newCombatant = combat?.combatant;
@@ -862,8 +946,6 @@ export function setupBolaDeFogo(): void {
             const flags = tile.flags?.[MODULE_ID];
             if (flags?.[FLAG_SPELL] !== ESFERA_KEY) continue;
             if ((flags["casterActorId"] as string | undefined) !== newActorId) continue;
-            // Só o caster aplica
-            if ((flags["casterUserId"] as string | undefined) !== game.user?.id) continue;
             void applyEsferaDamage(tile, "turn-start");
         }
     });
