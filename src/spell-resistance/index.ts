@@ -463,7 +463,7 @@ interface ResistInfo {
     outcome: ResistOutcome;
 }
 
-function parseResistance(txt: string): ResistInfo {
+export function parseResistance(txt: string): ResistInfo {
     if (!txt || txt.trim() === "" || txt.toLowerCase() === "nenhuma") {
         return { skill: null, outcome: "none" };
     }
@@ -487,7 +487,7 @@ function parseResistance(txt: string): ResistInfo {
 
 // ── Extração de dados do chat ─────────────────────────────────────────────────
 
-function extractCD(message: ChatMessage): number {
+export function extractCD(message: ChatMessage): number {
     const match = message.content?.match(/CD\s*(\d+)/);
     return match ? parseInt(match[1], 10) : 0;
 }
@@ -1562,8 +1562,21 @@ function findActiveGM(): FoundryUser | undefined {
     return (game.users?.contents ?? []).find(u => u.isGM && u.active);
 }
 
-function getTargetUserId(actor: FoundryActor): string | null {
+export function getTargetUserId(actor: FoundryActor): string | null {
     return findPlayerOwner(actor)?.id ?? findActiveGM()?.id ?? null;
+}
+
+/**
+ * Dispatch público — usado por handlers de magias de área (bola-de-fogo, etc.)
+ * para abrir o modal de resistência num alvo. Se o alvo é o usuário atual,
+ * abre direto; senão envia via socketlib pro cliente do dono do ator.
+ */
+export function dispatchSpellResistanceToTarget(preReq: SpellResistPreRollRequest): void {
+    if (preReq.targetUserId === game.user?.id) {
+        openUnifiedSpellModal(preReq);
+    } else {
+        void getSocket()?.executeAsUser(SOCKET_PRE_ROLL, preReq.targetUserId, preReq);
+    }
 }
 
 // ── createChatMessage hook ────────────────────────────────────────────────────
@@ -1596,6 +1609,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
     {
         const sn = normalizeCondName(extractSpellName(message));
         if (sn === "consagrar") return;
+        if (sn === "bola de fogo") return;
     }
 
     const damageRoll = rolls.find(r => (r.options as Record<string, unknown>)?.["type"] === "damage");

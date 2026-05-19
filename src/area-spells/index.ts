@@ -6,9 +6,11 @@
 import { setupConsagrar } from "./consagrar";
 import { setupAuraSagrada } from "./aura-sagrada";
 import { setupEgideSagrada } from "./egide-sagrada";
+import { setupBolaDeFogo } from "./bola-de-fogo";
 
 export function setupAreaSpells(): void {
     setupConsagrar();
     setupAuraSagrada();
     setupEgideSagrada();
+    setupBolaDeFogo();
 }
