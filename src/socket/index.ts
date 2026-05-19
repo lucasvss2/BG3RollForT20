@@ -62,7 +62,7 @@ Hooks.once("socketlib.ready", () => {
     log(`socketlib registrado (${pending.length} handler set(s) pendente(s)).`);
     for (const fn of pending) {
         try { fn(socket); } catch (err) {
-            console.error(`[${MODULE_ID}] erro registrando handler de socket:`, err);
+            console.error(`[t20-theme-overhaul] erro registrando handler de socket:`, err);
         }
     }
     pending.length = 0;

@@ -74,7 +74,7 @@ async function syncWeaponEffects(item: FoundryItem): Promise<void> {
             try {
                 await a.deleteEmbeddedDocuments("ActiveEffect", existing.map(e => e.id));
             } catch (err) {
-                console.warn(`[${MODULE_ID}] weapon-ae-transfer: falha ao remover de ${actor.name}:`, err);
+                console.warn(`[t20-theme-overhaul] weapon-ae-transfer: falha ao remover de ${actor.name}:`, err);
             }
         }
         return;
@@ -111,7 +111,7 @@ async function syncWeaponEffects(item: FoundryItem): Promise<void> {
     try {
         await a.createEmbeddedDocuments("ActiveEffect", toCreate);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] weapon-ae-transfer: falha ao criar em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] weapon-ae-transfer: falha ao criar em ${actor.name}:`, err);
     }
 }
 
@@ -126,7 +126,7 @@ async function cleanupOrphans(item: FoundryItem): Promise<void> {
             deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
         }).deleteEmbeddedDocuments("ActiveEffect", orphans.map(e => e.id));
     } catch (err) {
-        console.warn(`[${MODULE_ID}] weapon-ae-transfer: falha ao limpar órfãos em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] weapon-ae-transfer: falha ao limpar órfãos em ${actor.name}:`, err);
     }
 }
 

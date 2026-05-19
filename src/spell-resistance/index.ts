@@ -515,7 +515,7 @@ export async function autoApplyBuffEffects(
                     }).createEmbeddedDocuments("ActiveEffect", data, { toChat: appliedCount === 0 });
                     appliedCount++;
                 } catch (err) {
-                    console.warn(`[${MODULE_ID}] Auto-apply em ${actor.name}:`, err);
+                    console.warn(`[t20-theme-overhaul] Auto-apply em ${actor.name}:`, err);
                 }
             }
         }
@@ -570,7 +570,7 @@ async function handleAutoApplyBuffSocket(req: import("./types").AutoApplyBuffReq
                 appliedCount++;
                 if (!appliedNames.includes(actor.name)) appliedNames.push(actor.name);
             } catch (err) {
-                console.warn(`[${MODULE_ID}] Auto-apply GM-socket em ${actor.name}:`, err);
+                console.warn(`[t20-theme-overhaul] Auto-apply GM-socket em ${actor.name}:`, err);
             }
         }
     }
@@ -655,7 +655,7 @@ async function handlePurification(_message: ChatMessage, casterName: string): Pr
                 }).deleteEmbeddedDocuments("ActiveEffect", ids);
                 ui.notifications?.info(`Purificação: removida(s) ${matches.map(m => m.name).join(", ")} de ${token.actor!.name}`);
             } catch (err) {
-                console.warn(`[${MODULE_ID}] Purificação em ${token.actor!.name}:`, err);
+                console.warn(`[t20-theme-overhaul] Purificação em ${token.actor!.name}:`, err);
             }
         }
         return;
@@ -693,7 +693,7 @@ async function handlePurificationSocket(req: import("./types").PurificationReque
             }).deleteEmbeddedDocuments("ActiveEffect", t.effectIds);
             ui.notifications?.info(`Purificação (${req.casterName}): removida(s) ${t.effectNames.join(", ")} de ${actor.name}`);
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Purificação GM-socket em ${actor.name}:`, err);
+            console.warn(`[t20-theme-overhaul] Purificação GM-socket em ${actor.name}:`, err);
         }
     }
 }
@@ -799,7 +799,7 @@ async function removeFadigaCondition(actorUuid: string, actorId: string): Promis
         }).deleteEmbeddedDocuments("ActiveEffect", [toRemove]);
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Falha ao remover Fadiga:`, err);
+        console.warn(`[t20-theme-overhaul] Falha ao remover Fadiga:`, err);
         return false;
     }
 }

@@ -268,7 +268,7 @@ async function createGhostTemplate(opts: {
         const tpl = created?.[0] as { id?: string } | undefined;
         return tpl?.id ?? null;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao criar template:`, err);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada: falha ao criar template:`, err);
         return null;
     }
 }
@@ -326,7 +326,7 @@ async function applyEgideToToken(token: FoundryToken, template: EgideTpl): Promi
         }).createEmbeddedDocuments("ActiveEffect", [data]);
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada apply em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada apply em ${actor.name}:`, err);
         return false;
     } finally {
         _applyInProgress.delete(lockKey);
@@ -346,7 +346,7 @@ async function removeEgideFromToken(token: FoundryToken, templateId: string): Pr
         }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada remove em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada remove em ${actor.name}:`, err);
         return false;
     }
 }
@@ -448,7 +448,7 @@ async function cleanupAEsForTemplate(templateId: string): Promise<void> {
             }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
             removed += ours.length;
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Égide Sagrada cleanup em ${actor.name}:`, err);
+            console.warn(`[t20-theme-overhaul] Égide Sagrada cleanup em ${actor.name}:`, err);
         }
     }
     if (removed > 0) {
@@ -502,7 +502,7 @@ async function endSequencerEffectsByIds(ids: string[]): Promise<void> {
     try {
         await sm.endEffects({ effects: toEnd });
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao encerrar efeitos do Sequencer:`, err);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada: falha ao encerrar efeitos do Sequencer:`, err);
     }
 }
 
@@ -529,7 +529,7 @@ async function endAutoanimEgideEffectsForCasterToken(casterTokenId: string): Pro
     try {
         await sm.endEffects({ effects: matchIds });
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada: fallback endEffects falhou:`, err);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada: fallback endEffects falhou:`, err);
     }
 }
 
@@ -570,7 +570,7 @@ async function onEgideSagradaCast(message: ChatMessage): Promise<void> {
 
     const baseEffect = extractBaseEffectData(message);
     if (!baseEffect) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada: mensagem sem effects[0][0] — abortando.`);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada: mensagem sem effects[0][0] — abortando.`);
         return;
     }
 
@@ -601,7 +601,7 @@ async function onEgideSagradaCast(message: ChatMessage): Promise<void> {
     try {
         await tplDoc.update({ [`flags.${MODULE_ID}.baseEffectData`]: baseEffect });
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao anexar baseEffectData:`, err);
+        console.warn(`[t20-theme-overhaul] Égide Sagrada: falha ao anexar baseEffectData:`, err);
         return;
     }
 
@@ -618,7 +618,7 @@ async function onEgideSagradaCast(message: ChatMessage): Promise<void> {
         try {
             await tplDoc.update({ [`flags.${MODULE_ID}.sequencerEffectIds`]: newIds });
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao salvar sequencerEffectIds:`, err);
+            console.warn(`[t20-theme-overhaul] Égide Sagrada: falha ao salvar sequencerEffectIds:`, err);
         }
     })();
 
@@ -644,7 +644,7 @@ async function moveEgideWithCaster(
         try {
             await tpl.update({ x: newCenter.x, y: newCenter.y });
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Égide Sagrada: falha ao mover template:`, err);
+            console.warn(`[t20-theme-overhaul] Égide Sagrada: falha ao mover template:`, err);
         }
     }
     if (isActiveGM()) {

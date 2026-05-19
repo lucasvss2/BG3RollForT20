@@ -242,7 +242,7 @@ async function createGhostTemplate(opts: {
         const tpl = created?.[0] as { id?: string } | undefined;
         return tpl?.id ?? null;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao criar template:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao criar template:`, err);
         return null;
     }
 }
@@ -313,7 +313,7 @@ async function applyAuraToToken(token: FoundryToken, template: AuraTpl): Promise
         }).createEmbeddedDocuments("ActiveEffect", [data]);
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada apply em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada apply em ${actor.name}:`, err);
         return false;
     } finally {
         _applyInProgress.delete(lockKey);
@@ -333,7 +333,7 @@ async function removeAuraFromToken(token: FoundryToken, templateId: string): Pro
         }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada remove em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada remove em ${actor.name}:`, err);
         return false;
     }
 }
@@ -442,7 +442,7 @@ async function cleanupAEsForTemplate(templateId: string): Promise<void> {
             }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
             removed += ours.length;
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Aura Sagrada cleanup em ${actor.name}:`, err);
+            console.warn(`[t20-theme-overhaul] Aura Sagrada cleanup em ${actor.name}:`, err);
         }
     }
     if (removed > 0) {
@@ -506,7 +506,7 @@ async function endSequencerEffectsByIds(ids: string[]): Promise<void> {
         // API quer string[] (IDs); passar [{id}] objeto plain quebra.
         await sm.endEffects({ effects: toEnd });
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao encerrar efeitos do Sequencer:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao encerrar efeitos do Sequencer:`, err);
     }
 }
 
@@ -533,7 +533,7 @@ async function endAutoanimSpellEffectsForCasterToken(casterTokenId: string): Pro
     try {
         await sm.endEffects({ effects: matchIds });
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada: fallback endEffects falhou:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada: fallback endEffects falhou:`, err);
     }
 }
 
@@ -592,7 +592,7 @@ async function onAuraSagradaCast(message: ChatMessage): Promise<void> {
 
     const baseEffect = extractBaseEffectData(message);
     if (!baseEffect) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada: mensagem sem effects[0][0] — abortando.`);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada: mensagem sem effects[0][0] — abortando.`);
         return;
     }
 
@@ -626,7 +626,7 @@ async function onAuraSagradaCast(message: ChatMessage): Promise<void> {
     try {
         await tplDoc.update({ [`flags.${MODULE_ID}.baseEffectData`]: baseEffect });
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao anexar baseEffectData:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao anexar baseEffectData:`, err);
         return;
     }
 
@@ -646,7 +646,7 @@ async function onAuraSagradaCast(message: ChatMessage): Promise<void> {
         try {
             await tplDoc.update({ [`flags.${MODULE_ID}.sequencerEffectIds`]: newIds });
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao salvar sequencerEffectIds:`, err);
+            console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao salvar sequencerEffectIds:`, err);
         }
     })();
 
@@ -677,7 +677,7 @@ async function moveAuraWithCaster(
         try {
             await tpl.update({ x: newCenter.x, y: newCenter.y });
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao mover template:`, err);
+            console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao mover template:`, err);
         }
     }
     // O `updateMeasuredTemplate` resultante do .update vai disparar resync.
@@ -727,7 +727,7 @@ async function onClickCancelAura(): Promise<void> {
     try {
         await scene.deleteEmbeddedDocuments("MeasuredTemplate", idsToRemove);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao cancelar:`, err);
+        console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao cancelar:`, err);
         ui.notifications?.error("Falha ao cancelar aura (veja console).");
     }
 }
@@ -1006,7 +1006,7 @@ async function applyHealsAndPostCard(opts: {
             await actor.update({ "system.attributes.pv.value": c.pvAfter });
             applied.push(c);
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Aura de Cura: falha ao curar ${c.actorName}:`, err);
+            console.warn(`[t20-theme-overhaul] Aura de Cura: falha ao curar ${c.actorName}:`, err);
         }
     }
     if (applied.length === 0) return;
@@ -1191,7 +1191,7 @@ async function applyBurnsAndPostCard(opts: {
             const pvAfter = Number(actor.system?.attributes?.pv?.value ?? c.pvBefore);
             applied.push({ ...c, pvAfter, dealt: Math.max(0, c.pvBefore - pvAfter) });
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Aura Ardente: falha ao aplicar dano em ${c.actorName}:`, err);
+            console.warn(`[t20-theme-overhaul] Aura Ardente: falha ao aplicar dano em ${c.actorName}:`, err);
         }
     }
     if (applied.length === 0) return;
@@ -1415,7 +1415,7 @@ export async function markAuraInvencibilidadeUsed(opts: {
         await (actor as FoundryActor & { setFlag(s: string, k: string, v: unknown): Promise<unknown> })
             .setFlag(MODULE_ID, FLAG_INVENC_USED_SCENE, sceneId);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Aura de Invencibilidade: falha ao marcar uso:`, err);
+        console.warn(`[t20-theme-overhaul] Aura de Invencibilidade: falha ao marcar uso:`, err);
     }
 
     try {
@@ -1463,7 +1463,7 @@ async function spendSustainPM(caster: FoundryActor, auras: AuraTpl[]): Promise<{
         try {
             await caster.update({ "system.attributes.pm.value": newPm });
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao debitar PM:`, err);
+            console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao debitar PM:`, err);
         }
     }
 
@@ -1475,7 +1475,7 @@ async function spendSustainPM(caster: FoundryActor, auras: AuraTpl[]): Promise<{
             try {
                 await scene.deleteEmbeddedDocuments("MeasuredTemplate", cancelled.map(t => t.id));
             } catch (err) {
-                console.warn(`[${MODULE_ID}] Aura Sagrada: falha ao cancelar aura por falta de PM:`, err);
+                console.warn(`[t20-theme-overhaul] Aura Sagrada: falha ao cancelar aura por falta de PM:`, err);
             }
         }
         // Posta aviso no chat
@@ -1558,16 +1558,16 @@ async function applyBurnForTarget(opts: {
  */
 async function onCombatTurnStart(actor: FoundryActor, combatantTokenId: string): Promise<void> {
     if (!isActiveGM()) {
-        console.debug(`[${MODULE_ID}] turn skip: não sou o active GM`);
+        console.debug(`[t20-theme-overhaul] turn skip: não sou o active GM`);
         return;
     }
     const actorId = (actor as unknown as { id?: string }).id ?? "";
     if (!actorId) {
-        console.debug(`[${MODULE_ID}] turn skip: actor sem id`);
+        console.debug(`[t20-theme-overhaul] turn skip: actor sem id`);
         return;
     }
     if (!combatantTokenId) {
-        console.debug(`[${MODULE_ID}] turn skip: combatant sem token na cena`);
+        console.debug(`[t20-theme-overhaul] turn skip: combatant sem token na cena`);
         return;
     }
 
@@ -1591,7 +1591,7 @@ async function onCombatTurnStart(actor: FoundryActor, combatantTokenId: string):
 
     const allAuras = getAuraTemplates();
     if (allAuras.length === 0) {
-        console.debug(`[${MODULE_ID}] turn ${actor.name}: sem auras ativas na cena`);
+        console.debug(`[t20-theme-overhaul] turn ${actor.name}: sem auras ativas na cena`);
         return;
     }
 
@@ -1601,12 +1601,12 @@ async function onCombatTurnStart(actor: FoundryActor, combatantTokenId: string):
     for (const tpl of allAuras) {
         const casterAid = tpl.flags?.[MODULE_ID]?.[FLAG_CASTER_AID] as string | undefined;
         if (!casterAid) {
-            console.debug(`[${MODULE_ID}] aura ${tpl.id}: sem casterActorId no flag`);
+            console.debug(`[t20-theme-overhaul] aura ${tpl.id}: sem casterActorId no flag`);
             continue;
         }
         const casterActor = game.actors?.get(casterAid);
         if (!casterActor) {
-            console.debug(`[${MODULE_ID}] aura ${tpl.id}: casterActor não encontrado (id=${casterAid})`);
+            console.debug(`[t20-theme-overhaul] aura ${tpl.id}: casterActor não encontrado (id=${casterAid})`);
             continue;
         }
 
@@ -1626,7 +1626,7 @@ async function onCombatTurnStart(actor: FoundryActor, combatantTokenId: string):
                     casterName, healAmount: amount, target: cands[0], alwaysPrompt,
                 });
             } else {
-                console.debug(`[${MODULE_ID}] cura skip token=${combatantTokenId} (${actor.name}): inside? disposition? PV cheio?`);
+                console.debug(`[t20-theme-overhaul] cura skip token=${combatantTokenId} (${actor.name}): inside? disposition? PV cheio?`);
             }
         }
 
@@ -1638,12 +1638,12 @@ async function onCombatTurnStart(actor: FoundryActor, combatantTokenId: string):
                     casterName, damage: amount, target: cands[0], alwaysPrompt,
                 });
             } else {
-                console.debug(`[${MODULE_ID}] ardente skip token=${combatantTokenId} (${actor.name}): undead/spirit? inside? PV>0?`);
+                console.debug(`[t20-theme-overhaul] ardente skip token=${combatantTokenId} (${actor.name}): undead/spirit? inside? PV>0?`);
             }
         }
 
         if (!haveCura && !haveBurn) {
-            console.debug(`[${MODULE_ID}] caster ${casterActor.name} sem Aura de Cura/Ardente entre poderes — verifica nome do item`);
+            console.debug(`[t20-theme-overhaul] caster ${casterActor.name} sem Aura de Cura/Ardente entre poderes — verifica nome do item`);
         }
     }
 }
@@ -1697,7 +1697,7 @@ export function diagnoseAuras(): unknown {
         });
     }
 
-    console.log(`[${MODULE_ID}] DIAGNOSE AURAS:`, report);
+    console.log(`[t20-theme-overhaul] DIAGNOSE AURAS:`, report);
     return report;
 }
 

@@ -17,7 +17,6 @@
  * GM ativo mudou, etc.).
  */
 
-import { MODULE_ID } from "@/constants";
 
 export interface SkillAction {
     /** ID único da ação (e.g. "consagrar-remove", "aura-sagrada-cancel"). */
@@ -145,7 +144,7 @@ function getVisibleActions(): SkillAction[] {
         try {
             if (a.isVisible()) out.push(a);
         } catch (err) {
-            console.warn(`[${MODULE_ID}] skills-menu: isVisible() falhou para ${a.id}:`, err);
+            console.warn(`[t20-theme-overhaul] skills-menu: isVisible() falhou para ${a.id}:`, err);
         }
     }
     return out;
@@ -210,7 +209,7 @@ async function openPicker(actions: SkillAction[]): Promise<void> {
                             try {
                                 await a.onClick();
                             } catch (err) {
-                                console.warn(`[${MODULE_ID}] skills-menu: ação ${id} falhou:`, err);
+                                console.warn(`[t20-theme-overhaul] skills-menu: ação ${id} falhou:`, err);
                             }
                         }
                         resolve();

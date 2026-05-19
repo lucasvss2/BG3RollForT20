@@ -326,7 +326,7 @@ async function claimTemplate(
             : `Consagrar ativada (sem penalidade — nenhum aprimoramento selecionado).`;
         ui.notifications?.info(msg);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Consagrar: falha ao reclamar template:`, err);
+        console.warn(`[t20-theme-overhaul] Consagrar: falha ao reclamar template:`, err);
     }
 }
 
@@ -371,7 +371,7 @@ async function placeTemplateManual(meta: {
         await scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
         ui.notifications?.info(`Consagrar posicionada (fallback, ${RAIO_METROS}m, penalidade undead -${meta.undeadPenalty}).`);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Consagrar: falha ao criar template:`, err);
+        console.warn(`[t20-theme-overhaul] Consagrar: falha ao criar template:`, err);
     }
 }
 
@@ -484,7 +484,7 @@ async function applyEffectToToken(token: FoundryToken, template: {
                         .update({ [`flags.${MODULE_ID}.${FLAG_EFFECT_ORIGIN}`]: template.id });
                     return true;
                 } catch (err) {
-                    console.warn(`[${MODULE_ID}] Consagrar adopt em ${actor.name}:`, err);
+                    console.warn(`[t20-theme-overhaul] Consagrar adopt em ${actor.name}:`, err);
                     // Se a adoção falhar, NÃO criamos uma nova (evita o duplicado)
                     return false;
                 }
@@ -498,7 +498,7 @@ async function applyEffectToToken(token: FoundryToken, template: {
         }).createEmbeddedDocuments("ActiveEffect", [data]);
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Consagrar apply em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] Consagrar apply em ${actor.name}:`, err);
         return false;
     } finally {
         _applyInProgress.delete(lockKey);
@@ -519,7 +519,7 @@ async function removeEffectFromToken(token: FoundryToken, templateId: string): P
         }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
         return true;
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Consagrar remove em ${actor.name}:`, err);
+        console.warn(`[t20-theme-overhaul] Consagrar remove em ${actor.name}:`, err);
         return false;
     }
 }
@@ -666,7 +666,7 @@ async function removeAEsForTemplate(templateId: string): Promise<void> {
             }).deleteEmbeddedDocuments("ActiveEffect", ours.map(e => e.id));
             removed += ours.length;
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Consagrar cleanup em ${actor.name}:`, err);
+            console.warn(`[t20-theme-overhaul] Consagrar cleanup em ${actor.name}:`, err);
         }
     }
     if (removed > 0) ui.notifications?.info(`Consagrar removida (${removed} efeito(s) limpos)`);
@@ -807,7 +807,7 @@ async function onClickRemoveArea(): Promise<void> {
     try {
         await scene.deleteEmbeddedDocuments("MeasuredTemplate", idsToRemove);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Consagrar: falha ao remover área(s):`, err);
+        console.warn(`[t20-theme-overhaul] Consagrar: falha ao remover área(s):`, err);
         ui.notifications?.error("Falha ao remover área de Consagrar (veja console).");
     }
 }
