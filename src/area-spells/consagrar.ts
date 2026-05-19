@@ -975,7 +975,9 @@ export function setupConsagrar(): void {
     //    senão o cálculo "inside" usa a posição antiga e o AE não aplica/sai.
     Hooks.on("updateToken", (...args: unknown[]) => {
         if (getConsagrarTemplates().length === 0) return;
-        const tokenDoc = args[0] as { object?: FoundryToken };
+        const tokenDoc = args[0] as { object?: FoundryToken; flags?: Record<string, Record<string, unknown>> };
+        // Skip esfera-flamejante (token sintético da Bola de Fogo, não é criatura)
+        if (tokenDoc.flags?.[MODULE_ID]?.["spell"] === "bola-de-fogo-esfera") return;
         const changes  = args[1] as Record<string, unknown> | undefined;
         const token    = tokenDoc.object;
         if (!token) return;

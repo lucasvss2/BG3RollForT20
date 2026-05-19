@@ -1742,7 +1742,9 @@ export function setupAuraSagrada(): void {
     // 2. Movimento de qualquer token: re-sync (e se for o caster, mover template)
     Hooks.on("updateToken", (...args: unknown[]) => {
         if (getAuraTemplates().length === 0) return;
-        const tokenDoc = args[0] as { object?: FoundryToken; id?: string };
+        const tokenDoc = args[0] as { object?: FoundryToken; id?: string; flags?: Record<string, Record<string, unknown>> };
+        // Skip esfera-flamejante (token sintético da Bola de Fogo, não é criatura)
+        if (tokenDoc.flags?.[MODULE_ID]?.["spell"] === "bola-de-fogo-esfera") return;
         const changes  = args[1] as Record<string, unknown> | undefined;
         const token    = tokenDoc.object;
         if (!token) return;
@@ -1816,7 +1818,8 @@ export function setupAuraSagrada(): void {
         if (getAuraTemplates().length === 0) return;
         const changes = args[1] as Record<string, unknown> | undefined;
         if (changes?.["disposition"] === undefined) return;
-        const tokenDoc = args[0] as { object?: FoundryToken };
+        const tokenDoc = args[0] as { object?: FoundryToken; flags?: Record<string, Record<string, unknown>> };
+        if (tokenDoc.flags?.[MODULE_ID]?.["spell"] === "bola-de-fogo-esfera") return;
         const token = tokenDoc.object;
         if (!token) return;
         void syncTokenWithAuras(token);
