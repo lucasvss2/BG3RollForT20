@@ -347,19 +347,36 @@ const SPELL_RESIST_STYLES = `
 /* ── Collapse toggle ─────────────────────────────────────────────────────── */
 
 .smf-section-title { cursor: pointer; }
-.smf-collapse-btn {
+/* Especificidade dupla pra sobrepor o "width: 100%" default que o Foundry
+   aplica em buttons dentro de .dialog/.window-app form. */
+.smf-section-title > .smf-collapse-btn,
+.smf-dialog .smf-collapse-btn {
     margin-left: auto;
     background: none;
     border: none;
     color: #8a7450;
     cursor: pointer;
-    padding: 0 2px;
-    font-size: 0.7rem;
+    padding: 2px;
+    width: auto;
+    height: auto;
+    min-width: 0;
     line-height: 1;
     flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: content-box;
+    font-size: 0.75rem;
     transition: color 0.15s;
 }
-.smf-collapse-btn > i { display: inline-block; transition: transform 0.2s; }
+.smf-collapse-btn > i {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    line-height: 0.75rem;
+    text-align: center;
+    transition: transform 0.2s;
+}
 .smf-collapse-btn:hover { color: #c8a96e; }
 .smf-section.smf-collapsed > .smf-section-body { display: none; }
 .smf-section.smf-collapsed .smf-collapse-btn > i { transform: rotate(-90deg); }
