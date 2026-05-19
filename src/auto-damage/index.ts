@@ -1,9 +1,15 @@
-import { MODULE_ID } from "@/constants";
-import type { AutoDamageRequest, AttackRerollRequest, AttackMissNotify, AutoDamageSocketData } from "./types";
+import type { AutoDamageRequest, AttackRerollRequest, AttackMissNotify } from "./types";
+import { getSocket, onSocketReady } from "@/socket";
 import {
     getAuraInvencibilidadeContextForActor,
     markAuraInvencibilidadeUsed,
 } from "@/area-spells/aura-sagrada";
+
+// ── socketlib handler names ──────────────────────────────────────────────────
+
+const SOCKET_DAMAGE_REQUEST = "auto-damage/request";
+const SOCKET_REROLL_REQUEST = "auto-damage/reroll-request";
+const SOCKET_MISS_NOTIFY    = "auto-damage/miss-notify";
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -305,7 +311,11 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
                 `Ataque de ${req.attackerName} errou no reroll! (${newAttackTotal} vs DEF ${req.targetDef})`,
             );
         } else {
-            game.socket?.emit(`module.${MODULE_ID}`, missPayload);
+            void getSocket()?.executeAsUser(
+                SOCKET_MISS_NOTIFY,
+                req.targetUserId,
+                missPayload,
+            );
         }
         return;
     }
@@ -340,7 +350,11 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     if (req.targetUserId === game.user?.id) {
         openDamagePrompt(newPayload);
     } else {
-        game.socket?.emit(`module.${MODULE_ID}`, newPayload);
+        void getSocket()?.executeAsUser(
+            SOCKET_DAMAGE_REQUEST,
+            req.targetUserId,
+            newPayload,
+        );
     }
 }
 
@@ -475,7 +489,11 @@ function openDamagePrompt(req: AutoDamageRequest): void {
             if (req.attackerUserId === game.user?.id) {
                 void handleReroll(rerollReq);
             } else {
-                game.socket?.emit(`module.${MODULE_ID}`, rerollReq);
+                void getSocket()?.executeAsUser(
+                    SOCKET_REROLL_REQUEST,
+                    req.attackerUserId,
+                    rerollReq,
+                );
             }
         },
     };
@@ -514,27 +532,19 @@ function openDamagePrompt(req: AutoDamageRequest): void {
 // ── Socket handler ────────────────────────────────────────────────────────────
 
 function setupSocket(): void {
-    game.socket?.on(`module.${MODULE_ID}`, (raw: unknown) => {
-        const data = raw as AutoDamageSocketData;
-
-        if (data?.type === "auto-damage-request") {
-            if (data.targetUserId !== game.user?.id) return;
-            openDamagePrompt(data);
-            return;
-        }
-
-        if (data?.type === "attack-reroll-request") {
-            if (data.attackerUserId !== game.user?.id) return;
-            void handleReroll(data);
-            return;
-        }
-
-        if (data?.type === "attack-miss-notify") {
-            if (data.targetUserId !== game.user?.id) return;
+    onSocketReady((socket) => {
+        socket.register(SOCKET_DAMAGE_REQUEST, (...args: unknown[]) => {
+            openDamagePrompt(args[0] as AutoDamageRequest);
+        });
+        socket.register(SOCKET_REROLL_REQUEST, (...args: unknown[]) => {
+            void handleReroll(args[0] as AttackRerollRequest);
+        });
+        socket.register(SOCKET_MISS_NOTIFY, (...args: unknown[]) => {
+            const data = args[0] as AttackMissNotify;
             ui.notifications.info(
                 `Ataque de ${data.attackerName} errou no reroll! (${data.attackTotal} vs DEF ${data.targetDef})`,
             );
-        }
+        });
     });
 }
 
@@ -653,7 +663,11 @@ function setupCreateChatHook(): void {
             if (targetUserId === game.user?.id) {
                 openDamagePrompt(payload);
             } else {
-                game.socket?.emit(`module.${MODULE_ID}`, payload);
+                void getSocket()?.executeAsUser(
+                    SOCKET_DAMAGE_REQUEST,
+                    targetUserId,
+                    payload,
+                );
             }
         }
     });

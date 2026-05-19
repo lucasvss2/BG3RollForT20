@@ -7,14 +7,7 @@
  */
 
 import { parseT20 } from "@/parser/t20";
-import {
-    BG3_MODULE_ID,
-    BG3_ALERT_HOOK,
-    BG3_REGISTER_HOOK,
-    BG3_READY_HOOK,
-    MODULE_ID,
-    SYSTEM_ID,
-} from "@/constants";
+import { MODULE_ID, SYSTEM_ID } from "@/constants";
 import { log } from "@/utils/logging";
 import { BG3Overlay } from "@/overlay/BG3Overlay";
 
@@ -22,29 +15,6 @@ import { BG3Overlay } from "@/overlay/BG3Overlay";
 
 export function setupIntegration(): void {
     installOverlayHook();
-
-    const bg3 = game.modules.get(BG3_MODULE_ID);
-    if (!bg3?.active) {
-        log(`"${BG3_MODULE_ID}" não está ativo — modo standalone.`);
-        return;
-    }
-
-    log("aeris-bg3-rolls detectado — registrando parser T20…");
-
-    Hooks.on(BG3_READY_HOOK, (...args: unknown[]) => {
-        const api = args[0] as AerisBG3RollsAPI | undefined;
-        if (typeof api?.registerParser === "function") {
-            api.registerParser(SYSTEM_ID, parseT20);
-            log("Parser T20 registrado via aeris-bg3-rolls.ready hook.");
-        }
-    });
-
-    Hooks.callAll(BG3_REGISTER_HOOK, SYSTEM_ID, parseT20);
-
-    Hooks.once("ready", () => {
-        if (tryGlobalApiRegistration()) return;
-        tryLibWrapperPatch();
-    });
 }
 
 // ── Core overlay hook ─────────────────────────────────────────────────────────
@@ -77,16 +47,6 @@ function installOverlayHook(): void {
         if (!roll) return;
 
         setTimeout(() => BG3Overlay.show(rollMeta, roll), 1000);
-
-        const bg3 = game.modules.get(BG3_MODULE_ID);
-        if (bg3?.active) {
-            Hooks.callAll(BG3_ALERT_HOOK, {
-                message,
-                rollMeta,
-                roll,
-                userId: args[2] as string,
-            });
-        }
     });
 
     log("Overlay cinemático T20 instalado.");
@@ -166,43 +126,4 @@ export function resolveFlavorText(message: ChatMessage): string {
 function decodeHtmlEntities(s: string): string {
     return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-}
-
-// ── Strategy 2: game.bg3rolls global API ─────────────────────────────────────
-
-function tryGlobalApiRegistration(): boolean {
-    const api = game.bg3rolls;
-    if (typeof api?.registerParser !== "function") return false;
-    api.registerParser(SYSTEM_ID, parseT20);
-    log("Parser T20 registrado via game.bg3rolls.registerParser().");
-    return true;
-}
-
-// ── Strategy 3: libWrapper ────────────────────────────────────────────────────
-
-function tryLibWrapperPatch(): boolean {
-    if (typeof libWrapper === "undefined") return false;
-
-    const target = `game.modules.get("${BG3_MODULE_ID}").api.parseRollMeta`;
-    try {
-        libWrapper.register(
-            MODULE_ID,
-            target,
-            function (this: unknown, wrapped, ...args: unknown[]) {
-                const chatMessage = args[0] as ChatMessage;
-                if (game.system.id !== SYSTEM_ID) {
-                    return (wrapped as (msg: ChatMessage) => RollMeta | null)(chatMessage);
-                }
-                return (
-                    parseT20({ flavor: chatMessage.flavor }) ??
-                    (wrapped as (msg: ChatMessage) => RollMeta | null)(chatMessage)
-                );
-            },
-            "MIXED",
-        );
-        log("parseRollMeta sobrescrito via libWrapper.");
-        return true;
-    } catch {
-        return false;
-    }
 }

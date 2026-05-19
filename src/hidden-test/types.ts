@@ -18,4 +18,9 @@ export interface HiddenTestFlag {
     appliedBonuses: string[];  // e.g. ["+9 CAR · Audácia (2 PM)", "Vantagem · Lupa"]
 }
 
+/**
+ * Cross-client payload for the hidden-test feature. Sent GM→player via
+ * socketlib.executeAsUser, identical shape to HiddenTestRequest today.
+ */
 export type HiddenTestSocketData = HiddenTestRequest;
+

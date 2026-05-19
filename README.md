@@ -2,7 +2,7 @@
 
 Módulo para [Foundry VTT](https://foundryvtt.com) com melhorias visuais e mecânicas para o sistema **Tormenta20** (`tormenta20`).
 
-Funciona de forma **totalmente independente** — nenhuma dependência obrigatória. O [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) é recomendado mas opcional.
+Depende apenas de [socketlib](https://foundryvtt.com/packages/socketlib) para coordenação cliente↔GM. O Foundry instala automaticamente ao adicionar o módulo.
 
 ---
 
@@ -137,12 +137,11 @@ Se o defensor usar uma habilidade defensiva com custo de PM, basta digitar o val
 
 ## Dependências
 
-| Módulo                                                             | Tipo                              |
-| ------------------------------------------------------------------ | --------------------------------- |
-| [Aeris BG3 Rolls](https://foundryvtt.com/packages/aeris-bg3-rolls) | Opcional — integração avançada    |
-| [lib-wrapper](https://foundryvtt.com/packages/lib-wrapper)         | Opcional — estratégia de fallback |
+| Módulo                                                  | Tipo                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------- |
+| [socketlib](https://foundryvtt.com/packages/socketlib) | Obrigatório — RPC GM↔jogador para os sistemas socket  |
 
-Nenhuma dependência obrigatória. O módulo opera em modo standalone quando os opcionais não estão presentes.
+Nenhuma outra dependência. O Foundry instala `socketlib` automaticamente ao ativar este módulo.
 
 ---
 
@@ -178,7 +177,7 @@ src/
 ├── parser/
 │   └── t20.ts                    Parser de flavor text em português
 ├── integration/
-│   └── index.ts                  Bridge multi-estratégia para o aeris-bg3-rolls
+│   └── index.ts                  Intercepta T20 chat messages e dispara o overlay
 ├── overlay/
 │   └── BG3Overlay.ts             Overlay cinemático full-screen standalone
 ├── chat/
@@ -201,16 +200,6 @@ src/
 └── types/
     └── global.d.ts               Tipos ambientes para Foundry VTT v13
 ```
-
-### Cadeia de integração com aeris-bg3-rolls
-
-Quando o Aeris BG3 Rolls está ativo, o módulo tenta registrar o parser T20 usando três estratégias em ordem:
-
-1. **Hook `aeris-bg3-rolls.ready`** — chama `api.registerParser("t20", …)`.
-2. **API global** — chama `game.bg3rolls.registerParser("t20", …)`.
-3. **libWrapper** — envolve `parseRollMeta` para injetar o handler T20 antes da função original.
-
-Em modo standalone (sem Aeris BG3 Rolls), o hook `createChatMessage` gerencia o overlay diretamente.
 
 ### Releases
 
@@ -236,7 +225,6 @@ O workflow executa typecheck, testes, build, monta o ZIP e publica a release no 
 | Prompt de dano não aparece após ataque        | Nenhum alvo selecionado com T, ou a rolagem não contém attack + damage rolls T20     |
 | Dano aplicado sem prompt                      | Não ocorre — o módulo sempre aguarda confirmação antes de alterar PV                 |
 | Rerolar dano não funciona                     | Atacante desconectou após o ataque; sem atacante ativo, o reroll não pode ser enviado|
-| Resultados duplicados de overlay              | Uma versão do aeris-bg3-rolls adicionou suporte nativo ao T20 — desative este módulo |
 | Tema visual não aplicado                      | Módulo desativado ou cache do browser — force reload com Ctrl+F5                     |
 
 Abra o console do navegador e filtre por `[aeris-bg3-rolls-t20]` para diagnóstico.

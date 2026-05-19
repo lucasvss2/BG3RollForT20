@@ -1,7 +1,7 @@
 /**
  * Standalone BG3-style cinematic roll overlay for Tormenta20.
  * Injects its own CSS and renders a full-screen overlay when a T20 roll
- * is intercepted. No dependency on aeris-bg3-rolls.
+ * is intercepted.
  */
 
 import type { TestOutcome } from "@/hidden-test/types";

@@ -1,12 +1,10 @@
 /**
  * aeris-bg3-rolls-t20 — main entry point
  *
- * Standalone BG3-style cinematic dice overlay for the Tormenta20 system.
- * Intercepts T20 roll messages (perícias, resistências, ataques, iniciativa)
- * and displays a full-screen animated overlay with the roll result.
- *
- * aeris-bg3-rolls is recommended but NOT required — the module ships its own
- * overlay and works in any Foundry world running the t20 system.
+ * BG3-style cinematic dice overlay + chat / sheet redesign for the Tormenta20
+ * system. Intercepts T20 roll messages (perícias, resistências, ataques,
+ * iniciativa) and displays a full-screen animated overlay with the roll
+ * result. Cross-client coordination uses socketlib.
  */
 
 import { MODULE_ID, SYSTEM_ID } from "./constants";
@@ -23,6 +21,7 @@ import { setupAreaSpells } from "./area-spells/index";
 import { diagnoseAuras } from "./area-spells/aura-sagrada";
 import { setupSkillsMenu } from "./ui/skills-menu";
 import { setupSheetRedesign } from "./sheet/index";
+import { setupSocketlib } from "./socket/index";
 import { log, warn } from "./utils/logging";
 
 // ── Init: sanity checks ───────────────────────────────────────────────────────
@@ -38,6 +37,10 @@ Hooks.once("init", () => {
         );
         return;
     }
+
+    // socketlib bootstrap — listens for `socketlib.ready` and registers the
+    // module. Subsystems queue handlers via onSocketReady() in their setup().
+    setupSocketlib();
 });
 
 // ── Setup: wire up roll integration and dialog styling ────────────────────────

@@ -1,5 +1,5 @@
 /**
- * Tormenta20 roll-flavor parser for aeris-bg3-rolls.
+ * Tormenta20 roll-flavor parser.
  *
  * Tormenta20 (system id "t20") is a Brazilian Portuguese D20 RPG. All roll
  * labels produced by the system are in pt-BR; the patterns below match the

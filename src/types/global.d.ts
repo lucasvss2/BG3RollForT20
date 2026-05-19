@@ -53,8 +53,6 @@ declare const game: {
         get(namespace: string, key: string): unknown;
         set(namespace: string, key: string, value: unknown): Promise<unknown>;
     };
-    /** Exposed by aeris-bg3-rolls on the global game object */
-    bg3rolls?: AerisBG3RollsAPI;
 };
 
 declare interface FoundryModule {
@@ -261,37 +259,37 @@ declare const ui: {
     };
 };
 
-// ── libWrapper (optional peer) ────────────────────────────────────────────────
+// ── socketlib (required peer) ─────────────────────────────────────────────────
 
-declare const libWrapper:
+declare interface SocketlibSocket {
+    /** Register a named handler that other clients can invoke. */
+    register(name: string, handler: (...args: unknown[]) => unknown): void;
+    /** Run `name` on one active GM. Resolves with the handler's return value. */
+    executeAsGM<T = unknown>(name: string, ...args: unknown[]): Promise<T>;
+    /** Run `name` on a specific user. Resolves with the handler's return value. */
+    executeAsUser<T = unknown>(name: string, userId: string, ...args: unknown[]): Promise<T>;
+    /** Broadcast `name` to all connected clients (including self). */
+    executeForEveryone(name: string, ...args: unknown[]): Promise<void>;
+    /** Broadcast `name` to all clients except self. */
+    executeForOthers(name: string, ...args: unknown[]): Promise<void>;
+    /** Run `name` on every connected GM (including self if GM). */
+    executeForAllGMs(name: string, ...args: unknown[]): Promise<void>;
+    /** Run `name` on every connected GM except self. */
+    executeForOtherGMs(name: string, ...args: unknown[]): Promise<void>;
+    /** Run `name` on a specified list of users. */
+    executeForUsers(name: string, recipients: string[], ...args: unknown[]): Promise<void>;
+}
+
+declare const socketlib:
     | {
-          register(
-              moduleId: string,
-              target: string,
-              fn: (this: unknown, wrapped: (...args: unknown[]) => unknown, ...args: unknown[]) => unknown,
-              type?: "WRAPPER" | "MIXED" | "OVERRIDE",
-          ): void;
-          unregister(moduleId: string, target: string): void;
+          registerModule(moduleId: string): SocketlibSocket;
+          registerSystem(systemId: string): SocketlibSocket;
       }
     | undefined;
 
-// ── aeris-bg3-rolls public API ────────────────────────────────────────────────
+// ── Roll metadata (used by the cinematic overlay) ─────────────────────────────
 
-declare interface AerisBG3RollsAPI {
-    /**
-     * Request a coordinated group roll.
-     * This is the only API officially documented in the aeris-bg3-rolls README.
-     */
-    requestGroupRoll(config: GroupRollConfig): void;
-
-    /**
-     * Register a system-specific roll parser.
-     * May not exist depending on aeris-bg3-rolls version — check before calling.
-     */
-    registerParser?(systemId: string, parser: RollParserFn): void;
-}
-
-/** Metadata returned by a roll parser so the orchestrator knows what to display */
+/** Metadata returned by the T20 parser so the overlay knows what to display */
 declare interface RollMeta {
     /** Primary label shown in the overlay (e.g. "Fortitude", "Teste de Percepção") */
     category: string;
@@ -301,15 +299,6 @@ declare interface RollMeta {
     target?: number;
     /** "advantage" | "disadvantage" | undefined */
     rollType?: string;
-}
-
-declare type RollParserFn = (input: { flavor?: string; html?: JQuery }) => RollMeta | null;
-
-declare interface GroupRollConfig {
-    key: string;
-    title?: string;
-    dc?: number;
-    actors?: string[];
 }
 
 // ── Foundry CONFIG (partial — only what this module uses) ────────────────────

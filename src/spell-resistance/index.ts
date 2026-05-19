@@ -1,16 +1,22 @@
 import { MODULE_ID } from "@/constants";
 import { computeSkillTotal } from "@/hidden-test/skills";
 import { getAuraAntimagiaContextForActor } from "@/area-spells/aura-sagrada";
+import { getSocket, onSocketReady } from "@/socket";
 import {
     getActivatableItems,
     type ActivatableItem,
 } from "@/hidden-test/HiddenTestPlayerDialog";
 import type {
     SpellResistPreRollRequest,
-    SpellResistSocketData,
     ResistSkill,
     ResistOutcome,
 } from "./types";
+
+// ── socketlib handler names ──────────────────────────────────────────────────
+
+const SOCKET_PRE_ROLL    = "spell-resist/preroll";
+const SOCKET_AUTO_APPLY  = "spell-resist/auto-apply-buff";
+const SOCKET_PURIFY      = "spell-resist/purification";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -535,7 +541,7 @@ export async function autoApplyBuffEffects(
         effectGroups,
         targetUuids,
     };
-    game.socket?.emit(`module.${MODULE_ID}`, req);
+    void getSocket()?.executeAsGM(SOCKET_AUTO_APPLY, req);
     ui.notifications?.info(`Buff auto-aplicado via GM em ${targets.length} alvo(s)`);
 }
 
@@ -670,7 +676,7 @@ async function handlePurification(_message: ChatMessage, casterName: string): Pr
             effectNames: matches.map(m => m.name),
         })),
     };
-    game.socket?.emit(`module.${MODULE_ID}`, req);
+    void getSocket()?.executeAsGM(SOCKET_PURIFY, req);
     const totalCond = targetsWithMatches.reduce((s, t) => s + t.matches.length, 0);
     ui.notifications?.info(`Purificação: ${totalCond} condição(ões) enviada(s) ao GM para remoção`);
 }
@@ -1445,16 +1451,19 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 // ── Socket ────────────────────────────────────────────────────────────────────
 
 function setupSocket(): void {
-    game.socket?.on(`module.${MODULE_ID}`, (raw: unknown) => {
-        const data = raw as SpellResistSocketData;
-        if (data?.type === "spell-resist-preroll") {
-            if (data.targetUserId !== game.user?.id) return;
-            openUnifiedSpellModal(data);
-        } else if (data?.type === "auto-apply-buff") {
-            void handleAutoApplyBuffSocket(data);
-        } else if (data?.type === "purification") {
-            void handlePurificationSocket(data);
-        }
+    onSocketReady((socket) => {
+        // Target-side: open the unified resist modal. socketlib already
+        // routes via executeAsUser so no targetUserId filtering needed.
+        socket.register(SOCKET_PRE_ROLL, (...args: unknown[]) => {
+            openUnifiedSpellModal(args[0] as SpellResistPreRollRequest);
+        });
+        // GM-side: apply buffs / purify conditions on behalf of a player.
+        socket.register(SOCKET_AUTO_APPLY, (...args: unknown[]) => {
+            void handleAutoApplyBuffSocket(args[0] as import("./types").AutoApplyBuffRequest);
+        });
+        socket.register(SOCKET_PURIFY, (...args: unknown[]) => {
+            void handlePurificationSocket(args[0] as import("./types").PurificationRequest);
+        });
     });
 }
 
@@ -1646,7 +1655,7 @@ async function processSpellMessage(message: ChatMessage): Promise<void> {
         if (targetUserId === game.user?.id) {
             openUnifiedSpellModal(preReq);
         } else {
-            game.socket?.emit(`module.${MODULE_ID}`, preReq);
+            void getSocket()?.executeAsUser(SOCKET_PRE_ROLL, targetUserId, preReq);
         }
     }
 }

@@ -73,9 +73,10 @@ Version scheme: `MAJOR.MINOR.PATCH`
 ```
 src/
   main.ts                      — Hooks init/setup/ready; registers all sub-systems
-  constants.ts                 — MODULE_ID, SYSTEM_ID, hook name strings
-  types/global.d.ts            — Minimal ambient Foundry types (incl. CONFIG, toggleStatusEffect)
+  constants.ts                 — MODULE_ID, SYSTEM_ID
+  types/global.d.ts            — Minimal ambient Foundry types (incl. CONFIG, toggleStatusEffect, socketlib)
   utils/logging.ts             — log() / warn() helpers prefixed with [MODULE_ID]
+  socket/index.ts              — socketlib bootstrap (registers module on socketlib.ready, exposes getSocket / onSocketReady)
   parser/t20.ts                — parseT20(): flavor string → RollMeta | null
   integration/index.ts         — createChatMessage hook → overlay
   overlay/BG3Overlay.ts        — Full-screen cinematic overlay singleton
@@ -486,20 +487,33 @@ roll.options.type; // "attack"|"damage"|"initiative"|"skill"|"save"
 
 ---
 
-## Socket Pattern
+## Socket Pattern (socketlib, v1.13.0+)
+
+All cross-client coordination goes through [socketlib](https://foundryvtt.com/packages/socketlib) — a hard `requires` dependency. The central bootstrap lives in `src/socket/index.ts` and is invoked from `Hooks.once("init")` in `main.ts`.
 
 ```typescript
-// Sender
-game.socket?.emit(`module.${MODULE_ID}`, payload);
+import { getSocket, onSocketReady } from "@/socket";
 
-// Receiver
-game.socket?.on(`module.${MODULE_ID}`, (raw) => {
-  if (raw.targetUserId !== game.user?.id) return;
-  // handle
+// 1. Register a handler in your subsystem's setup() (queued until socketlib.ready)
+onSocketReady((socket) => {
+    socket.register("auto-damage/request", (req) => openDamagePrompt(req));
 });
+
+// 2. Invoke remotely (target a specific user — socketlib does the routing)
+await getSocket()?.executeAsUser("auto-damage/request", targetUserId, payload);
+
+// 3. GM-only work (one active GM runs it — no isActiveGM() dedup needed)
+await getSocket()?.executeAsGM("spell-resist/auto-apply-buff", req);
 ```
 
-**GM routing:** (1) online non-GM player owning target (`ownership >= 3`) → (2) active GM who is NOT the sender → (3) any active GM.
+**Handler name convention:** `<feature>/<action>` (e.g. `auto-damage/request`, `spell-resist/preroll`). Names are module-scoped so collisions don't happen across modules.
+
+**Why not raw `game.socket.emit`?**
+- No more manual `if (data.targetUserId !== game.user.id) return` filtering.
+- `executeAsGM` already picks one GM — eliminates the `isActiveGM()` (lowest sorted userId) dedup pattern for socket-mediated work. (Hook-based dedup like Consagrar/Aura still needs `isActiveGM()`.)
+- Handlers can `return` values and `await` them on the caller side.
+
+**GM routing for damage prompts:** unchanged — (1) online non-GM player owning target (`ownership >= 3`) → (2) any active GM. Computed in each feature (`getTargetUserId` in spell-resistance, `findActiveGM` in auto-damage).
 
 **Warning:** `game.user.targets` must be populated before `createChatMessage` fires. If empty, show `ui.notifications.warn`.
 

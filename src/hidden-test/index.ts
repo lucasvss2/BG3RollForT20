@@ -1,8 +1,12 @@
 import { MODULE_ID } from "@/constants";
 import { BG3Overlay } from "@/overlay/BG3Overlay";
+import { onSocketReady } from "@/socket";
 import { openHiddenTestGMDialog } from "./HiddenTestGMDialog";
 import { openHiddenTestPlayerDialog } from "./HiddenTestPlayerDialog";
-import type { HiddenTestFlag, HiddenTestRequest, HiddenTestSocketData } from "./types";
+import type { HiddenTestFlag, HiddenTestRequest } from "./types";
+
+/** Name used to register the player-side dialog handler on socketlib. */
+export const SOCKET_HIDDEN_TEST_REQUEST = "hidden-test/request";
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
@@ -291,12 +295,14 @@ function ensureHiddenTestStyles(): void {
 // ── Socket handler ────────────────────────────────────────────────────────────
 
 function setupSocket(): void {
-    game.socket?.on(`module.${MODULE_ID}`, (raw: unknown) => {
-        const data = raw as HiddenTestSocketData;
-        if (data?.type !== "hidden-test-request") return;
-        const req = data as HiddenTestRequest;
-        if (req.targetUserId !== game.user?.id) return;
-        openHiddenTestPlayerDialog(req);
+    onSocketReady((socket) => {
+        socket.register(SOCKET_HIDDEN_TEST_REQUEST, (...args: unknown[]) => {
+            const req = args[0] as HiddenTestRequest;
+            // socketlib's executeAsUser already targets a single user — no
+            // need to filter by targetUserId here. Keep the field on the
+            // payload for chat/debug context.
+            openHiddenTestPlayerDialog(req);
+        });
     });
 }
 

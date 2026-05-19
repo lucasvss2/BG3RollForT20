@@ -1,4 +1,5 @@
-import { MODULE_ID } from "@/constants";
+import { getSocket } from "@/socket";
+import { SOCKET_HIDDEN_TEST_REQUEST } from "./index";
 import { T20_SKILLS } from "./skills";
 import type { HiddenTestRequest } from "./types";
 
@@ -102,6 +103,14 @@ export function openHiddenTestGMDialog(): void {
                             return;
                         }
 
+                        const socket = getSocket();
+                        if (!socket) {
+                            ui.notifications.error(
+                                "socketlib não está pronto — recarregue a página.",
+                            );
+                            return;
+                        }
+
                         for (const el of checked) {
                             const actorId  = (el as HTMLElement).dataset["actorId"]  ?? "";
                             const userId   = (el as HTMLElement).dataset["userId"]   ?? "";
@@ -117,7 +126,11 @@ export function openHiddenTestGMDialog(): void {
                                 dc,
                                 gmBonus,
                             };
-                            game.socket?.emit(`module.${MODULE_ID}`, payload);
+                            void socket.executeAsUser(
+                                SOCKET_HIDDEN_TEST_REQUEST,
+                                userId,
+                                payload,
+                            );
                         }
 
                         const n = checked.length;
