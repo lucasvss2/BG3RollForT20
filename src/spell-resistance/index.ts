@@ -344,6 +344,39 @@ const SPELL_RESIST_STYLES = `
 }
 .smf-cond-apply-btn:hover { background: rgba(138,180,232,0.2); }
 
+/* ── Collapse toggle ─────────────────────────────────────────────────────── */
+
+.smf-section-title { cursor: pointer; }
+.smf-collapse-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #8a7450;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 0.7rem;
+    line-height: 1;
+    flex: 0 0 auto;
+    transition: color 0.15s;
+}
+.smf-collapse-btn > i { display: inline-block; transition: transform 0.2s; }
+.smf-collapse-btn:hover { color: #c8a96e; }
+.smf-section.smf-collapsed > .smf-section-body { display: none; }
+.smf-section.smf-collapsed .smf-collapse-btn > i { transform: rotate(-90deg); }
+.smf-sub-section-title {
+    color: #8a7450;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 6px 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0.8;
+}
+.smf-sub-section-title i { color: #8ab4e8; }
+
 /* ── Dialog footer ───────────────────────────────────────────────────────── */
 
 .smf-dialog .dialog-buttons,
@@ -929,9 +962,12 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         <div class="smf-section-title">
             <i class="fas fa-shield-halved"></i>
             RESISTÊNCIA${skillKey ? ` — ${esc(skillLabel.toUpperCase())} (CD ${preReq.cd})` : ""}
+            <button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button>
         </div>
-        ${antimagiaBadgeHtml}
-        ${resistBodyHtml}
+        <div class="smf-section-body">
+            ${antimagiaBadgeHtml}
+            ${resistBodyHtml}
+        </div>
     `;
 
     // ── Seção 2: Dano / Cura ──────────────────────────────────────────────────
@@ -951,10 +987,11 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         const halfHeal = Math.floor(preReq.damageTotal / 2);
         const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
         const healHeaderHtml = preReq.truqueAtivo
-            ? `<div class="smf-section-title"><i class="fas fa-bolt"></i> TRUQUE — DANO DE LUZ</div>`
-            : `<div class="smf-section-title"><i class="fas fa-heart"></i> CURA</div>`;
+            ? `<div class="smf-section-title"><i class="fas fa-bolt"></i> TRUQUE — DANO DE LUZ<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>`
+            : `<div class="smf-section-title"><i class="fas fa-heart"></i> CURA<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>`;
         damageSectionHtml = `
             ${healHeaderHtml}
+            <div class="smf-section-body">
             <div class="smf-heal-number" id="smf-heal-number">${preReq.damageTotal}</div>
             ${consagrarHtml}
             <label class="smf-undead-label" title="Magia de cura causa dano sagrado em mortos-vivos. O alvo rola Vontade ${cdLabel} — passa: metade do dano.">
@@ -992,10 +1029,12 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                 </div>
                 <div class="smf-feedback" id="smf-undead-feedback"></div>
             </div>
+            </div>
         `;
     } else if (!preReq.isHeal && preReq.damageTotal > 0) {
         damageSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO</div>
+            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>
+            <div class="smf-section-body">
             <div class="smf-dmg-number">${preReq.damageTotal}</div>
             <div class="smf-dmg-btns">
                 <button class="smf-dmg-btn" data-dmg="${preReq.damageTotal}" id="smf-dmg-full">
@@ -1009,11 +1048,14 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                 </button>
             </div>
             <div class="smf-feedback" id="smf-dmg-feedback"></div>
+            </div>
         `;
     } else {
         damageSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO / CURA</div>
+            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO / CURA<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>
+            <div class="smf-section-body">
             <div class="smf-na-text">Sem dano ou cura direto para esta magia.</div>
+            </div>
         `;
     }
 
@@ -1040,13 +1082,13 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
             return `<button class="smf-buff-btn" data-effect-index="${i}">${iconPart} ${esc(name)}</button>`;
         }).join("");
         buffSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-wand-magic-sparkles"></i> EFEITOS / BUFF</div>
+            <div class="smf-sub-section-title"><i class="fas fa-wand-magic-sparkles"></i> EFEITOS / BUFF</div>
             <div class="smf-buff-btns">${btns}</div>
             <div class="smf-feedback" id="smf-buff-feedback"></div>
         `;
     } else {
         buffSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-wand-magic-sparkles"></i> EFEITOS / BUFF</div>
+            <div class="smf-sub-section-title"><i class="fas fa-wand-magic-sparkles"></i> EFEITOS / BUFF</div>
             <div class="smf-na-text">Sem efeitos de buff nesta mensagem de chat.</div>
         `;
     }
@@ -1075,7 +1117,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
     }).join("");
 
     const condSectionHtml = `
-        <div class="smf-section-title"><i class="fas fa-list-check"></i> CONDIÇÕES</div>
+        <div class="smf-sub-section-title"><i class="fas fa-list-check"></i> CONDIÇÕES</div>
         <input type="text" class="smf-cond-filter" id="smf-cond-filter" placeholder="Filtrar condições..." autocomplete="off" />
         <div class="smf-cond-grid">${condItemsHtml}</div>
         <button class="smf-cond-apply-btn" id="smf-cond-apply">
@@ -1089,9 +1131,17 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
     const buffAndCondHtml = preReq.isHeal ? "" : `
             <div class="smf-divider"></div>
-            <div class="smf-section">${buffSectionHtml}</div>
-            <div class="smf-divider"></div>
-            <div class="smf-section">${condSectionHtml}</div>
+            <div class="smf-section" id="smf-sect-effects">
+                <div class="smf-section-title">
+                    <i class="fas fa-sparkles"></i> EFEITOS / CONDIÇÕES
+                    <button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button>
+                </div>
+                <div class="smf-section-body">
+                    ${buffSectionHtml}
+                    <div class="smf-divider" style="margin: 8px -14px;"></div>
+                    ${condSectionHtml}
+                </div>
+            </div>
     `;
 
     const content = `
@@ -1125,6 +1175,16 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
             },
             default: "finalize",
             render: ($html: JQuery) => {
+
+                // ── Collapse sections ─────────────────────────────────────────
+                // Apenas títulos com chevron filho são clicáveis para colapsar.
+                // Isso evita que sub-títulos internos (ex.: "DANO SAGRADO"
+                // dentro da seção de CURA) disparem o toggle da seção pai.
+                $html.find(".smf-section-title").filter(function () {
+                    return $(this).children(".smf-collapse-btn").length > 0;
+                }).on("click", function () {
+                    $(this).closest(".smf-section").toggleClass("smf-collapsed");
+                });
 
                 // ── PM total ──────────────────────────────────────────────────
                 $html.find(".smf-power-check").on("change", () => {
