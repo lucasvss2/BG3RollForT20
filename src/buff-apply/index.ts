@@ -21,18 +21,11 @@
  */
 
 import { MODULE_ID } from "@/constants";
-import { autoApplyBuffEffects, extractItemId } from "@/spell-resistance/index";
+import { autoApplyBuffEffects, extractItemId, getMsgAuthorId } from "@/spell-resistance/index";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const SPELL_TIPOS = ["arc", "div", "uni"] as const;
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getMsgAuthorId(message: ChatMessage): string {
-    const m = message as unknown as { author?: { id: string }; user?: { id: string } | string };
-    return m.author?.id ?? (typeof m.user === "object" ? m.user?.id : m.user) ?? "";
-}
 
 // ── Lógica principal ──────────────────────────────────────────────────────────
 

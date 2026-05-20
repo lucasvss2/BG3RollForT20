@@ -39,7 +39,3 @@ export interface AttackMissNotify {
     targetDef: number;
 }
 
-export type AutoDamageSocketData =
-    | AutoDamageRequest
-    | AttackRerollRequest
-    | AttackMissNotify;

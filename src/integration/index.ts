@@ -56,25 +56,10 @@ function installOverlayHook(): void {
 
 /**
  * Extract Roll objects from a ChatMessage.
- * ChatMessageTormenta20 uses the standard Foundry rolls field, but we also
- * check the raw _source in case the getter fails.
+ * In Foundry v13, message.rolls already contains deserialized Roll instances.
  */
 function getRolls(message: ChatMessage): Roll[] {
-    // Standard path
-    if (message.rolls?.length) return message.rolls;
-
-    // Fallback: access _source directly (Foundry internal, but reliable)
-    const raw = (message as unknown as Record<string, unknown>);
-    const src = raw["_source"] as Record<string, unknown> | undefined;
-    const srcRolls = src?.["rolls"];
-    if (Array.isArray(srcRolls) && srcRolls.length > 0) {
-        try {
-            const deserialized = (srcRolls as unknown[]).map((r) => Roll.fromData(r as Record<string, unknown>));
-            if (deserialized.length) return deserialized;
-        } catch { /* ignore deserialization errors */ }
-    }
-
-    return [];
+    return message.rolls ?? [];
 }
 
 // ── Flavor text resolution ────────────────────────────────────────────────────

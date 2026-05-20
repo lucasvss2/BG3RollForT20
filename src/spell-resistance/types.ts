@@ -147,8 +147,3 @@ export interface PurificationRequest {
     targets: { actorUuid: string; effectIds: string[]; effectNames: string[] }[];
 }
 
-export type SpellResistSocketData =
-    | SpellResistPreRollRequest
-    | SpellResistRequest
-    | AutoApplyBuffRequest
-    | PurificationRequest;

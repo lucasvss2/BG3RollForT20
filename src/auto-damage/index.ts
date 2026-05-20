@@ -4,6 +4,7 @@ import {
     getAuraInvencibilidadeContextForActor,
     markAuraInvencibilidadeUsed,
 } from "@/area-spells/aura-sagrada";
+import { getMsgAuthorId } from "@/spell-resistance/index";
 
 // ── socketlib handler names ──────────────────────────────────────────────────
 
@@ -182,11 +183,6 @@ function ensureStyles(): void {
 
 function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function getMsgAuthorId(message: ChatMessage): string {
-    const m = message as unknown as { author?: { id: string }; user?: { id: string } | string };
-    return m.author?.id ?? (typeof m.user === "object" ? m.user?.id : m.user) ?? "";
 }
 
 function findPlayerOwner(actor: FoundryActor): FoundryUser | undefined {

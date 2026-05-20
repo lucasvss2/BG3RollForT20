@@ -315,25 +315,14 @@ function setupChatHook(): void {
         const flag = message.getFlag(MODULE_ID, "hiddenTest") as HiddenTestFlag | undefined;
         if (!flag) return;
 
-        // In Foundry v13, message.rolls contains deserialized Roll instances;
-        // _source.rolls stores them as JSON strings and is unreliable — always use message.rolls.
+        // In Foundry v13, message.rolls contains deserialized Roll instances.
         const rolls = message.rolls as Roll[] | undefined;
         if (!rolls?.length) return;
 
-        let roll: Roll | null = null;
-        if (rolls[0] instanceof Roll) {
-            roll = rolls[0];
-        } else {
-            try {
-                const data = typeof rolls[0] === "string"
-                    ? (JSON.parse(rolls[0] as unknown as string) as Record<string, unknown>)
-                    : (rolls[0] as unknown as Record<string, unknown>);
-                roll = Roll.fromData(data);
-            } catch { return; }
-        }
+        const roll = rolls[0];
 
         const meta = { category: `Teste de ${flag.skillLabel}` };
-        setTimeout(() => BG3Overlay.show(meta, roll!, flag.outcome), 1000);
+        setTimeout(() => BG3Overlay.show(meta, roll, flag.outcome), 1000);
     });
 }
 

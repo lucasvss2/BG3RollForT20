@@ -15,5 +15,3 @@ export function setupTheme(): void {
     el.textContent = THEME_CSS;
     document.head.appendChild(el);
 }
-
-export { COLORS } from "./tokens";
