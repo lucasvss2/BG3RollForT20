@@ -2051,6 +2051,34 @@ function enhanceSheet(root: HTMLElement): void {
     injectTraitSections(root);
     injectCollapsibles(root);
     adjustNameFontSize(root);
+    fixBrokenPericiaLabels(root);
+}
+
+/**
+ * NPCs (ameaças) tipicamente têm slots de perícias customizadas
+ * (Ofício "ofiN", Profissão "_pcN", etc.) cujo `label` fica vazio ou
+ * com o próprio `key` ("ofi0", "_pc0") quando o GM não preenche.
+ * T20 system renderiza o key bruto como nome — visual quebrado.
+ *
+ * Aqui detectamos rows da skills tab cujo nome bate com o padrão
+ * de "key bruta de perícia customizada" e:
+ *   • escondemos a row se o label nunca foi preenchido (sem dados úteis)
+ *   • mantemos visíveis as que TÊM label válido (ex: "Alquimista")
+ */
+function fixBrokenPericiaLabels(root: HTMLElement): void {
+    const rawKeyRe = /^(?:ofi|_pc|prof)\d+$/i;
+    root.querySelectorAll<HTMLElement>(".skill.flexrow").forEach(row => {
+        const itemId = row.dataset["itemId"];
+        if (!itemId || !rawKeyRe.test(itemId)) return;
+        const nameDiv = row.querySelector(".item-name");
+        const text = nameDiv?.textContent?.trim().replace(/\s+/g, " ") ?? "";
+        // Limpa marcadores trailing (*/+) pra comparação
+        const stripped = text.replace(/[+*\s]+$/, "");
+        if (stripped !== itemId) return;
+        // Label nunca foi preenchido — esconder a row para não poluir a UI
+        row.classList.add("t20-pericia-broken");
+        row.style.setProperty("display", "none", "important");
+    });
 }
 
 // ── Auto-apply per-item toggle buttons (GM only) ─────────────────────────────
