@@ -5,3 +5,4 @@ dist/
 pnpm-lock.yaml
 package-lock.json
 .claude/
+public/preview/chat-demo-built.html
