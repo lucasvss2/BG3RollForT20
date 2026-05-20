@@ -907,10 +907,39 @@ export function setupBolaDeFogo(): void {
         void dispatchExplosion(tplDoc);
     });
 
-    // 4. createToken — refresh skills menu (esfera-token criada)
+    // 4. createToken — refresh skills menu + concede OWNER (3) ao caster.
+    //    Player não tem permissão pra setar ownership ao criar token, então
+    //    Foundry ignora silenciosamente o campo `ownership` que passamos em
+    //    placeEsfera. Resultado: token nasce com ownership:{} e o player não
+    //    consegue arrastar (server rejeita updates). Aqui, no cliente do
+    //    GM-ativo, fazemos um update pra granti'r OWNER ao casterUserId.
     Hooks.on("createToken", (...args: unknown[]) => {
-        const tokDoc = args[0] as { flags?: Record<string, Record<string, unknown>> };
-        if (tokDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
+        const tokDoc = args[0] as {
+            id: string;
+            flags?: Record<string, Record<string, unknown>>;
+            ownership?: Record<string, number>;
+            update(data: Record<string, unknown>): Promise<unknown>;
+        };
+        const flags = tokDoc.flags?.[MODULE_ID];
+        if (flags?.[FLAG_SPELL] !== ESFERA_KEY) {
+            refreshSkillsMenu();
+            return;
+        }
+        refreshSkillsMenu();
+
+        if (!isActiveGM()) return;
+        const casterUid = flags["casterUserId"] as string | undefined;
+        if (!casterUid) return;
+        const own = (tokDoc.ownership as Record<string, number> | undefined) ?? {};
+        if (own[casterUid] === 3) return;
+
+        void (async () => {
+            try {
+                await tokDoc.update({ [`ownership.${casterUid}`]: 3 });
+            } catch (err) {
+                console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao conceder OWNER da esfera ao caster (${casterUid}):`, err);
+            }
+        })();
     });
 
     // 5. updateToken — esfera-token moveu (x/y mudou) → aplica dano em TODOS
