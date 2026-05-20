@@ -2052,6 +2052,7 @@ function enhanceSheet(root: HTMLElement): void {
     injectCollapsibles(root);
     adjustNameFontSize(root);
     fixBrokenPericiaLabels(root);
+    sortPericiaRows(root);
 }
 
 /**
@@ -2079,6 +2080,35 @@ function fixBrokenPericiaLabels(root: HTMLElement): void {
         row.classList.add("t20-pericia-broken");
         row.style.setProperty("display", "none", "important");
     });
+}
+
+/**
+ * T20's NPC template appends custom pericias (Ofícios, etc.) at the end of the
+ * skills list instead of ordering them alphabetically. This reorders all rows
+ * so they match the alphabetical layout players see on the character sheet.
+ *
+ * Safe for PC sheets too (already sorted — appending in same order is a no-op).
+ */
+function sortPericiaRows(root: HTMLElement): void {
+    const skillsList = root.querySelector<HTMLUListElement>("ul.skills-list");
+    if (!skillsList) return;
+
+    const rows = Array.from(
+        skillsList.querySelectorAll<HTMLElement>(".skill.flexrow:not(.item-header)")
+    );
+    if (rows.length < 2) return;
+
+    const getLabel = (el: HTMLElement): string => {
+        const txt = el.querySelector(".item-name")?.textContent ?? "";
+        // Strip *, +, whitespace; lowercase for stable sort
+        return txt.replace(/[*+\s]+/g, " ").trim().toLowerCase();
+    };
+
+    rows.sort((a, b) => getLabel(a).localeCompare(getLabel(b), "pt-BR"));
+
+    // Re-append rows in sorted order; the header (.item-header) stays first
+    // because we never move it.
+    rows.forEach(row => skillsList.appendChild(row));
 }
 
 // ── Auto-apply per-item toggle buttons (GM only) ─────────────────────────────

@@ -571,52 +571,8 @@ function setupCreateChatHook(): void {
         const attackerName  = message.speaker?.alias ?? "Atacante";
         const rollLabel     = message.flavor || "Ataque";
 
-        // ── GM path ───────────────────────────────────────────────────────────
-        // If the current user is a GM with T-targeted tokens, handle damage
-        // directly — regardless of who authored the attack message.
-        // This covers the common case where the GM marks enemies as targets
-        // while a player (or another GM) rolls the attack.
-        if (game.user?.isGM) {
-            const gmTargets = game.user.targets;
-            if (gmTargets?.size) {
-                for (const token of gmTargets) {
-                    const targetActor = token.actor;
-                    if (!targetActor) continue;
-
-                    const targetDef = getDef(targetActor);
-
-                    if (attackTotal < targetDef) {
-                        ui.notifications.info(
-                            `${attackerName} errou ${targetActor.name}! (${attackTotal} vs DEF ${targetDef})`,
-                        );
-                        continue;
-                    }
-
-                    const payload: AutoDamageRequest = {
-                        type:          "auto-damage-request",
-                        requestId:     randomID(),
-                        targetUserId:  game.user.id,   // open directly on this GM's client
-                        attackerUserId: getMsgAuthorId(message),
-                        targetActorId: targetActor.id,
-                        targetTokenId: token.id,
-                        attackerName,
-                        rollLabel,
-                        attackTotal,
-                        targetDef,
-                        damageTotal,
-                        attackFormula,
-                        damageFormula,
-                    };
-                    openDamagePrompt(payload);
-                }
-                return; // GM handled it — skip player path below
-            }
-        }
-
-        // ── Player/author path ────────────────────────────────────────────────
-        // When the GM has no T-targets, fall back to the original behaviour:
-        // only the message author triggers this path and sends the prompt via
-        // socket to whoever owns the target (or to the active GM for NPCs).
+        // ── Apenas o autor da mensagem processa (usa os targets de quem lançou) ──
+        // Garante que o GM com T em algum token não interfere no roll do jogador.
         if (getMsgAuthorId(message) !== game.user?.id) return;
 
         const targets = game.user?.targets;
