@@ -41,35 +41,76 @@ interface T20PericiaData {
     outros?: number;
     condi?: number;
     label?: string;
+    treinado?: boolean;
+    treino?: number;
+}
+
+export interface SkillBreakdown {
+    total:      number;
+    halfLevel:  number;
+    treino:     number;
+    attrMod:    number;
+    attrKey:    string | null;
+    outros:     number;
+    condi:      number;
+    fromValue:  boolean;       // true se pegamos direto do .value (T20 já preparou)
+    raw:        T20PericiaData;
 }
 
 /**
- * Compute the total skill bonus for an actor.
- * T20's prepareDerivedData writes the full computed total (halfLevel + training +
- * attrMod) back into pericias[key].value for trained skills. Do NOT add the
- * attribute modifier again — that causes double-counting.
- * For untrained skills (value === 0) fall back to attrMod + halfLevel.
+ * Calcula o bônus total da perícia.
+ *
+ * IMPORTANTE: T20's prepareDerivedData computa o total da perícia em
+ * pericias[key].value para AMBOS PCs e NPCs — esse valor JÁ contém:
+ *   halfLevel + treino + attrMod + outros + condi
+ * Adicionar outros/condi de novo causava double-counting (bug v1.18.x):
+ *   ex.: Lich refl real=20 → modal mostrava 32 porque outros+condi=12 era somado.
+ *
+ * Para untrained skills sem value definido (skill ausente do statblock do NPC,
+ * por exemplo), fazemos um fallback computando manualmente.
  */
 export function computeSkillTotal(actor: FoundryActor, skillKey: string): number {
+    return computeSkillBreakdown(actor, skillKey).total;
+}
+
+export function computeSkillBreakdown(actor: FoundryActor, skillKey: string): SkillBreakdown {
     const pericias = actor.system?.pericias as Record<string, T20PericiaData> | undefined;
-    if (!pericias) return 0;
+    const empty: SkillBreakdown = {
+        total: 0, halfLevel: 0, treino: 0, attrMod: 0, attrKey: null,
+        outros: 0, condi: 0, fromValue: false,
+        raw: { value: 0, outros: 0, condi: 0 },
+    };
+    if (!pericias) return empty;
 
     const skill = pericias[skillKey];
-    if (!skill) return 0;
+    if (!skill) return empty;
 
-    const base = skill.value ?? 0;
-    const outros = skill.outros ?? 0;
-    const condi = skill.condi ?? 0;
+    const atributos = actor.system?.atributos as Record<string, { value?: number }> | undefined;
+    const attrKey   = skill.atributo ?? null;
+    const attrMod   = attrKey ? (atributos?.[attrKey]?.value ?? 0) : 0;
+    const nivel     = actor.system?.nivel?.value ?? 0;
+    const halfLevel = Math.floor(nivel / 2);
+    const treino    = typeof skill.treino === "number" ? skill.treino : 0;
+    const outros    = skill.outros ?? 0;
+    const condi     = skill.condi ?? 0;
+    const value     = skill.value ?? 0;
 
-    if (base !== 0) {
-        // value already contains halfLevel + training + attrMod
-        return base + outros + condi;
+    if (value !== 0) {
+        // T20 já consolidou tudo em .value — usar como total final.
+        return {
+            total: value,
+            halfLevel, treino, attrMod, attrKey,
+            outros, condi,
+            fromValue: true,
+            raw: skill,
+        };
     }
 
-    // Untrained: compute from parts
-    const atributos = actor.system?.atributos as Record<string, { value?: number }> | undefined;
-    const attrMod = skill.atributo ? (atributos?.[skill.atributo]?.value ?? 0) : 0;
-    const nivel = actor.system?.nivel?.value ?? 0;
-    const halfLevel = Math.floor(nivel / 2);
-    return attrMod + halfLevel + outros + condi;
+    // Untrained / sem valor preparado — fallback de soma manual.
+    const total = halfLevel + treino + attrMod + outros + condi;
+    return {
+        total, halfLevel, treino, attrMod, attrKey, outros, condi,
+        fromValue: false,
+        raw: skill,
+    };
 }

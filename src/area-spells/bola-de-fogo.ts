@@ -546,7 +546,7 @@ async function applyEsferaDamage(esferaTokenDoc: {
     id: string; uuid: string; x: number; y: number; width: number; height: number;
     flags?: Record<string, Record<string, unknown>>;
     update(data: Record<string, unknown>): Promise<unknown>;
-}, trigger: "turn-start" | "moved", affectedTokens?: FoundryToken[]): Promise<void> {
+}, trigger: "turn-start" | "moved" | "placed", affectedTokens?: FoundryToken[]): Promise<void> {
     const flags = esferaTokenDoc.flags?.[MODULE_ID];
     if (!flags || flags[FLAG_SPELL] !== ESFERA_KEY) return;
 
@@ -647,16 +647,17 @@ async function applyEsferaDamage(esferaTokenDoc: {
 
 async function postEsferaSummaryCard(
     casterName: string,
-    trigger: "turn-start" | "moved",
+    trigger: "turn-start" | "moved" | "placed",
     dmgRoll: Roll,
     _damageTotal: number,
     cd: number,
     targetNames: string[],
 ): Promise<void> {
     const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const triggerLabel = trigger === "turn-start"
-        ? "Início do turno do conjurador"
-        : "Movimento da esfera";
+    const triggerLabel =
+        trigger === "turn-start" ? "Início do turno do conjurador" :
+        trigger === "placed"     ? "Esfera invocada sobre a criatura" :
+                                   "Movimento da esfera";
     const targetsHtml = targetNames.map(n =>
         `<span style="display:inline-block; padding:2px 8px; margin:2px; background:rgba(204,68,68,0.12); border:1px solid rgba(204,68,68,0.35); border-radius:3px; color:#e8d8a8; font-size:0.82rem;">${esc(n)}</span>`
     ).join("");
@@ -929,16 +930,30 @@ export function setupBolaDeFogo(): void {
 
         if (!isActiveGM()) return;
         const casterUid = flags["casterUserId"] as string | undefined;
-        if (!casterUid) return;
         const own = (tokDoc.ownership as Record<string, number> | undefined) ?? {};
-        if (own[casterUid] === 3) return;
 
         void (async () => {
-            try {
-                await tokDoc.update({ [`ownership.${casterUid}`]: 3 });
-            } catch (err) {
-                console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao conceder OWNER da esfera ao caster (${casterUid}):`, err);
+            // (a) Concede OWNER ao caster se faltar — players não conseguem
+            // setar ownership ao criar token, então fazemos server-side.
+            if (casterUid && own[casterUid] !== 3) {
+                try {
+                    await tokDoc.update({ [`ownership.${casterUid}`]: 3 });
+                } catch (err) {
+                    console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao conceder OWNER da esfera ao caster (${casterUid}):`, err);
+                }
             }
+
+            // (b) Dispara dano imediato se a esfera nasce SOBRE uma criatura.
+            // Sem isso, posicionar a esfera no espaço de um alvo não causa
+            // dano até a próxima movimentação. Usa applyEsferaDamage com
+            // trigger="placed" — passa pela mesma lógica de modal-dispatch
+            // e de "1x por rodada" das outras triggers.
+            const tileBoxLike = tokDoc as unknown as {
+                id: string; uuid: string; x: number; y: number; width: number; height: number;
+                flags?: Record<string, Record<string, unknown>>;
+                update(data: Record<string, unknown>): Promise<unknown>;
+            };
+            void applyEsferaDamage(tileBoxLike, "placed");
         })();
     });
 

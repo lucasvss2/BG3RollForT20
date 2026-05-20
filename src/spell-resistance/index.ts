@@ -1,5 +1,5 @@
 import { MODULE_ID } from "@/constants";
-import { computeSkillTotal } from "@/hidden-test/skills";
+import { computeSkillTotal, computeSkillBreakdown } from "@/hidden-test/skills";
 import { getAuraAntimagiaContextForActor } from "@/area-spells/aura-sagrada";
 import { getSocket, onSocketReady } from "@/socket";
 import {
@@ -115,6 +115,15 @@ const SPELL_RESIST_STYLES = `
     color: #6ecf7a;
     font-size: 1.1rem;
     font-weight: 900;
+}
+.smf-bonus-tooltip-host {
+    cursor: help;
+    border-bottom: 1px dotted rgba(110, 207, 122, 0.4);
+}
+.smf-bonus-tooltip-host:hover,
+.smf-bonus-tooltip-host:focus {
+    border-bottom-color: rgba(110, 207, 122, 0.9);
+    outline: none;
 }
 .smf-resist-outcome {
     color: #c8a96e;
@@ -888,8 +897,32 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
     const skillKey   = preReq.resistSkill;
     const skillLabel = skillKey ? SKILL_LABELS[skillKey] : "";
-    const baseBonus  = (targetActor && skillKey) ? computeSkillTotal(targetActor, skillKey) : 0;
+    const breakdown  = (targetActor && skillKey) ? computeSkillBreakdown(targetActor, skillKey) : null;
+    const baseBonus  = breakdown?.total ?? 0;
     const bonusStr   = baseBonus >= 0 ? `+${baseBonus}` : `${baseBonus}`;
+    // Tooltip detalhado: mostra a composição do bônus. Quando T20 já consolidou
+    // em .value (fromValue:true), mostramos os componentes individuais como
+    // "(consolidado pelo sistema)" — não duplicamos a soma.
+    const bonusTooltip = (() => {
+        if (!breakdown) return "";
+        const lines: string[] = [];
+        const fmt = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
+        if (breakdown.fromValue) {
+            lines.push(`Total: ${fmt(breakdown.total)} (consolidado pelo T20)`);
+            if (breakdown.halfLevel) lines.push(`  Meio nível: ${fmt(breakdown.halfLevel)}`);
+            if (breakdown.treino)    lines.push(`  Treino: ${fmt(breakdown.treino)}`);
+            if (breakdown.attrKey)   lines.push(`  ${breakdown.attrKey.toUpperCase()}: ${fmt(breakdown.attrMod)}`);
+            if (breakdown.outros)    lines.push(`  Outros: ${fmt(breakdown.outros)}`);
+            if (breakdown.condi)     lines.push(`  Condição: ${fmt(breakdown.condi)}`);
+        } else {
+            lines.push(`Total: ${fmt(breakdown.total)} (não treinado — soma manual)`);
+            if (breakdown.halfLevel) lines.push(`  Meio nível: ${fmt(breakdown.halfLevel)}`);
+            if (breakdown.attrKey)   lines.push(`  ${breakdown.attrKey.toUpperCase()}: ${fmt(breakdown.attrMod)}`);
+            if (breakdown.outros)    lines.push(`  Outros: ${fmt(breakdown.outros)}`);
+            if (breakdown.condi)     lines.push(`  Condição: ${fmt(breakdown.condi)}`);
+        }
+        return lines.join("\n");
+    })();
     const pmActual   = targetActor?.system?.attributes?.pm?.value ?? 0;
 
     const powers: ActivatableItem[] = (targetActor && skillKey
@@ -938,8 +971,8 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
         resistBodyHtml = `
             <div class="smf-resist-info">
-                <span class="smf-label-sm">BÔNUS BASE</span>
-                <span class="smf-resist-bonus">${bonusStr}</span>
+                <span class="smf-label-sm" title="${esc(bonusTooltip)}">BÔNUS BASE</span>
+                <span class="smf-resist-bonus smf-bonus-tooltip-host" title="${esc(bonusTooltip)}" tabindex="0">${bonusStr}</span>
                 <span class="smf-resist-outcome">${esc(outcomeHint)}</span>
             </div>
             ${powersHtml}
