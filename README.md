@@ -27,34 +27,17 @@ https://raw.githubusercontent.com/lucasvss2/T20ThemeOverhaul/master/module.json
 
 ## Funcionalidades
 
-### Tema visual escuro (BG3-inspired)
+### Tema visual escuro
 
-Redesign completo das fichas do Tormenta20 com paleta escura e dourada inspirada em Baldur's Gate 3.
+Redesign completo das fichas do Tormenta20 com paleta preta e dourada
 
-#### Ficha de Personagem (Jogador)
+#### - Ficha de Personagem (Jogador)
 
-- Fundo escuro em todas as abas com tipografia `Cinzel` nos títulos
-- **Barras de vitalidade** para PV, PM e Defesa com segmentos separados para PV/PM temporários (barra mais escura sobreposta)
-- Inputs e selects com borda dourada sutil e fundo semitransparente
-- Abas estilizadas com destaque ativo dourado
-- Janelas de edição de itens, poderes e magias com tema consistente
+#### - Ficha Ameaça (NPC)
 
-#### Ficha Ameaça (NPC)
+#### - Base (Personagem de suporte)
 
-- Aba de **Inventário**: containers de moeda com fundo escuro (sem pergaminho), separadores de coluna com bordas douradas sutis, headers de seção com gradiente
-- Aba de **Perícias**: linhas uniformemente escuras sem alternância pergaminho/parchment do sistema base
-- Aba de **Efeitos**: botão de criar em linha (`+` e texto lado a lado)
-
-#### Base (Personagem de suporte)
-
-- Header com blocos de atributo (`Segurança`, `Porte`, `Manutenção`) de altura automática — sem corte de conteúdo
-- Separadores do header substituídos por bordas douradas temáticas
-- Botão de criar efeitos em linha
-
-#### Personagem do Mestre (Simple)
-
-- Inventário embutido na aba de atributos: mesmo tratamento visual da ficha de ameaça
-- Botão de criar efeitos em linha
+#### - Personagem do Mestre (Simplificada)
 
 ---
 
@@ -81,7 +64,7 @@ Mensagens de rolagem do T20 recebem um card visual escuro com tipografia `Modest
 
 ---
 
-### Teste Secreto de Perícia
+### Solicitador de Teste de Perícia
 
 O GM pode solicitar um teste a qualquer jogador sem revelar a dificuldade. Suporta múltiplos alvos simultaneamente.
 
@@ -123,15 +106,18 @@ Após um ataque com arma, se o total do ataque superar a DEF do alvo selecionado
 
 **Opções disponíveis:**
 
-| Botão                   | Efeito                                                              |
-| ----------------------- | ------------------------------------------------------------------- |
-| Aplicar Integral        | Aplica todo o dano aos PV (PV temporário é drenado primeiro)        |
-| Aplicar Metade          | Aplica metade do dano (arredondado para baixo)                      |
-| Não Aplicar             | Ignora o dano (PM ainda é descontado se informado)                  |
+| Botão                   | Efeito                                                               |
+| ----------------------- | -------------------------------------------------------------------- |
+| Aplicar Integral        | Aplica todo o dano aos PV (PV temporário é drenado primeiro)         |
+| Aplicar Metade          | Aplica metade do dano (arredondado para baixo)                       |
+| Não Aplicar             | Ignora o dano (PM ainda é descontado se informado)                   |
 | Forçar Rerolar Dano     | Solicita ao atacante que relance a rolagem de dano; novo prompt abre |
 
 **Campo "Custo de Mana (PM)":**  
 Se o defensor usar uma habilidade defensiva com custo de PM, basta digitar o valor no campo — o PM é descontado junto com os PV na mesma ação.
+
+**Campo "RD":**  
+Se o tiver algum tipo de redução de dano pode ser aplicada aqui.
 
 ---
 
@@ -142,21 +128,6 @@ Se o defensor usar uma habilidade defensiva com custo de PM, basta digitar o val
 | [socketlib](https://foundryvtt.com/packages/socketlib) | Obrigatório — RPC GM↔jogador para os sistemas socket  |
 
 Nenhuma outra dependência. O Foundry instala `socketlib` automaticamente ao ativar este módulo.
-
----
-
-## Compatibilidade com módulos de conteúdo
-
-Totalmente compatível com todos os módulos oficiais de conteúdo para Tormenta20:
-
-- [Suplementos de Arton](https://github.com/mobguilherme/Suplementos-de-Arton)
-- [Bestiário de Arton](https://github.com/mobguilherme/Bestiario-de-Arton)
-- [Revista T20 — Duelo de Dragões](https://github.com/mobguilherme/Revista-T20-Duelo-de-Dragoes)
-- [Revista T20 — Fullgor dos Deuses](https://github.com/mobguilherme/Revista-T20-Fullgor-dos-Deuses)
-- [Aventura — Coração de Rubi](https://github.com/mobguilherme/Aventura-Coracao-de-Rubi)
-- [Aventura — Fim dos Tempos](https://github.com/mobguilherme/Aventura-Fim-dos-Tempos)
-
----
 
 ## Desenvolvimento
 
