@@ -65,23 +65,23 @@ const MENU_STYLES = `
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    background: rgba(106, 78, 24, 0.10);
-    border: 1px solid rgba(200, 169, 110, 0.30);
+    background: var(--bg3-divider-soft);
+    border: 1px solid rgba(var(--bg3-accent-rgb), 0.30);
     border-radius: 4px;
-    color: #d0c4a8;
+    color: var(--bg3-text-primary);
     font-family: "Palatino Linotype", "Book Antiqua", serif;
     font-size: 0.95rem;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
 }
 .window-app.bg3-dialog .bg3-skills-menu-list > .skill-row:hover {
-    background: rgba(106, 78, 24, 0.22);
-    border-color: rgba(200, 169, 110, 0.55);
+    background: var(--bg3-divider-med);
+    border-color: rgba(var(--bg3-accent-rgb), 0.55);
 }
 .window-app.bg3-dialog .bg3-skills-menu-list > .skill-row > i {
     width: 18px;
     text-align: center;
-    color: #c8a96e;
+    color: var(--bg3-accent);
 }
 `;
 

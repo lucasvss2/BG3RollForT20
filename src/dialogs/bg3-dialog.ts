@@ -10,13 +10,13 @@ const DIALOG_STYLES = `
 /* ── BG3-style roll dialog ───────────────────────────────────────────────── */
 
 .window-app.bg3-dialog {
-    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    background: radial-gradient(ellipse at top, var(--bg3-bg-mid) 0%, var(--bg3-bg-deepest) 100%) !important;
     border: none !important;
     border-radius: 6px !important;
     box-shadow:
-        0 0 0 1px #6a4e18,
+        0 0 0 1px var(--bg3-border-ambient),
         0 0 0 3px #0a0704,
-        0 0 0 5px #6a4e18,
+        0 0 0 5px var(--bg3-border-ambient),
         0 0 0 7px #0a0704,
         0 0 0 8px #4a360e,
         0 0 40px rgba(0, 0, 0, 0.95),
@@ -66,11 +66,11 @@ const DIALOG_STYLES = `
     background:
         linear-gradient(135deg,
             transparent 0%,   transparent 38%,
-            rgba(200,169,110,0.65) 38%, rgba(200,169,110,0.65) 46%,
+            rgba(var(--bg3-accent-rgb),0.65) 38%, rgba(var(--bg3-accent-rgb),0.65) 46%,
             transparent 46%,  transparent 54%,
-            rgba(200,169,110,0.45) 54%, rgba(200,169,110,0.45) 62%,
+            rgba(var(--bg3-accent-rgb),0.45) 54%, rgba(var(--bg3-accent-rgb),0.45) 62%,
             transparent 62%,  transparent 70%,
-            rgba(200,169,110,0.28) 70%, rgba(200,169,110,0.28) 78%,
+            rgba(var(--bg3-accent-rgb),0.28) 70%, rgba(var(--bg3-accent-rgb),0.28) 78%,
             transparent 78%
         ) !important;
 }
@@ -79,7 +79,7 @@ const DIALOG_STYLES = `
     content: "";
     position: absolute;
     inset: 8px;
-    border: 1px solid rgba(106, 78, 24, 0.25);
+    border: 1px solid var(--bg3-border);
     border-radius: 3px;
     pointer-events: none;
     z-index: 0;
@@ -88,31 +88,31 @@ const DIALOG_STYLES = `
 /* ── Header ────────────────────────────────────────────────────────────────── */
 
 .window-app.bg3-dialog .window-header {
-    background: linear-gradient(to right, transparent, rgba(106, 78, 24, 0.18), transparent) !important;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.5) !important;
+    background: linear-gradient(to right, transparent, var(--bg3-divider-med), transparent) !important;
+    border-bottom: 1px solid var(--bg3-border-strong) !important;
     padding: 6px 10px !important;
     position: relative;
     z-index: 1;
 }
 
 .window-app.bg3-dialog .window-title {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.95rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.14em !important;
     text-transform: uppercase !important;
-    text-shadow: 0 0 14px rgba(200, 169, 110, 0.55) !important;
+    text-shadow: 0 0 14px rgba(var(--bg3-accent-rgb), 0.55) !important;
 }
 
 .window-app.bg3-dialog .header-button,
 .window-app.bg3-dialog .window-header > a {
-    color: #705830 !important;
+    color: var(--bg3-accent-muted) !important;
     transition: color 0.15s !important;
 }
 .window-app.bg3-dialog .header-button:hover,
 .window-app.bg3-dialog .window-header > a:hover {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
 }
 
 /* ── Skill name banner ───────────────────────────────────────────────────── */
@@ -135,9 +135,9 @@ const DIALOG_STYLES = `
 }
 
 .bg3-skill-img {
-    border: 1px solid rgba(200, 169, 110, 0.5);
+    border: 1px solid var(--bg3-tint-bold);
     border-radius: 4px;
-    box-shadow: 0 0 14px rgba(200, 169, 110, 0.35);
+    box-shadow: 0 0 14px var(--bg3-tint-strong);
     flex-shrink: 0;
     height: 56px;
     object-fit: cover;
@@ -148,17 +148,17 @@ const DIALOG_STYLES = `
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: clamp(1.5rem, 4vw, 2.2rem);
     font-weight: 700;
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     text-transform: uppercase;
     letter-spacing: 0.18em;
-    text-shadow: 0 0 20px rgba(200, 169, 110, 0.65);
+    text-shadow: 0 0 20px rgba(var(--bg3-accent-rgb), 0.65);
     line-height: 1.1;
 }
 
 .bg3-skill-divider {
     width: 180px;
     height: 1px;
-    background: linear-gradient(to right, transparent, rgba(200, 169, 110, 0.55), transparent);
+    background: linear-gradient(to right, transparent, rgba(var(--bg3-accent-rgb), 0.55), transparent);
     margin: 8px 0 0;
 }
 
@@ -168,13 +168,13 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog form,
 .window-app.bg3-dialog .dialog-content {
     background: transparent !important;
-    color: #d0c4a8 !important;
+    color: var(--bg3-text-primary) !important;
     position: relative;
     z-index: 1;
 }
 
 .window-app.bg3-dialog .form-group {
-    border-bottom: 1px solid rgba(106, 78, 24, 0.15) !important;
+    border-bottom: 1px solid var(--bg3-divider-soft) !important;
     padding: 6px 16px !important;
     margin: 0 !important;
     display: flex;
@@ -188,7 +188,7 @@ const DIALOG_STYLES = `
 
 /* Direct-child labels = field names ("BÔNUS NO TESTE", "ROLL MODE") */
 .window-app.bg3-dialog .form-group > label {
-    color: #8a7450 !important;
+    color: var(--bg3-accent-muted) !important;
     font-size: 0.78rem !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     text-transform: uppercase !important;
@@ -204,7 +204,7 @@ const DIALOG_STYLES = `
     background: rgba(0, 0, 0, 0.55) !important;
     border: 1px solid #3a2a0e !important;
     border-radius: 3px !important;
-    color: #e8d8a8 !important;
+    color: var(--bg3-accent-bright) !important;
     font-family: "Palatino Linotype", serif !important;
     font-size: 0.9rem !important;
     padding: 3px 8px !important;
@@ -218,15 +218,15 @@ const DIALOG_STYLES = `
 .window-app.ability-use-form output,
 .window-app.ability-use-form progress,
 .window-app.ability-use-form meter {
-    color: #f0e0b0 !important;
+    color: var(--bg3-btn-text) !important;
     font-weight: 700 !important;
     text-shadow: 0 0 4px rgba(0,0,0,0.6) !important;
     background-color: rgba(0, 0, 0, 0.55) !important;
 }
 .window-app.ability-use-form input[readonly],
 .window-app.ability-use-form output {
-    background: linear-gradient(to right, rgba(106,78,24,0.18), rgba(0,0,0,0.45)) !important;
-    border: 1px solid rgba(106, 78, 24, 0.5) !important;
+    background: linear-gradient(to right, var(--bg3-divider-med), rgba(0,0,0,0.45)) !important;
+    border: 1px solid var(--bg3-border-strong) !important;
     border-radius: 3px !important;
 }
 /* T20 progress-bar style total-cost display (a styled <input> or <progress>) */
@@ -235,19 +235,19 @@ const DIALOG_STYLES = `
     background: rgba(0,0,0,0.55) !important;
 }
 .window-app.ability-use-form progress::-webkit-progress-value {
-    background: linear-gradient(to right, #5c3a10, #c8a96e) !important;
+    background: linear-gradient(to right, var(--bg3-btn-bg-top), var(--bg3-accent)) !important;
 }
 
 .window-app.bg3-dialog input:focus,
 .window-app.bg3-dialog select:focus {
-    border-color: #8b6914 !important;
+    border-color: var(--bg3-btn-border) !important;
     box-shadow: 0 0 8px rgba(139, 105, 20, 0.4) !important;
     outline: none !important;
 }
 
 .window-app.bg3-dialog select option {
     background: #12100a !important;
-    color: #e8d8a8 !important;
+    color: var(--bg3-accent-bright) !important;
 }
 
 /* ── Footer / submit buttons ─────────────────────────────────────────────── */
@@ -255,7 +255,7 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog footer,
 .window-app.bg3-dialog .dialog-buttons {
     background: linear-gradient(to top, rgba(0,0,0,0.4), transparent) !important;
-    border-top: 1px solid rgba(106, 78, 24, 0.3) !important;
+    border-top: 1px solid var(--bg3-divider) !important;
     padding: 12px 16px !important;
     position: relative;
     z-index: 1;
@@ -264,11 +264,11 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog footer button,
 .window-app.bg3-dialog .dialog-buttons button {
     align-items: center !important;
-    background: linear-gradient(to bottom, #5c3a10, #3a2208) !important;
-    border: 1px solid #7a5818 !important;
+    background: linear-gradient(to bottom, var(--bg3-btn-bg-top), var(--bg3-btn-bg-bottom)) !important;
+    border: 1px solid var(--bg3-btn-border) !important;
     border-radius: 4px !important;
     box-shadow: 0 0 16px rgba(139, 105, 20, 0.3), inset 0 1px rgba(255, 220, 150, 0.15) !important;
-    color: #f0e0b0 !important;
+    color: var(--bg3-btn-text) !important;
     cursor: pointer !important;
     display: inline-flex !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
@@ -278,7 +278,7 @@ const DIALOG_STYLES = `
     letter-spacing: 0.2em !important;
     padding: 9px 16px !important;
     text-align: center !important;
-    text-shadow: 0 0 12px rgba(255, 200, 100, 0.5) !important;
+    text-shadow: 0 0 12px rgba(var(--bg3-accent-rgb), 0.5) !important;
     text-transform: uppercase !important;
     transition: all 0.15s !important;
     width: 100% !important;
@@ -287,9 +287,9 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog footer button:hover,
 .window-app.bg3-dialog .dialog-buttons button:hover {
     background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
-    border-color: #c8a96e !important;
-    box-shadow: 0 0 24px rgba(200, 169, 110, 0.55), inset 0 1px rgba(255, 220, 150, 0.25) !important;
-    color: #fff8e8 !important;
+    border-color: var(--bg3-accent) !important;
+    box-shadow: 0 0 24px rgba(var(--bg3-accent-rgb), 0.55), inset 0 1px rgba(255, 220, 150, 0.25) !important;
+    color: var(--bg3-btn-text-hover) !important;
 }
 
 .window-app.bg3-dialog footer button i,
@@ -359,7 +359,7 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog tbody td > a:hover {
     background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
     border-color: var(--bg3-accent) !important;
-    box-shadow: 0 0 14px var(--bg3-tint-bold), inset 0 1px rgba(255, 220, 150, 0.2) !important;
+    box-shadow: 0 0 14px var(--bg3-tint-bold), inset 0 1px rgba(var(--bg3-accent-rgb), 0.2) !important;
     color: var(--bg3-btn-text-hover) !important;
 }
 
@@ -484,13 +484,13 @@ const DIALOG_STYLES = `
 .window-app.bg3-dialog table {
     background: transparent !important;
     border-collapse: collapse !important;
-    color: #c8bfa0 !important;
+    color: var(--bg3-text-secondary) !important;
     width: 100% !important;
 }
 
 .window-app.bg3-dialog thead th {
-    border-bottom: 1px solid rgba(106, 78, 24, 0.4) !important;
-    color: #8a7450 !important;
+    border-bottom: 1px solid var(--bg3-divider) !important;
+    color: var(--bg3-accent-muted) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.75rem !important;
     letter-spacing: 0.1em !important;
@@ -499,7 +499,7 @@ const DIALOG_STYLES = `
 }
 
 .window-app.bg3-dialog tbody tr {
-    border-bottom: 1px solid rgba(106, 78, 24, 0.1) !important;
+    border-bottom: 1px solid var(--bg3-divider-soft) !important;
 }
 
 .window-app.bg3-dialog tbody tr:last-child {
@@ -507,7 +507,7 @@ const DIALOG_STYLES = `
 }
 
 .window-app.bg3-dialog tbody td {
-    color: #c8bfa0 !important;
+    color: var(--bg3-text-secondary) !important;
     font-size: 0.82rem !important;
     padding: 4px 8px !important;
     vertical-align: middle !important;
@@ -517,7 +517,7 @@ const DIALOG_STYLES = `
 
 .window-app.bg3-dialog input::placeholder,
 .window-app.bg3-dialog textarea::placeholder {
-    color: #9a8a6a !important;
+    color: var(--bg3-text-muted) !important;
     opacity: 1 !important;
 }
 
@@ -542,11 +542,11 @@ const DIALOG_STYLES = `
         url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2 7l3.5 3.5L12 4' stroke='%23f0e0b0' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
         center / 80% no-repeat,
         linear-gradient(to bottom, #6a4212, #3e2008) !important;
-    border-color: #c8a96e !important;
+    border-color: var(--bg3-accent) !important;
 }
 
 .window-app.bg3-dialog input[type="checkbox"]:hover {
-    border-color: #8b6914 !important;
+    border-color: var(--bg3-btn-border) !important;
     box-shadow: 0 0 6px rgba(139, 105, 20, 0.35) !important;
 }
 

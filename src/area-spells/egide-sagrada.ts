@@ -703,7 +703,7 @@ async function onClickCancelEgide(): Promise<void> {
         const raio = t.flags?.[MODULE_ID]?.["raioM"] as number | undefined;
         return `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;">
             <input type="checkbox" name="egide" value="${escHtml(t.id)}" checked />
-            <span><b>${escHtml(casterName)}</b> <small style="color:#9a8e7a;">(raio ${raio ?? "?"}m)</small></span>
+            <span><b>${escHtml(casterName)}</b> <small style="color:var(--bg3-text-muted);">(raio ${raio ?? "?"}m)</small></span>
         </label>`;
     }).join("");
     new Dialog({

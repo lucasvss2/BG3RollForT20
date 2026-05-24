@@ -689,17 +689,17 @@ const CONSAGRAR_STYLES = `
 }
 .window-app.bg3-dialog .bg3-consagrar-remove p {
     margin: 0 0 8px;
-    color: #d0c4a8;
+    color: var(--bg3-text-primary);
     font-family: "Palatino Linotype", "Book Antiqua", serif;
     font-size: 0.95rem;
     line-height: 1.4;
 }
 .window-app.bg3-dialog .bg3-consagrar-remove p b {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-weight: 700;
 }
 .window-app.bg3-dialog .bg3-consagrar-remove .hint {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-size: 0.82rem;
     font-style: italic;
     margin-top: 4px;
@@ -708,7 +708,7 @@ const CONSAGRAR_STYLES = `
     padding: 12px 16px 8px;
 }
 .window-app.bg3-dialog .bg3-consagrar-picker > .picker-intro {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.78rem;
     letter-spacing: 0.12em;
@@ -720,7 +720,7 @@ const CONSAGRAR_STYLES = `
     align-items: center;
     gap: 10px;
     padding: 6px 8px;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.18);
+    border-bottom: 1px solid var(--bg3-divider-med);
     cursor: pointer;
     transition: background 0.15s;
 }
@@ -728,10 +728,10 @@ const CONSAGRAR_STYLES = `
     border-bottom: none;
 }
 .window-app.bg3-dialog .bg3-consagrar-picker .picker-row:hover {
-    background: rgba(106, 78, 24, 0.12);
+    background: var(--bg3-divider-soft);
 }
 .window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-idx {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.78rem;
     letter-spacing: 0.1em;
@@ -739,12 +739,12 @@ const CONSAGRAR_STYLES = `
     min-width: 56px;
 }
 .window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-name {
-    color: #d0c4a8;
+    color: var(--bg3-text-primary);
     font-family: "Palatino Linotype", serif;
     font-size: 0.95rem;
 }
 .window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-name b {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-weight: 700;
 }
 `;

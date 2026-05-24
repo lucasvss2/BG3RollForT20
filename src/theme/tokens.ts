@@ -23,14 +23,17 @@ export const COLORS = {
 
     // ── Accent (BG3 gold) ────────────────────────────────────────────────────
     accent:        "#c9a76a",   // primary gold
-    accentBright:  "#e8d8a8",   // highlight / hover
+    accentBright:  "#e8d8a8",   // highlight / hover (cream tint)
+    accentGold:    "#e6c987",   // vivid bright gold — charname, stat values, hover highlights
     accentMuted:   "#8a7450",   // muted gold
     accentRgb:     "201,167,106", // for rgba() compositions
 
-    // ── Borders / dividers (always alpha-based on the accent RGB) ────────────
+    // ── Borders / dividers ───────────────────────────────────────────────────
+    borderAmbient: "#6a4e18",            // solid 1px amber border for cards
     border:        "rgba(201,167,106,0.25)",
     borderStrong:  "rgba(201,167,106,0.4)",
     divider:       "rgba(106, 78, 24, 0.4)",
+    dividerMed:    "rgba(106, 78, 24, 0.2)",
     dividerSoft:   "rgba(106, 78, 24, 0.12)",
 
     // ── Accent tint layers (background washes / overlays) ────────────────────
@@ -47,10 +50,16 @@ export const COLORS = {
     textMuted:     "#9a8e7a",
     textDisabled:  "#6a5e48",
 
-    // ── Semantic ─────────────────────────────────────────────────────────────
-    success: "#6ecf7a",  // healing, pass
-    danger:  "#cc4444",  // damage, fail
-    info:    "#8ab4e8",  // spell info, hint
+    // ── Semantic — estados ────────────────────────────────────────────────────
+    success:     "#6ecf7a",  // healing, pass
+    successRgb:  "110,207,122",
+    danger:      "#cc4444",  // damage, fail
+    dangerRgb:   "204,68,68",
+    info:        "#8ab4e8",  // spell info, hint
+    infoRgb:     "138,180,232",
+    colorCrit:   "#ffd700",  // crítico (20 natural)
+    colorCritRgb:"255,215,0",
+    colorFailure:"#c8a070",  // falha não-crítica (outcome de perícia/teste secreto)
 
     // ── Button gradient (used by .numCtrl, action buttons) ───────────────────
     btnBgTop:    "#5c3a10",
@@ -76,13 +85,16 @@ export const THEME_CSS = `
     /* Accent */
     --bg3-accent:         ${COLORS.accent};
     --bg3-accent-bright:  ${COLORS.accentBright};
+    --bg3-accent-gold:    ${COLORS.accentGold};
     --bg3-accent-muted:   ${COLORS.accentMuted};
     --bg3-accent-rgb:     ${COLORS.accentRgb};
 
     /* Borders / dividers */
+    --bg3-border-ambient: ${COLORS.borderAmbient};
     --bg3-border:         ${COLORS.border};
     --bg3-border-strong:  ${COLORS.borderStrong};
     --bg3-divider:        ${COLORS.divider};
+    --bg3-divider-med:    ${COLORS.dividerMed};
     --bg3-divider-soft:   ${COLORS.dividerSoft};
 
     /* Accent tints */
@@ -100,9 +112,15 @@ export const THEME_CSS = `
     --bg3-text-disabled:  ${COLORS.textDisabled};
 
     /* Semantic */
-    --bg3-color-success: ${COLORS.success};
-    --bg3-color-danger:  ${COLORS.danger};
-    --bg3-color-info:    ${COLORS.info};
+    --bg3-color-success:     ${COLORS.success};
+    --bg3-color-success-rgb: ${COLORS.successRgb};
+    --bg3-color-danger:      ${COLORS.danger};
+    --bg3-color-danger-rgb:  ${COLORS.dangerRgb};
+    --bg3-color-info:        ${COLORS.info};
+    --bg3-color-info-rgb:    ${COLORS.infoRgb};
+    --bg3-color-crit:        ${COLORS.colorCrit};
+    --bg3-color-crit-rgb:    ${COLORS.colorCritRgb};
+    --bg3-color-failure:     ${COLORS.colorFailure};
 
     /* Button gradient */
     --bg3-btn-bg-top:     ${COLORS.btnBgTop};

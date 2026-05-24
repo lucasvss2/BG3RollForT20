@@ -807,17 +807,17 @@ const AURA_STYLES_ID = "bg3-t20-aura-sagrada-styles";
 const AURA_STYLES = `
 .window-app.bg3-dialog .bg3-aura-cancel { padding: 14px 16px 6px; }
 .window-app.bg3-dialog .bg3-aura-cancel p {
-    margin: 0 0 8px; color: #d0c4a8;
+    margin: 0 0 8px; color: var(--bg3-text-primary);
     font-family: "Palatino Linotype", "Book Antiqua", serif;
     font-size: 0.95rem; line-height: 1.4;
 }
-.window-app.bg3-dialog .bg3-aura-cancel p b { color: #c8a96e; font-weight: 700; }
+.window-app.bg3-dialog .bg3-aura-cancel p b { color: var(--bg3-accent); font-weight: 700; }
 .window-app.bg3-dialog .bg3-aura-cancel .hint {
-    color: #8a7450; font-size: 0.82rem; font-style: italic; margin-top: 4px;
+    color: var(--bg3-accent-muted); font-size: 0.82rem; font-style: italic; margin-top: 4px;
 }
 .window-app.bg3-dialog .bg3-aura-picker { padding: 12px 16px 8px; }
 .window-app.bg3-dialog .bg3-aura-picker > .picker-intro {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
     margin: 0 0 10px;
@@ -825,35 +825,35 @@ const AURA_STYLES = `
 .window-app.bg3-dialog .bg3-aura-picker .picker-row {
     display: flex; align-items: center; gap: 10px;
     padding: 6px 8px; cursor: pointer;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.18);
+    border-bottom: 1px solid var(--bg3-divider-med);
     transition: background 0.15s;
 }
 .window-app.bg3-dialog .bg3-aura-picker .picker-row:last-child { border-bottom: none; }
-.window-app.bg3-dialog .bg3-aura-picker .picker-row:hover { background: rgba(106, 78, 24, 0.12); }
+.window-app.bg3-dialog .bg3-aura-picker .picker-row:hover { background: var(--bg3-divider-soft); }
 .window-app.bg3-dialog .bg3-aura-picker .picker-row .row-idx {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase;
     min-width: 56px;
 }
 .window-app.bg3-dialog .bg3-aura-picker .picker-row .row-name {
-    color: #d0c4a8; font-family: "Palatino Linotype", serif; font-size: 0.95rem;
+    color: var(--bg3-text-primary); font-family: "Palatino Linotype", serif; font-size: 0.95rem;
 }
 .window-app.bg3-dialog .bg3-aura-picker .picker-row .row-name b {
-    color: #c8a96e; font-weight: 700;
+    color: var(--bg3-accent); font-weight: 700;
 }
 .window-app.bg3-dialog .bg3-aura-cura-picker { padding: 12px 16px 8px; }
 .window-app.bg3-dialog .bg3-aura-cura-picker .heal-row {
     display: flex; align-items: center; gap: 10px;
-    padding: 6px 8px; border-bottom: 1px solid rgba(106, 78, 24, 0.18);
-    color: #d0c4a8; font-family: "Palatino Linotype", serif; font-size: 0.95rem;
+    padding: 6px 8px; border-bottom: 1px solid var(--bg3-divider-med);
+    color: var(--bg3-text-primary); font-family: "Palatino Linotype", serif; font-size: 0.95rem;
 }
 .window-app.bg3-dialog .bg3-aura-cura-picker .heal-row:last-child { border-bottom: none; }
 .window-app.bg3-dialog .bg3-aura-cura-picker .heal-row .heal-amount {
-    color: #6ecf7a; font-weight: 700; margin-left: auto;
+    color: var(--bg3-color-success); font-weight: 700; margin-left: auto;
 }
 .window-app.bg3-dialog .bg3-aura-cura-picker .intro {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
     margin: 0 0 10px;
@@ -862,15 +862,15 @@ const AURA_STYLES = `
 .window-app.bg3-dialog .bg3-aura-ardente-picker { padding: 12px 16px 8px; }
 .window-app.bg3-dialog .bg3-aura-ardente-picker .burn-row {
     display: flex; align-items: center; gap: 10px;
-    padding: 6px 8px; border-bottom: 1px solid rgba(106, 78, 24, 0.18);
-    color: #d0c4a8; font-family: "Palatino Linotype", serif; font-size: 0.95rem;
+    padding: 6px 8px; border-bottom: 1px solid var(--bg3-divider-med);
+    color: var(--bg3-text-primary); font-family: "Palatino Linotype", serif; font-size: 0.95rem;
 }
 .window-app.bg3-dialog .bg3-aura-ardente-picker .burn-row:last-child { border-bottom: none; }
 .window-app.bg3-dialog .bg3-aura-ardente-picker .burn-row .burn-amount {
-    color: #ff8a4a; font-weight: 700; margin-left: auto;
+    color: #ff8a4a; font-weight: 700; margin-left: auto; /* Aura Ardente orange — feature color */
 }
 .window-app.bg3-dialog .bg3-aura-ardente-picker .intro {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase;
     margin: 0 0 10px;
@@ -1015,15 +1015,15 @@ async function applyHealsAndPostCard(opts: {
     const rows = applied.map(c => `
         <li style="display:flex;justify-content:space-between;padding:2px 0;">
             <span>${escHtml(c.actorName)}</span>
-            <span style="color:#6ecf7a;font-weight:700;">+${c.healed}</span>
+            <span style="color:var(--bg3-color-success);font-weight:700;">+${c.healed}</span>
         </li>`).join("");
     const content = `
-        <div class="tormenta20 chat-card item-card" style="border-color:#c8a96e;">
+        <div class="tormenta20 chat-card item-card" style="border-color:var(--bg3-accent);">
             <header class="card-header flexrow">
                 <h3 class="item-name"><div>Aura de Cura — ${escHtml(casterName)}</div></h3>
             </header>
             <div class="card-content" style="padding: 6px 10px;">
-                <p style="margin: 0 0 6px;color:#9a8e7a;font-size:0.85rem;">
+                <p style="margin: 0 0 6px;color:var(--bg3-text-muted);font-size:0.85rem;">
                     Cura: <b>${healAmount}</b> PV
                 </p>
                 <ul style="list-style:none;padding:0;margin:0;">${rows}</ul>
@@ -1044,7 +1044,7 @@ function pickHealTargetsDialog(opts: {
         const rows = opts.candidates.map((c, i) => `
             <label class="heal-row">
                 <input type="checkbox" data-idx="${i}" checked />
-                <span>${escHtml(c.actorName)} <small style="color:#8a7450;">(${c.pvBefore}/${c.pvMax})</small></span>
+                <span>${escHtml(c.actorName)} <small style="color:var(--bg3-accent-muted);">(${c.pvBefore}/${c.pvMax})</small></span>
                 <span class="heal-amount">+${c.healed}</span>
             </label>`).join("");
         new Dialog({
@@ -1207,7 +1207,7 @@ async function applyBurnsAndPostCard(opts: {
                 <h3 class="item-name"><div>Aura Ardente — ${escHtml(casterName)}</div></h3>
             </header>
             <div class="card-content" style="padding: 6px 10px;">
-                <p style="margin: 0 0 6px;color:#9a8e7a;font-size:0.85rem;">
+                <p style="margin: 0 0 6px;color:var(--bg3-text-muted);font-size:0.85rem;">
                     Dano de luz: <b>${damage}</b>
                 </p>
                 <ul style="list-style:none;padding:0;margin:0;">${rows}</ul>
@@ -1227,7 +1227,7 @@ function pickBurnTargetsDialog(opts: {
         const rows = opts.candidates.map((c, i) => `
             <label class="burn-row">
                 <input type="checkbox" data-idx="${i}" checked />
-                <span>${escHtml(c.actorName)} <small style="color:#8a7450;">(${c.pvBefore} PV)</small></span>
+                <span>${escHtml(c.actorName)} <small style="color:var(--bg3-accent-muted);">(${c.pvBefore} PV)</small></span>
                 <span class="burn-amount">-${c.damage}</span>
             </label>`).join("");
         new Dialog({
@@ -1421,11 +1421,11 @@ export async function markAuraInvencibilidadeUsed(opts: {
     try {
         await ChatMessage.create({
             content: `
-                <div class="tormenta20 chat-card item-card" style="border-color:#c8a96e;">
+                <div class="tormenta20 chat-card item-card" style="border-color:var(--bg3-accent);">
                     <header class="card-header flexrow">
                         <h3 class="item-name"><div>Aura de Invencibilidade — ${escHtml(casterName)}</div></h3>
                     </header>
-                    <div class="card-content" style="padding:6px 10px;color:#d0c4a8;">
+                    <div class="card-content" style="padding:6px 10px;color:var(--bg3-text-primary);">
                         <p style="margin:0;">
                             <b>${escHtml(targetName)}</b> ignora <b>${damageIgnored}</b> de dano
                             (primeira vez nesta cena).
@@ -1484,11 +1484,11 @@ async function spendSustainPM(caster: FoundryActor, auras: AuraTpl[]): Promise<{
         try {
             await ChatMessage.create({
                 content: `
-                    <div class="tormenta20 chat-card item-card" style="border-color:#cc4444;">
+                    <div class="tormenta20 chat-card item-card" style="border-color:var(--bg3-color-danger);">
                         <header class="card-header flexrow">
                             <h3 class="item-name"><div>Aura Sagrada cancelada — sem PM</div></h3>
                         </header>
-                        <div class="card-content" style="padding:6px 10px;color:#d0c4a8;">
+                        <div class="card-content" style="padding:6px 10px;color:var(--bg3-text-primary);">
                             <p style="margin:0;">
                                 <b>${escHtml(casterName)}</b> não tinha PM suficiente para sustentar
                                 a aura (precisava ${need}, tinha ${pmCur}).

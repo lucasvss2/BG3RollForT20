@@ -16,17 +16,17 @@ const HIDDEN_TEST_STYLES = `
 /* ── Hidden test chat card ─────────────────────────────────────────────── */
 
 .aeris-hidden-test-card {
-    background: radial-gradient(ellipse at top, #1a1005 0%, #080503 100%);
-    border: 1px solid #6a4e18;
+    background: radial-gradient(ellipse at top, var(--bg3-bg-dark) 0%, var(--bg3-bg-deepest) 100%);
+    border: 1px solid var(--bg3-border-ambient);
     border-radius: 5px;
-    box-shadow: 0 0 0 1px #0a0704, 0 0 0 3px #4a360e, 0 4px 20px rgba(0,0,0,0.8);
+    box-shadow: 0 0 0 1px var(--bg3-bg-deepest), 0 0 0 3px #4a360e, 0 4px 20px rgba(0,0,0,0.8);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     overflow: hidden;
     padding: 0;
 }
 .aeris-hidden-test-card .htc-header {
-    background: linear-gradient(to right, transparent, rgba(106,78,24,0.2), transparent);
-    border-bottom: 1px solid rgba(106,78,24,0.4);
+    background: linear-gradient(to right, transparent, var(--bg3-divider-med), transparent);
+    border-bottom: 1px solid var(--bg3-divider);
     padding: 8px 14px 6px;
     text-align: center;
 }
@@ -36,34 +36,34 @@ const HIDDEN_TEST_STYLES = `
     margin-bottom: 2px;
 }
 .aeris-hidden-test-card .htc-actor-name {
-    color: #8a7a5a;
+    color: var(--bg3-text-muted);
     font-size: 0.65rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
 }
 .aeris-hidden-test-card .htc-applied-bonus {
-    color: #b09060;
+    color: var(--bg3-accent-muted);
     font-size: 0.70rem;
     letter-spacing: 0.06em;
     margin-top: 3px;
 }
 .aeris-hidden-test-card .htc-skill-name {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: 0.18em;
-    text-shadow: 0 0 14px rgba(200,169,110,0.55);
+    text-shadow: 0 0 14px rgba(var(--bg3-accent-rgb), 0.55);
     text-transform: uppercase;
 }
 .aeris-hidden-test-card .htc-subtitle {
-    color: #7a6e5a;
+    color: var(--bg3-text-disabled);
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     margin-top: 2px;
 }
 .aeris-hidden-test-card .htc-divider {
-    background: linear-gradient(to right, transparent, rgba(200,169,110,0.5), transparent);
+    background: linear-gradient(to right, transparent, rgba(var(--bg3-accent-rgb), 0.5), transparent);
     height: 1px;
     margin: 0;
 }
@@ -75,13 +75,13 @@ const HIDDEN_TEST_STYLES = `
     gap: 3px;
 }
 .aeris-hidden-test-card .htc-formula {
-    color: #a89880;
+    color: var(--bg3-text-muted);
     font-family: monospace;
     font-size: 0.78rem;
     letter-spacing: 0.04em;
 }
 .aeris-hidden-test-card .htc-dice-result {
-    color: #c8b88a;
+    color: var(--bg3-accent-bright);
     font-family: monospace;
     font-size: 0.92rem;
     font-weight: 700;
@@ -89,12 +89,12 @@ const HIDDEN_TEST_STYLES = `
     margin-bottom: 2px;
 }
 .aeris-hidden-test-card .htc-dice-dropped {
-    color: #7a6a4a;
+    color: var(--bg3-text-disabled);
     font-size: 0.80rem;
     font-weight: 400;
 }
 .aeris-hidden-test-card .htc-total {
-    color: #f0ebe0;
+    color: var(--bg3-text-bright);
     font-size: 3.2rem;
     font-weight: 900;
     line-height: 1;
@@ -109,10 +109,10 @@ const HIDDEN_TEST_STYLES = `
     margin-top: 1px;
 }
 /* Outcome colour states */
-.htc-crit    { color: #ffd700 !important; text-shadow: 0 0 12px rgba(255,215,0,0.7); }
-.htc-success { color: #6ecf7a !important; text-shadow: 0 0 12px rgba(110,207,122,0.6); }
-.htc-failure { color: #c8a070 !important; }
-.htc-fumble  { color: #cc4444 !important; text-shadow: 0 0 12px rgba(204,68,68,0.6); }
+.htc-crit    { color: var(--bg3-color-crit)    !important; text-shadow: 0 0 12px rgba(var(--bg3-color-crit-rgb), 0.7); }
+.htc-success { color: var(--bg3-color-success) !important; text-shadow: 0 0 12px rgba(var(--bg3-color-success-rgb), 0.6); }
+.htc-failure { color: var(--bg3-color-failure) !important; }
+.htc-fumble  { color: var(--bg3-color-danger)  !important; text-shadow: 0 0 12px rgba(var(--bg3-color-danger-rgb), 0.6); }
 
 /* ── Strip Foundry's default chat message wrapper ──────────────────────── */
 
@@ -163,7 +163,7 @@ const HIDDEN_TEST_STYLES = `
     cursor: pointer;
 }
 .htg-label-sm {
-    color: #8a7450;
+    color: var(--bg3-accent-muted);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 0.72rem;
     letter-spacing: 0.1em;
@@ -171,20 +171,20 @@ const HIDDEN_TEST_STYLES = `
     flex: 0 0 auto;
 }
 .htg-value-lg {
-    color: #e8d8a8;
+    color: var(--bg3-accent-bright);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 1.1rem;
     font-weight: 700;
     letter-spacing: 0.06em;
 }
 .htg-player-tag {
-    color: #7a6e5a;
+    color: var(--bg3-text-disabled);
     font-size: 0.78rem;
     letter-spacing: 0.06em;
     margin-left: auto;
 }
 .htg-divider {
-    background: linear-gradient(to right, transparent, rgba(200,169,110,0.4), transparent);
+    background: linear-gradient(to right, transparent, rgba(var(--bg3-accent-rgb), 0.4), transparent);
     height: 1px;
     margin: 4px 16px;
 }
@@ -193,17 +193,17 @@ const HIDDEN_TEST_STYLES = `
     text-align: center;
 }
 .htg-skill-name-lg {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: clamp(1.4rem, 3vw, 1.9rem);
     font-weight: 700;
     letter-spacing: 0.18em;
-    text-shadow: 0 0 20px rgba(200,169,110,0.6);
+    text-shadow: 0 0 20px rgba(var(--bg3-accent-rgb), 0.6);
     text-transform: uppercase;
     margin: 4px 0 8px;
 }
 .htg-bonus-display {
-    color: #e8d8a8;
+    color: var(--bg3-accent-bright);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 1.3rem;
     font-weight: 700;
@@ -230,13 +230,13 @@ const HIDDEN_TEST_STYLES = `
     padding: 3px 0;
 }
 .htg-pm-cost {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-family: monospace;
     font-size: 0.8rem;
     font-weight: 700;
 }
 .htg-power-name {
-    color: #e8d8a8;
+    color: var(--bg3-accent-bright);
     font-size: 0.88rem;
 }
 .htg-col-bonus {
@@ -249,7 +249,7 @@ const HIDDEN_TEST_STYLES = `
     min-width: 48px;
 }
 .htg-bonus-known {
-    color: #8ecf8e;
+    color: var(--bg3-color-success);
 }
 .htg-bonus-advantage {
     color: #c8d870;
@@ -262,12 +262,12 @@ const HIDDEN_TEST_STYLES = `
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    border-top: 1px solid rgba(200,169,110,0.2);
+    border-top: 1px solid var(--bg3-tint-med);
     margin-top: 5px;
     padding: 5px 0 2px;
 }
 .htg-pm-display {
-    color: #c8a96e;
+    color: var(--bg3-accent);
     font-family: "Modesto Condensed", "Palatino Linotype", serif;
     font-size: 1.1rem;
     font-weight: 700;

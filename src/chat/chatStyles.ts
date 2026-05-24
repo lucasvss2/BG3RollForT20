@@ -33,10 +33,10 @@ const CHAT_STYLES = `
 
 #chat-log .chat-message,
 #chat .chat-message {
-    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    background: radial-gradient(ellipse at top, var(--bg3-bg-dark) 0%, #090604 100%) !important;
     border: 1px solid rgba(106, 78, 24, 0.45) !important;
     border-radius: 4px !important;
-    box-shadow: 0 0 0 1px #2a1e08, 0 4px 14px rgba(0, 0, 0, 0.65) !important;
+    box-shadow: 0 0 0 1px var(--bg3-bg-mid), 0 4px 14px rgba(0, 0, 0, 0.65) !important;
     margin: 4px 6px !important;
     padding: 4px 0 !important;
     color: #c0b49a !important;
@@ -77,12 +77,12 @@ const CHAT_STYLES = `
 #chat .chat-message .message-metadata,
 #chat .chat-message .message-timestamp,
 #chat .chat-message .message-delete {
-    color: #6a5e4a !important;
+    color: var(--bg3-text-disabled) !important;
     font-size: 0.62rem !important;
 }
 #chat-log .chat-message .message-delete:hover,
 #chat .chat-message .message-delete:hover {
-    color: #cc4444 !important;
+    color: var(--bg3-color-danger) !important;
 }
 #chat-log .chat-message .message-content,
 #chat .chat-message .message-content {
@@ -91,7 +91,7 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .message-content a,
 #chat .chat-message .message-content a {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     text-decoration: none !important;
 }
 #chat-log .chat-message .message-content a:hover,
@@ -103,18 +103,18 @@ const CHAT_STYLES = `
 #chat-log .chat-message .message-content strong,
 #chat .chat-message .message-content b,
 #chat .chat-message .message-content strong {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
 }
 #chat-log .chat-message .message-content em,
 #chat-log .chat-message .message-content i,
 #chat .chat-message .message-content em,
 #chat .chat-message .message-content i {
-    color: #9a8e7a !important;
+    color: var(--bg3-text-muted) !important;
 }
 #chat-log .chat-message .message-content hr,
 #chat .chat-message .message-content hr {
     border: none !important;
-    border-top: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border-top: 1px solid var(--bg3-divider) !important;
     margin: 4px 0 !important;
 }
 
@@ -128,14 +128,14 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .dice-roll .dice-flavor,
 #chat .chat-message .dice-roll .dice-flavor {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.78rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.08em !important;
     text-align: center !important;
     margin: 4px 0 6px !important;
-    text-shadow: 0 0 10px rgba(200,169,110,0.25) !important;
+    text-shadow: 0 0 10px rgba(var(--bg3-accent-rgb), 0.25) !important;
 }
 #chat-log .chat-message .dice-roll .dice-formula,
 #chat .chat-message .dice-roll .dice-formula {
@@ -163,13 +163,13 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .dice-roll .dice-total.critical,
 #chat .chat-message .dice-roll .dice-total.critical {
-    color: #6ecf7a !important;
-    text-shadow: 0 0 24px rgba(110, 207, 122, 0.6) !important;
+    color: var(--bg3-color-success) !important;
+    text-shadow: 0 0 24px rgba(var(--bg3-color-success-rgb), 0.6) !important;
 }
 #chat-log .chat-message .dice-roll .dice-total.fumble,
 #chat .chat-message .dice-roll .dice-total.fumble {
-    color: #cc4444 !important;
-    text-shadow: 0 0 24px rgba(204, 68, 68, 0.6) !important;
+    color: var(--bg3-color-danger) !important;
+    text-shadow: 0 0 24px rgba(var(--bg3-color-danger-rgb), 0.6) !important;
 }
 #chat-log .chat-message .dice-tooltip,
 #chat .chat-message .dice-tooltip {
@@ -180,8 +180,8 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .dice-tooltip .part-header,
 #chat .chat-message .dice-tooltip .part-header {
-    background: rgba(106, 78, 24, 0.12) !important;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.2) !important;
+    background: var(--bg3-divider-soft) !important;
+    border-bottom: 1px solid var(--bg3-divider-med) !important;
     padding: 3px 8px !important;
 }
 #chat-log .chat-message .dice-tooltip .part-formula,
@@ -198,7 +198,7 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .dice-tooltip .part-total,
 #chat .chat-message .dice-tooltip .part-total {
-    color: #e8e0d0 !important;
+    color: var(--bg3-text-bright) !important;
     background: rgba(0, 0, 0, 0.3) !important;
     font-weight: 700 !important;
     font-size: 0.78rem !important;
@@ -214,9 +214,9 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .dice-tooltip .roll.die,
 #chat .chat-message .dice-tooltip .roll.die {
-    color: #e8e0d0 !important;
+    color: var(--bg3-text-bright) !important;
     background: rgba(30, 20, 8, 0.9) !important;
-    border: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border: 1px solid var(--bg3-divider) !important;
     border-radius: 3px !important;
     padding: 2px 6px !important;
     font-size: 0.78rem !important;
@@ -225,13 +225,13 @@ const CHAT_STYLES = `
 }
 #chat-log .chat-message .dice-tooltip .roll.die.max,
 #chat .chat-message .dice-tooltip .roll.die.max {
-    color: #6ecf7a !important;
-    border-color: rgba(110, 207, 122, 0.5) !important;
+    color: var(--bg3-color-success) !important;
+    border-color: rgba(var(--bg3-color-success-rgb), 0.5) !important;
 }
 #chat-log .chat-message .dice-tooltip .roll.die.min,
 #chat .chat-message .dice-tooltip .roll.die.min {
-    color: #cc4444 !important;
-    border-color: rgba(204, 68, 68, 0.5) !important;
+    color: var(--bg3-color-danger) !important;
+    border-color: rgba(var(--bg3-color-danger-rgb), 0.5) !important;
 }
 
 /* ── Chat input area (textarea + send button) ───────────────────────────── */
@@ -245,12 +245,12 @@ section#chat textarea#chat-message {
 }
 section#chat textarea#chat-message {
     background: rgba(10, 6, 2, 0.85) !important;
-    border: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border: 1px solid var(--bg3-divider) !important;
     border-radius: 3px !important;
 }
 section#chat textarea#chat-message:focus {
     outline: none !important;
-    border-color: rgba(200, 169, 110, 0.6) !important;
+    border-color: rgba(var(--bg3-accent-rgb), 0.6) !important;
 }
 
 /* ── Combat-tracker announcement (System messages) ──────────────────────── */
@@ -294,16 +294,16 @@ section#chat textarea#chat-message:focus {
     font-size: 0.62rem !important;
 }
 .chat-message:has(.tormenta20.chat-card.item-card) .message-delete:hover {
-    color: #cc4444 !important;
+    color: var(--bg3-color-danger) !important;
 }
 
 /* ── Card base ───────────────────────────────────────────────────────────── */
 
 .tormenta20.chat-card.item-card {
-    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    background: radial-gradient(ellipse at top, var(--bg3-bg-dark) 0%, #090604 100%) !important;
     border: 1px solid rgba(106, 78, 24, 0.45) !important;
     border-radius: 4px !important;
-    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0, 0, 0, 0.75) !important;
+    box-shadow: 0 0 0 1px var(--bg3-bg-mid), 0 4px 18px rgba(0, 0, 0, 0.75) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     padding: 0 !important;
     overflow: hidden !important;
@@ -313,13 +313,13 @@ section#chat textarea#chat-message:focus {
 
 .tormenta20.chat-card.item-card .card-header {
     background: linear-gradient(to right, transparent, rgba(106, 78, 24, 0.14), transparent) !important;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border-bottom: 1px solid var(--bg3-divider) !important;
     padding: 8px 12px !important;
     gap: 8px !important;
     align-items: center !important;
 }
 .tormenta20.chat-card.item-card .card-header img {
-    border: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border: 1px solid var(--bg3-divider) !important;
     border-radius: 3px !important;
     width: 32px !important;
     height: 32px !important;
@@ -327,13 +327,13 @@ section#chat textarea#chat-message:focus {
 }
 .tormenta20.chat-card.item-card .item-name,
 .tormenta20.chat-card.item-card .item-name div {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 1.05rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
-    text-shadow: 0 0 14px rgba(200, 169, 110, 0.35) !important;
+    text-shadow: 0 0 14px rgba(var(--bg3-accent-rgb), 0.35) !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
@@ -343,11 +343,11 @@ section#chat textarea#chat-message:focus {
 /* ── Spell / ability info (school, circle, attributes) ───────────────────── */
 
 .tormenta20.chat-card.item-card .card-item-header {
-    border-top: 1px solid rgba(106, 78, 24, 0.2) !important;
+    border-top: 1px solid var(--bg3-divider-med) !important;
     padding: 5px 12px !important;
 }
 .tormenta20.chat-card.item-card .card-item-header h4 {
-    color: #9a8e7a !important;
+    color: var(--bg3-text-muted) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.72rem !important;
     font-weight: normal !important;
@@ -362,7 +362,7 @@ section#chat textarea#chat-message:focus {
     margin: 0 !important;
 }
 .tormenta20.chat-card.item-card .card-item-header b {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     font-weight: normal !important;
 }
 
@@ -380,10 +380,10 @@ section#chat textarea#chat-message:focus {
     margin: 0 0 4px !important;
 }
 .tormenta20.chat-card.item-card .card-content em {
-    color: #9a8e7a !important;
+    color: var(--bg3-text-muted) !important;
 }
 .tormenta20.chat-card.item-card .card-content a {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
 }
 
 /* ── Roll type label (Ataque, Dano) ─────────────────────────────────────── */
@@ -438,14 +438,14 @@ section#chat textarea#chat-message:focus {
     margin: 0 !important;
 }
 .tormenta20.chat-card.item-card .dice-total.critical {
-    color: #6ecf7a !important;
+    color: var(--bg3-color-success) !important;
     background: transparent !important;
-    text-shadow: 0 0 24px rgba(110, 207, 122, 0.6) !important;
+    text-shadow: 0 0 24px rgba(var(--bg3-color-success-rgb), 0.6) !important;
 }
 .tormenta20.chat-card.item-card .dice-total.fumble {
-    color: #cc4444 !important;
+    color: var(--bg3-color-danger) !important;
     background: transparent !important;
-    text-shadow: 0 0 24px rgba(204, 68, 68, 0.6) !important;
+    text-shadow: 0 0 24px rgba(var(--bg3-color-danger-rgb), 0.6) !important;
 }
 
 /* ── Dice tooltip (expandable breakdown) ────────────────────────────────── */
@@ -457,8 +457,8 @@ section#chat textarea#chat-message:focus {
     padding: 6px 0 4px !important;
 }
 .tormenta20.chat-card.item-card .dice-tooltip .part-header {
-    background: rgba(106, 78, 24, 0.12) !important;
-    border-bottom: 1px solid rgba(106, 78, 24, 0.2) !important;
+    background: var(--bg3-divider-soft) !important;
+    border-bottom: 1px solid var(--bg3-divider-med) !important;
     padding: 3px 8px !important;
     margin-bottom: 4px !important;
 }
@@ -473,7 +473,7 @@ section#chat textarea#chat-message:focus {
     font-size: 0.7rem !important;
 }
 .tormenta20.chat-card.item-card .dice-tooltip .part-total {
-    color: #e8e0d0 !important;
+    color: var(--bg3-text-bright) !important;
     background: rgba(0, 0, 0, 0.3) !important;
     font-weight: 700 !important;
     font-size: 0.78rem !important;
@@ -489,9 +489,9 @@ section#chat textarea#chat-message:focus {
     gap: 4px !important;
 }
 .tormenta20.chat-card.item-card .dice-tooltip .roll.die {
-    color: #e8e0d0 !important;
+    color: var(--bg3-text-bright) !important;
     background: rgba(30, 20, 8, 0.9) !important;
-    border: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border: 1px solid var(--bg3-divider) !important;
     border-radius: 3px !important;
     padding: 2px 6px !important;
     font-size: 0.78rem !important;
@@ -499,18 +499,18 @@ section#chat textarea#chat-message:focus {
     text-align: center !important;
 }
 .tormenta20.chat-card.item-card .dice-tooltip .roll.die.max {
-    color: #6ecf7a !important;
-    border-color: rgba(110, 207, 122, 0.5) !important;
+    color: var(--bg3-color-success) !important;
+    border-color: rgba(var(--bg3-color-success-rgb), 0.5) !important;
 }
 .tormenta20.chat-card.item-card .dice-tooltip .roll.die.min {
-    color: #cc4444 !important;
-    border-color: rgba(204, 68, 68, 0.5) !important;
+    color: var(--bg3-color-danger) !important;
+    border-color: rgba(var(--bg3-color-danger-rgb), 0.5) !important;
 }
 
 /* ── Enhancements / upgrades list ───────────────────────────────────────── */
 
 .tormenta20.chat-card.item-card .card-upgrades {
-    border-top: 1px solid rgba(106, 78, 24, 0.2) !important;
+    border-top: 1px solid var(--bg3-divider-med) !important;
     padding: 4px 10px !important;
 }
 .tormenta20.chat-card.item-card .card-upgrades ul {
@@ -532,7 +532,7 @@ section#chat textarea#chat-message:focus {
 /* ── Effect apply buttons ────────────────────────────────────────────────── */
 
 .tormenta20.chat-card.item-card .card-item-effects {
-    border-top: 1px solid rgba(106, 78, 24, 0.2) !important;
+    border-top: 1px solid var(--bg3-divider-med) !important;
     padding: 4px 8px !important;
 }
 .tormenta20.chat-card.item-card .chat-apply-ae {
@@ -542,8 +542,8 @@ section#chat textarea#chat-message:focus {
     overflow: hidden !important;
     position: relative !important;
     background: rgba(106, 78, 24, 0.15) !important;
-    border: 1px solid rgba(106, 78, 24, 0.4) !important;
-    color: #c8a96e !important;
+    border: 1px solid var(--bg3-divider) !important;
+    color: var(--bg3-accent) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.74rem !important;
     letter-spacing: 0.06em !important;
@@ -571,14 +571,14 @@ section#chat textarea#chat-message:focus {
 .tormenta20.chat-card.item-card .chat-spend-mana {
     background: rgba(106, 78, 24, 0.18) !important;
     border: 1px solid rgba(106, 78, 24, 0.45) !important;
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.72rem !important;
     border-radius: 3px !important;
     padding: 2px 8px !important;
 }
 .tormenta20.chat-card.item-card .chat-spend-mana:hover {
-    background: rgba(106, 78, 24, 0.4) !important;
+    background: var(--bg3-divider) !important;
 }
 
 /* ── Damage apply buttons ────────────────────────────────────────────────── */
@@ -586,12 +586,12 @@ section#chat textarea#chat-message:focus {
 .tormenta20.chat-card.item-card .dice-btn button {
     background: rgba(106, 78, 24, 0.15) !important;
     border: 1px solid rgba(106, 78, 24, 0.35) !important;
-    color: #9a8e7a !important;
+    color: var(--bg3-text-muted) !important;
     border-radius: 3px !important;
 }
 .tormenta20.chat-card.item-card .dice-btn button:hover {
     background: rgba(106, 78, 24, 0.35) !important;
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
 }
 
 /* ── Resistance roll messages (flag: MODULE_ID.resistanceRoll) ───────────── */
@@ -627,19 +627,19 @@ section#chat textarea#chat-message:focus {
     color: #3a2e22 !important;
     font-size: 0.62rem !important;
 }
-.bg3-resistance-roll .message-delete:hover { color: #cc4444 !important; }
+.bg3-resistance-roll .message-delete:hover { color: var(--bg3-color-danger) !important; }
 .bg3-resistance-roll .message-content {
     padding: 0 !important;
 }
 .bg3-resistance-roll .dice-roll {
-    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    background: radial-gradient(ellipse at top, var(--bg3-bg-dark) 0%, #090604 100%) !important;
     border: 1px solid rgba(106, 78, 24, 0.45) !important;
     border-radius: 4px !important;
-    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0,0,0,0.75) !important;
+    box-shadow: 0 0 0 1px var(--bg3-bg-mid), 0 4px 18px rgba(0,0,0,0.75) !important;
     padding: 4px 12px 10px !important;
 }
 .bg3-resistance-roll .dice-flavor {
-    color: #8ab4e8 !important;
+    color: var(--bg3-color-info) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 0.78rem !important;
     font-weight: 700 !important;
@@ -684,25 +684,25 @@ section#chat textarea#chat-message:focus {
     padding: 6px 0 4px !important;
 }
 .bg3-resistance-roll .dice-tooltip .part-header {
-    background: rgba(106,78,24,0.12) !important;
-    border-bottom: 1px solid rgba(106,78,24,0.2) !important;
+    background: var(--bg3-divider-soft) !important;
+    border-bottom: 1px solid var(--bg3-divider-med) !important;
     padding: 3px 8px !important;
 }
 .bg3-resistance-roll .dice-tooltip .part-formula { color: #a89880 !important; font-family: monospace !important; font-size: 0.72rem !important; }
-.bg3-resistance-roll .dice-tooltip .part-total  { color: #e8e0d0 !important; background: rgba(0,0,0,0.3) !important; font-weight: 700 !important; font-size: 0.78rem !important; }
+.bg3-resistance-roll .dice-tooltip .part-total  { color: var(--bg3-text-bright) !important; background: rgba(0,0,0,0.3) !important; font-weight: 700 !important; font-size: 0.78rem !important; }
 .bg3-resistance-roll .dice-tooltip .dice-rolls  { list-style: none !important; padding: 2px 8px 4px !important; margin: 0 !important; display: flex !important; flex-wrap: wrap !important; gap: 4px !important; }
 .bg3-resistance-roll .dice-tooltip .roll.die {
-    color: #e8e0d0 !important;
+    color: var(--bg3-text-bright) !important;
     background: rgba(30,20,8,0.9) !important;
-    border: 1px solid rgba(106,78,24,0.4) !important;
+    border: 1px solid var(--bg3-divider) !important;
     border-radius: 3px !important;
     padding: 2px 6px !important;
     font-size: 0.78rem !important;
     min-width: 22px !important;
     text-align: center !important;
 }
-.bg3-resistance-roll .dice-tooltip .roll.die.max { color: #6ecf7a !important; border-color: rgba(110,207,122,0.5) !important; }
-.bg3-resistance-roll .dice-tooltip .roll.die.min { color: #cc4444 !important; border-color: rgba(204,68,68,0.5) !important; }
+.bg3-resistance-roll .dice-tooltip .roll.die.max { color: var(--bg3-color-success) !important; border-color: rgba(var(--bg3-color-success-rgb), 0.5) !important; }
+.bg3-resistance-roll .dice-tooltip .roll.die.min { color: var(--bg3-color-danger) !important; border-color: rgba(var(--bg3-color-danger-rgb), 0.5) !important; }
 
 /* ── T20 condition-card descendants (class added by JS) ──────────────────── */
 /* JS may fail to find the inner div (DOMPurify normalises the inline style   */
@@ -710,10 +710,10 @@ section#chat textarea#chat-message:focus {
 /* primary fallback; JS overrides the inner div for additional styling.       */
 
 .bg3-t20-condition-message {
-    background: radial-gradient(ellipse at top, #1c1209 0%, #090604 100%) !important;
+    background: radial-gradient(ellipse at top, var(--bg3-bg-dark) 0%, #090604 100%) !important;
     border: 1px solid rgba(106, 78, 24, 0.45) !important;
     border-radius: 4px !important;
-    box-shadow: 0 0 0 1px #2a1e08, 0 4px 18px rgba(0, 0, 0, 0.75) !important;
+    box-shadow: 0 0 0 1px var(--bg3-bg-mid), 0 4px 18px rgba(0, 0, 0, 0.75) !important;
     padding: 2px 0 !important;
 }
 .bg3-t20-condition-message .message-header {
@@ -738,7 +738,7 @@ section#chat textarea#chat-message:focus {
 .bg3-t20-condition-card h2,
 .bg3-t20-condition-card h3,
 .bg3-t20-condition-card h4 {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
     font-size: 1.0rem !important;
     font-weight: 700 !important;
@@ -756,7 +756,7 @@ section#chat textarea#chat-message:focus {
 }
 /* Plain <label> = subtitle (e.g. "Condição de Fadiga") */
 .bg3-t20-condition-card label:not(.titulo) {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
 }
 .bg3-t20-condition-card p {
     color: #7a6e5a !important;
@@ -777,27 +777,27 @@ section#chat textarea#chat-message:focus {
     padding-left: 18px !important;
 }
 .bg3-t20-condition-card b,
-.bg3-t20-condition-card strong { color: #c8a96e !important; }
+.bg3-t20-condition-card strong { color: var(--bg3-accent) !important; }
 .bg3-t20-condition-card em,
 .bg3-t20-condition-card i     { color: #7a6e5a !important; }
 .bg3-t20-condition-card hr {
     border: none !important;
-    border-top: 1px solid rgba(106, 78, 24, 0.4) !important;
+    border-top: 1px solid var(--bg3-divider) !important;
     margin: 4px 0 !important;
 }
 /* Journal content-link buttons inside condition cards */
 .bg3-t20-condition-card .content-link {
-    background: rgba(200,169,110,0.12) !important;
-    border: 1px solid rgba(200,169,110,0.4) !important;
-    color: #c8a96e !important;
+    background: rgba(var(--bg3-accent-rgb), 0.12) !important;
+    border: 1px solid rgba(var(--bg3-accent-rgb), 0.4) !important;
+    color: var(--bg3-accent) !important;
     border-radius: 3px !important;
     padding: 1px 5px !important;
     font-family: "Modesto Condensed", serif !important;
     font-size: 0.76rem !important;
 }
-.bg3-t20-condition-card .content-link:hover { background: rgba(200,169,110,0.22) !important; }
+.bg3-t20-condition-card .content-link:hover { background: rgba(var(--bg3-accent-rgb), 0.22) !important; }
 .bg3-t20-condition-card a {
-    color: #c8a96e !important;
+    color: var(--bg3-accent) !important;
     text-decoration: none !important;
 }
 .bg3-t20-condition-card a:hover { color: #e0c489 !important; text-decoration: underline !important; }
