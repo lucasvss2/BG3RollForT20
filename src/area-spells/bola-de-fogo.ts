@@ -217,8 +217,14 @@ function detectImp3Active(entries: OnUseEntry[]): boolean {
         const qty = Number(e?.qty ?? 0);
         if (!Number.isFinite(qty) || qty < 1) continue;
         const desc = String(e?.description ?? "");
-        // "muda a duração para um dia... você cria uma pequena pedra flamejante..."
-        if (/pedra\s+flamejante/i.test(desc)) return true;
+        // Padrões múltiplos para cobrir variações de formato do T20:
+        // - full text: "você cria uma pequena pedra flamejante..."
+        // - title: "Pedra Flamejante" ou "pedra-flamejante"
+        if (/pedra[\s\-_]?flamejante/i.test(desc)) return true;
+        // Fallback: "muda a duração" é exclusivo do Ap3 (nenhum outro ap tem isso)
+        if (/muda\s+a\s+dura[cç][aã]/i.test(desc)) return true;
+        // Fallback 2: "ser descarregada" / "descarreg" — efeito exclusivo do Ap3
+        if (/descarreg/i.test(desc)) return true;
     }
     return false;
 }
@@ -1248,13 +1254,19 @@ export function setupBolaDeFogo(): void {
 
             // Camada 3: _pendingPedras — fallback quando t20ItemData é nulo ou
             // sem flags/nome reconhecíveis, mas já sabemos que foi criada uma pedra.
+            // IMPORTANTE: NÃO deve disparar quando a msg é o CAST da bola de fogo
+            // (que também tem t20ItemData). Usamos extractSpellName para distinguir:
+            // se o nome da mensagem é "bola de fogo", é o cast — ignorar Camada 3.
             if (!pedraDetected && speakerActorId && _pendingPedras.has(speakerActorId)) {
-                // Só dispara se a mensagem parece ser um uso de item (não qualquer roll).
-                // t20ItemData !== undefined = T20 incluiu itemData (qualquer item) → provável use.
-                // Fallback: content menciona "Pedra Flamejante".
-                const msgContent       = (message as unknown as { content?: string }).content ?? "";
-                const looksLikeUse     = t20ItemData !== undefined
-                                      || /pedra\s+flamejante/i.test(msgContent);
+                const msgContent  = (message as unknown as { content?: string }).content ?? "";
+                const msgItemName = normalizeCondName(extractSpellName(message));
+                // Só dispara se NÃO é o cast do spell (nome diferente de "bola de fogo")
+                // e a mensagem parece um uso de item do T20.
+                const isSpellCast = msgItemName === SPELL_KEY;
+                const looksLikeUse = !isSpellCast && (
+                    t20ItemData !== undefined
+                    || /pedra[\s\-_]?flamejante/i.test(msgContent)
+                );
                 if (looksLikeUse) {
                     const stored  = _pendingPedras.get(speakerActorId)!;
                     pedraDetected = true;
@@ -1282,6 +1294,15 @@ export function setupBolaDeFogo(): void {
         if (!itemData) return;
 
         const entries = getOnUseEffects(message);
+
+        // ── DIAGNÓSTICO: log temporário para depurar detecção de aprimoramentos ──
+        // Abrir DevTools (F12) → Console para ver os dados reais do T20.
+        // Remover após confirmar que a detecção funciona.
+        console.warn(
+            `[t20-theme-overhaul] Bola de Fogo cast — onUseEffects (${entries.length} entries):`,
+            JSON.stringify(entries, null, 2),
+        );
+        // ── FIM DIAGNÓSTICO ──
 
         // FASE 2: imp 2 ativo → esfera flamejante persistente
         if (detectImp2Active(entries)) {
