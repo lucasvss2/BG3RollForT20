@@ -17,12 +17,14 @@
     min-width: 480px !important;
 }
 
-/* Non-ability-use dialogs: auto-size to content */
-:is(.window-app, .application).bg3-dialog:not(.ability-use-form) {
+/* Non-ability-use old-Application dialogs: auto-size to content.
+   Scoped to .window-app only — ApplicationV2 (.application) positions
+   via inline styles and !important overrides would break drag/resize. */
+.window-app.bg3-dialog:not(.ability-use-form) {
     height: auto !important;
     width: auto !important;
 }
-:is(.window-app, .application).bg3-dialog:not(.ability-use-form) .window-content {
+.window-app.bg3-dialog:not(.ability-use-form) .window-content {
     height: auto !important;
     max-height: none !important;
     overflow: visible !important;
@@ -544,17 +546,21 @@
 
 /* ── Tormenta20 overrides ────────────────────────────────────────────────── */
 
-:is(.window-app, .application).bg3-dialog.tormenta20:not(.ability-use-form) .window-content {
+.window-app.bg3-dialog.tormenta20:not(.ability-use-form) .window-content {
     padding: 0 !important;
     overflow: visible !important;
     height: auto !important;
     max-height: none !important;
 }
+/* ApplicationV2 variant: padding only, no size override */
+.application.bg3-dialog.tormenta20:not(.ability-use-form) .window-content {
+    padding: 0 !important;
+}
 :is(.window-app, .application).bg3-dialog.tormenta20.ability-use-form .window-content {
     padding: 0 !important;
 }
 
-:is(.window-app, .application).bg3-dialog:not(.ability-use-form) form {
+.window-app.bg3-dialog:not(.ability-use-form) form {
     overflow: visible !important;
     height: auto !important;
 }
