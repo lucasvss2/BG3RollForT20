@@ -999,12 +999,29 @@ export function setupBolaDeFogo(): void {
             if (jb2aFlags) animFlags["flags.jb2a"]                 = jb2aFlags;
         }
 
+        // ── CD fix ──────────────────────────────────────────────────────────
+        // T20 só seta `resistencia.atributo` automaticamente em itens type="magia"
+        // (linha 13181 do tormenta20.mjs). O brew cria um type="consumivel" e
+        // NÃO copia o atributo → `prepareFinalAttributes` pula a computação do
+        // CD → fica 0. Fix: setamos atributo explicitamente para a conjuracao
+        // do actor. T20 vai computar `cd = 10 + nivel/2 + atributo + bonus`,
+        // e `bonus` já inclui o que aprimoramentos como Fortalecimento Arcano
+        // adicionaram (via applyItemChanges em key="cd" → resistencia.bonus).
+        type ParentLike = {
+            system?: {
+                attributes?: { conjuracao?: string };
+            };
+        };
+        const parent     = item.parent as ParentLike | null | undefined;
+        const conjuracao = String(parent?.system?.attributes?.conjuracao ?? "int");
+
         // Atualiza nome, img, e flags
         const actorId = item.parent?.id ?? "";
         const userId  = game.user?.id ?? "";
         void item.update({
             name: `Pedra Flamejante (${dado} fogo)`,
             img:  ESFERA_TEXTURE,
+            "system.resistencia.atributo": conjuracao,
             [`flags.${MODULE_ID}.${FLAG_SPELL}`]: PEDRA_KEY,
             [`flags.${MODULE_ID}.casterActorId`]: actorId,
             [`flags.${MODULE_ID}.casterUserId`]:  userId,
@@ -1092,7 +1109,13 @@ export function setupBolaDeFogo(): void {
                 }
                 const t20Item = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
                 const resist  = t20Item?.["resistencia"] as Record<string, unknown> | undefined;
-                const cd      = Number(resist?.["cd"] ?? 0);
+                // CD: tenta system.resistencia.cd primeiro; fallback parseia "CD X" do HTML do chat card;
+                // último fallback: 10 + base CD do actor (raramente necessário).
+                let cd = Number(resist?.["cd"] ?? 0);
+                if (!cd || cd <= 10) {
+                    const cdFromHtml = extractCD(message);
+                    if (cdFromHtml > 0) cd = cdFromHtml;
+                }
                 const resTxt  = String(resist?.["txt"] ?? "Reflexos reduz à metade");
                 registerPendingCast(uid, {
                     casterActorId: actorIdMaybe,
