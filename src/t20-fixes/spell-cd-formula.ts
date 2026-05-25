@@ -1,0 +1,116 @@
+/**
+ * T20 spell CD formula fix.
+ *
+ * O T20 nativo computa o CD do item (magia/consumível) em prepareFinalAttributes:
+ *
+ *   cd = 10 + nivel/2 + atributo_conjuracao + resistencia.bonus
+ *
+ * Essa fórmula IGNORA bônus de items aplicados ao actor via Active Effects
+ * (ex: Foco Arcano dá +1 ao `actor.system.attributes.cd`). Resultado: o CD
+ * mostrado nas magias fica 1 ponto abaixo do CD real do conjurador.
+ *
+ * Fix: monkey-patch Tormenta20ItemData.prototype.prepareFinalAttributes para
+ * usar `actor.attributes.cd` como base (que JÁ inclui todos os AEs do actor):
+ *
+ *   cd = actor.attributes.cd + atributo_conjuracao + resistencia.bonus
+ *
+ * Aplicado UMA vez no setup → corrige TODAS as magias e consumíveis do mundo.
+ *
+ * Preserva o caminho de NPCs (que já usavam `actor.attributes.cd` diretamente)
+ * e mantém fallback pra fórmula antiga caso `actor.attributes.cd` esteja 0.
+ */
+
+import { MODULE_ID } from "@/constants";
+
+type ItemDataProtoLike = {
+    prepareFinalAttributes?: () => void;
+    _bg3CDFormulaPatched?:   boolean;
+};
+
+export function patchT20SpellCDFormula(): void {
+    type T20Global = {
+        data?: { models?: { ConsumableData?: { prototype: object } } };
+    };
+    const t20 = (game as unknown as { tormenta20?: T20Global }).tormenta20;
+    const Cons = t20?.data?.models?.ConsumableData;
+    if (!Cons) {
+        console.warn(`[${MODULE_ID}] tormenta20.data.models.ConsumableData não encontrado — patch de CD não aplicado.`);
+        return;
+    }
+
+    // ConsumableData estende Tormenta20ItemData. Acessamos a classe base via
+    // protótipo do protótipo: prepareFinalAttributes é definido na base.
+    const baseProto = Object.getPrototypeOf(Cons.prototype) as ItemDataProtoLike;
+    if (!baseProto || typeof baseProto.prepareFinalAttributes !== "function") {
+        console.warn(`[${MODULE_ID}] Tormenta20ItemData.prototype.prepareFinalAttributes não encontrado — patch de CD não aplicado.`);
+        return;
+    }
+    if (baseProto._bg3CDFormulaPatched) return;
+
+    baseProto.prepareFinalAttributes = function(this: {
+        parent?: {
+            isOwned?: boolean;
+            parent?: {
+                type?: string;
+                system?: Record<string, unknown>;
+            } | null;
+        };
+        resistencia?: {
+            atributo?: string;
+            txt?:      string;
+            bonus?:    number;
+            cd?:       number;
+        };
+    }): void {
+        const item  = this.parent;
+        const actor = item?.parent ?? undefined;
+        if (!item?.isOwned || !actor) return;
+
+        const resist = this.resistencia;
+        if (!resist) return;
+        if (!resist.txt) return;
+        if (!resist.atributo && actor.type !== "npc") return;
+
+        const actorSys = actor.system ?? {};
+        if (actor.type === "npc") {
+            const attrs = actorSys["attributes"] as { cd?: number } | undefined;
+            resist.cd = Number(attrs?.cd ?? 0);
+            return;
+        }
+
+        // PC: usa actor.attributes.cd (que JÁ tem Foco Arcano, AEs, etc.)
+        const attrs   = actorSys["attributes"] as { cd?: number; nivel?: { value?: number } } | undefined;
+        const atrs    = actorSys["atributos"]  as Record<string, { value?: number } | undefined> | undefined;
+        const actorCD = Number(attrs?.cd ?? 0);
+        const atrVal  = Number(atrs?.[resist.atributo ?? ""]?.value ?? 0);
+        const bonus   = Number(resist.bonus ?? 0);
+
+        if (actorCD > 0) {
+            // Fórmula corrigida — actor.attributes.cd já inclui bônus de items via AE
+            resist.cd = actorCD + atrVal + bonus;
+        } else {
+            // Fallback: fórmula T20 original (10 + nivel/2 + atributo + bonus)
+            const nvl = Math.floor(Number(attrs?.nivel?.value ?? 0) / 2);
+            resist.cd = 10 + nvl + atrVal + bonus;
+        }
+    };
+    baseProto._bg3CDFormulaPatched = true;
+
+    console.log(`[${MODULE_ID}] T20 spell CD formula patched — CD agora inclui bônus de items via actor.attributes.cd.`);
+
+    // Força re-prep de todos os atores para que items existentes recomputem o CD
+    // com a nova fórmula. Sem isso, CDs ficam cacheados com o valor antigo até
+    // o próximo evento que dispare prepareData() (ex: edit no actor sheet).
+    type ActorLike = { prepareData?(): void; name?: string };
+    const actors = ((game as unknown as { actors?: { contents?: ActorLike[] } }).actors?.contents ?? []);
+    let reprepped = 0;
+    for (const actor of actors) {
+        try {
+            actor.prepareData?.();
+            reprepped++;
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Falha ao re-prep actor "${actor.name}":`, err);
+        }
+    }
+    console.log(`[${MODULE_ID}] Re-prep de ${reprepped} atores → CDs atualizados.`);
+}

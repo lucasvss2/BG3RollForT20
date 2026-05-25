@@ -21,6 +21,7 @@ import { setupAreaSpells } from "./area-spells/index";
 import { diagnoseAuras } from "./area-spells/aura-sagrada";
 import { setupSkillsMenu } from "./ui/skills-menu";
 import { setupSheetRedesign } from "./sheet/index";
+import { patchT20SpellCDFormula } from "./t20-fixes/spell-cd-formula";
 // Side-effect import: src/socket/index.ts registers the `socketlib.ready`
 // listener at top-level. This MUST happen at module load (before Foundry's
 // `init` hook fires) because socketlib emits the hook from its own `init`
@@ -66,6 +67,10 @@ Hooks.once("setup", () => {
 
 Hooks.once("ready", () => {
     if (game.system.id !== SYSTEM_ID) return;
+    // Patch global do T20: fórmula de CD de magia/consumível.
+    // Tem que rodar no ready (depois de game.tormenta20 estar inicializado).
+    patchT20SpellCDFormula();
+
     // API de diagnóstico — útil quando algo parece quebrado em mesa.
     // Uso: `game.modules.get("aeris-bg3-rolls-t20").api.diagnoseAuras()`
     const mod = game.modules.get(MODULE_ID) as
