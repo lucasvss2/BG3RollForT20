@@ -241,6 +241,9 @@ const _pendingCasts = new Map<string, PendingCast>();
 // Marcador para templates do T20 que devem ser deletados imediatamente (FASE 2 —
 // a área padrão é substituída pelo esfera-Token; o MeasuredTemplate não é usado).
 const _pendingEsferaTemplateDelete = new Map<string, number>(); // userId → timestamp
+// Guard contra detonação dupla (clique rápido na UI ou disparo simultâneo
+// por createChatMessage + skills-menu).
+let _pedraDetonationInProgress = false;
 
 function registerPendingCast(uid: string, cast: Omit<PendingCast, "ts">): void {
     _pendingCasts.set(uid, { ...cast, ts: Date.now() });
@@ -700,10 +703,21 @@ async function postEsferaSummaryCard(
 
 // ── FASE 3: Pedra Flamejante ──────────────────────────────────────────────────
 //
-// Aprimoramento 3 (+3 PM): em vez da explosão imediata, cria uma pedra
-// flamejante no inventário do conjurador. Pode ser detonada como reação
-// (arremesso, alcance curto) via skills-menu. Ao detonar, causa o dano da
-// magia numa área de esfera com 6m de raio (mesmo CD/Reflexos do normal).
+// Aprimoramento 3 (+3 PM): em vez da explosão imediata, cria um item
+// "Pedra Flamejante" (consumivel) no inventário do conjurador.
+//
+// Fluxo principal de detonação:
+//   1. Player clica no item "Pedra Flamejante" na aba de inventário.
+//   2. T20 posta um chat card para o item → nosso createChatMessage detecta
+//      flags.[MODULE_ID].spell === PEDRA_KEY no itemData.
+//   3. handlePedraDetonationFromItemUse abre o canvas click de posicionamento
+//      (igual FASE 1) e, ao confirmar, registra pending cast + cria template.
+//   4. createMeasuredTemplate reclama o template e dispatchExplosion despacha
+//      o modal de resistência para cada alvo.
+//   5. Item é removido do inventário após detonação.
+//
+// Fluxo alternativo (fallback): skills-menu "Detonar Pedra Flamejante".
+// Útil se o T20 não incluir nossos flags no itemData da mensagem.
 //
 // Ap1 é stack-compatível: 3d6 + qty×2d6 ao detonar.
 
@@ -906,6 +920,30 @@ async function detonatePedra(
     refreshSkillsMenu();
 }
 
+/**
+ * Disparado quando o player usa o item "Pedra Flamejante" direto do inventário.
+ * Detectado em createChatMessage via flags.[MODULE_ID].spell === PEDRA_KEY.
+ *
+ * Delega para detonatePedra (canvas click → template visual → roll de dano →
+ * modais de resistência → delete do item) protegido pelo guard de duplo-clique.
+ */
+async function handlePedraDetonationFromItemUse(
+    actor: PedraActorLike,
+    itemId: string,
+    pedraFlags: Record<string, unknown>,
+): Promise<void> {
+    if (_pedraDetonationInProgress) {
+        ui.notifications?.warn("Pedra Flamejante: detonação já em andamento — conclua ou pressione ESC.");
+        return;
+    }
+    _pedraDetonationInProgress = true;
+    try {
+        await detonatePedra(actor, itemId, pedraFlags);
+    } finally {
+        _pedraDetonationInProgress = false;
+    }
+}
+
 function getMyPedras(): Array<{ actorId: string; itemId: string; flags: Record<string, unknown> }> {
     const uid  = game.user?.id;
     const isGM = game.user?.isGM;
@@ -935,6 +973,10 @@ function getMyPedras(): Array<{ actorId: string; itemId: string; flags: Record<s
 }
 
 async function onClickDetonarPedra(): Promise<void> {
+    if (_pedraDetonationInProgress) {
+        ui.notifications?.warn("Pedra Flamejante: detonação já em andamento — conclua ou pressione ESC.");
+        return;
+    }
     const pedras = getMyPedras();
     if (pedras.length === 0) {
         ui.notifications?.info("Nenhuma Pedra Flamejante no inventário.");
@@ -985,7 +1027,12 @@ async function onClickDetonarPedra(): Promise<void> {
 
     const actor = actorsMap.get(pedra.actorId);
     if (!actor) return;
-    await detonatePedra(actor, pedra.itemId, pedra.flags);
+    _pedraDetonationInProgress = true;
+    try {
+        await detonatePedra(actor, pedra.itemId, pedra.flags);
+    } finally {
+        _pedraDetonationInProgress = false;
+    }
 }
 
 // ── Skills menu (cancelar esfera) ────────────────────────────────────────────
@@ -1130,11 +1177,57 @@ export function setupBolaDeFogo(): void {
         doc.updateSource({ rolls: filtered });
     });
 
-    // 1. createChatMessage — branch entre FASE 1 (explosão) e FASE 2 (esfera)
+    // 1. createChatMessage — branch entre FASE 1 (explosão), FASE 2 (esfera),
+    //    FASE 3 (pedra — cast) e uso de pedra via inventário.
     Hooks.on("createChatMessage", (...args: unknown[]) => {
         const message = args[0] as ChatMessage;
         const uid     = getMsgAuthorId(message);
         if (uid !== game.user?.id) return;
+
+        // ── Detecta uso de Pedra Flamejante no inventário ────────────────────
+        // Quando o player clica no item consumivel "Pedra Flamejante" na ficha,
+        // o T20 cria um chat card com flags.tormenta20.itemData contendo o item.
+        // Verificamos por nossos flags (primário) e por nome+tipo (fallback).
+        const t20ItemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
+        if (t20ItemData) {
+            const itemModFlags = (t20ItemData["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
+            const itemType     = (t20ItemData["type"] as string | undefined) ?? "";
+            const rawItemName  = (t20ItemData["name"] as string | undefined) ?? "";
+            const isPedraByFlag = itemModFlags?.[FLAG_SPELL] === PEDRA_KEY;
+            const isPedraByName = itemType === "consumivel"
+                               && normalizeCondName(rawItemName) === "pedra flamejante";
+
+            if (isPedraByFlag || isPedraByName) {
+                // Localiza o ator e o item específico no inventário
+                const actorId = message.speaker?.actor
+                    ?? (itemModFlags?.["casterActorId"] as string | undefined) ?? "";
+                type ActorsGetter = { get(id: string): PedraActorLike | undefined };
+                const pedraActor = actorId
+                    ? (game.actors as unknown as ActorsGetter).get(actorId)
+                    : null;
+                if (pedraActor) {
+                    // Prefere o item pelo ID do itemData (T20 inclui _id no snapshot);
+                    // fallback para o primeiro item com nossa flag no ator.
+                    const dataId   = (t20ItemData["_id"] as string | undefined)
+                                  ?? (t20ItemData["id"]  as string | undefined);
+                    const pedraItem = dataId
+                        ? pedraActor.items.contents?.find(
+                            i => i.id === dataId && i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY)
+                          ?? pedraActor.items.contents?.find(
+                            i => i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY)
+                        : pedraActor.items.contents?.find(
+                            i => i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY);
+
+                    if (pedraItem) {
+                        const resolvedFlags = pedraItem.flags?.[MODULE_ID] ?? itemModFlags ?? {};
+                        void handlePedraDetonationFromItemUse(pedraActor, pedraItem.id, resolvedFlags);
+                        return;
+                    }
+                }
+            }
+        }
+        // ── Fim detecção pedra ───────────────────────────────────────────────
+
         if (normalizeCondName(extractSpellName(message)) !== SPELL_KEY) return;
 
         const itemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
