@@ -790,6 +790,30 @@ async function detonatePedra(
     const snappedX = Math.round(pos.x / gridSize) * gridSize;
     const snappedY = Math.round(pos.y / gridSize) * gridSize;
 
+    // Cria template visual temporário (mostra a área de explosão durante 3.5s)
+    type SceneLike = {
+        createEmbeddedDocuments(type: string, data: unknown[]): Promise<Array<{ delete?(): Promise<unknown> }>>;
+    };
+    const sceneForTpl = (canvas as unknown as { scene?: SceneLike }).scene;
+    if (sceneForTpl) {
+        try {
+            const created = await sceneForTpl.createEmbeddedDocuments("MeasuredTemplate", [{
+                t:           "circle",
+                x:           snappedX,
+                y:           snappedY,
+                distance:    PEDRA_RAIO_M,
+                fillColor:   "#ff4400",
+                fillAlpha:   0.15,
+                borderColor: "#ff6600",
+                borderAlpha: 0.8,
+            }]);
+            const visualTpl = created[0] as { delete?(): Promise<unknown> } | undefined;
+            if (visualTpl) setTimeout(() => void visualTpl.delete?.(), TEMPLATE_LINGER_MS);
+        } catch (err) {
+            console.warn(`[t20-theme-overhaul] Pedra Flamejante: falha ao criar template visual:`, err);
+        }
+    }
+
     const tokens             = tokensInTemplate({ x: snappedX, y: snappedY, distance: PEDRA_RAIO_M });
     const { skill, outcome } = parseResistance(resistTxt);
 
@@ -1182,7 +1206,22 @@ export function setupBolaDeFogo(): void {
         });
     });
 
-    // 2. createMeasuredTemplate — caster reclama (FASE 1 explosão)
+    // 2a. preCreateMeasuredTemplate — cancela o template do T20 ANTES de aparecer
+    //     quando imp 2 ou 3 ativo. Zero flash no mapa.
+    //     (Para FASE 1 não há entrada em _pendingEsferaTemplateDelete → não cancela.)
+    Hooks.on("preCreateMeasuredTemplate", (...args: unknown[]) => {
+        // pre-hooks: (doc, data, options, userId) → userId em args[3]
+        const userId     = typeof args[3] === "string" ? (args[3] as string) : undefined;
+        const currentUid = game.user?.id;
+        if (!currentUid || userId !== currentUid) return;
+
+        const esferaPendingTs = _pendingEsferaTemplateDelete.get(currentUid);
+        if (esferaPendingTs === undefined || Date.now() - esferaPendingTs >= PENDING_WINDOW_MS) return;
+        _pendingEsferaTemplateDelete.delete(currentUid);
+        return false; // cancela criação — template nunca aparece no mapa
+    });
+
+    // 2b. createMeasuredTemplate — caster reclama (FASE 1 explosão)
     Hooks.on("createMeasuredTemplate", (...args: unknown[]) => {
         const tplDoc = args[0] as {
             flags?: Record<string, Record<string, unknown>>;
@@ -1206,17 +1245,6 @@ export function setupBolaDeFogo(): void {
             ?? (typeof tplDoc.user === "string" ? tplDoc.user : tplDoc.user?.id)
             ?? triggerUserId;
         if (authorUid !== currentUid) return;
-
-        // FASE 2: esfera flamejante — o T20 criou um template de área que não usamos.
-        // Deletar imediatamente; a esfera é representada pelo Token, não pelo template.
-        const esferaPendingTs = _pendingEsferaTemplateDelete.get(currentUid);
-        if (esferaPendingTs !== undefined && Date.now() - esferaPendingTs < PENDING_WINDOW_MS) {
-            _pendingEsferaTemplateDelete.delete(currentUid);
-            const tplDocDeletable = tplDoc as unknown as { delete?(): Promise<unknown> };
-            // Delay mínimo pra o T20 terminar de processar antes de deletar
-            setTimeout(() => void tplDocDeletable.delete?.(), 200);
-            return;
-        }
 
         const pending = _pendingCasts.get(currentUid);
         if (!pending || Date.now() - pending.ts >= PENDING_WINDOW_MS) return;
