@@ -2,14 +2,16 @@
     "id": "aeris-bg3-rolls-t20",
     "title": "T20 Theme Overhaul",
     "description": "Tema escuro completo para o sistema Tormenta20: ficha de personagem redesenhada com visual inspirado em BG3, janelas de itens/poderes/magias estilizadas, overlay cinemático de dados com resultado do d20, chat cards com botão de rerolar, teste secreto de perícia com multi-alvo e aplicação automática de dano com prompt interativo.",
-    "version": "1.18.7",
+    "version": "1.18.8",
     "authors": [
         {
             "name": "lucasvss2",
             "url": "https://github.com/lucasvss2"
         }
     ],
-    "esmodules": ["main.bundle.js"],
+    "esmodules": [
+        "main.bundle.js"
+    ],
     "compatibility": {
         "minimum": "13",
         "verified": "13.351"
