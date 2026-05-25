@@ -593,7 +593,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         <div class="smf-section-title">
             <i class="fas fa-shield-halved"></i>
             RESISTÊNCIA${skillKey ? ` — ${esc(skillLabel.toUpperCase())} (CD ${preReq.cd})` : ""}
-            <button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button>
+            <button type="button" class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button>
         </div>
         <div class="smf-section-body">
             ${antimagiaBadgeHtml}
@@ -618,8 +618,8 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         const halfHeal = Math.floor(preReq.damageTotal / 2);
         const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
         const healHeaderHtml = preReq.truqueAtivo
-            ? `<div class="smf-section-title"><i class="fas fa-bolt"></i> TRUQUE — DANO DE LUZ<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>`
-            : `<div class="smf-section-title"><i class="fas fa-heart"></i> CURA<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>`;
+            ? `<div class="smf-section-title"><i class="fas fa-bolt"></i> TRUQUE — DANO DE LUZ<button type="button" class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>`
+            : `<div class="smf-section-title"><i class="fas fa-heart"></i> CURA<button type="button" class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>`;
         damageSectionHtml = `
             ${healHeaderHtml}
             <div class="smf-section-body">
@@ -664,7 +664,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         `;
     } else if (!preReq.isHeal && preReq.damageTotal > 0) {
         damageSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>
+            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO<button type="button" class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>
             <div class="smf-section-body">
             <div class="smf-dmg-number">${preReq.damageTotal}</div>
             <div class="smf-dmg-btns">
@@ -683,7 +683,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
         `;
     } else {
         damageSectionHtml = `
-            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO / CURA<button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>
+            <div class="smf-section-title"><i class="fas fa-burst"></i> DANO / CURA<button type="button" class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button></div>
             <div class="smf-section-body">
             <div class="smf-na-text">Sem dano ou cura direto para esta magia.</div>
             </div>
@@ -765,7 +765,7 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
             <div class="smf-section" id="smf-sect-effects">
                 <div class="smf-section-title">
                     <i class="fas fa-sparkles"></i> EFEITOS / CONDIÇÕES
-                    <button class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button>
+                    <button type="button" class="smf-collapse-btn" title="Minimizar"><i class="fas fa-chevron-down"></i></button>
                 </div>
                 <div class="smf-section-body">
                     ${buffSectionHtml}
