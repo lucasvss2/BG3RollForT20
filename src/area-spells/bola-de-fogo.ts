@@ -984,7 +984,13 @@ export function setupBolaDeFogo(): void {
         // Procura a magia "Bola de Fogo" no inventário do mesmo actor — vamos
         // copiar flags de automated-animations / sequencer pra que a animação
         // continue tocando quando a pedra for usada.
-        const actorItems = item.parent?.items?.contents ?? [];
+        type SpellItemLike = {
+            name?: string;
+            type?: string;
+            flags?: Record<string, Record<string, unknown>>;
+            system?: Record<string, unknown>;
+        };
+        const actorItems = (item.parent?.items?.contents ?? []) as SpellItemLike[];
         const origSpell  = actorItems.find(i =>
             i.type === "magia"
             && normalizeCondName(i.name ?? "").includes("bola de fogo"),
@@ -1001,19 +1007,42 @@ export function setupBolaDeFogo(): void {
 
         // ── CD fix ──────────────────────────────────────────────────────────
         // T20 só seta `resistencia.atributo` automaticamente em itens type="magia"
-        // (linha 13181 do tormenta20.mjs). O brew cria um type="consumivel" e
-        // NÃO copia o atributo → `prepareFinalAttributes` pula a computação do
-        // CD → fica 0. Fix: setamos atributo explicitamente para a conjuracao
-        // do actor. T20 vai computar `cd = 10 + nivel/2 + atributo + bonus`,
-        // e `bonus` já inclui o que aprimoramentos como Fortalecimento Arcano
-        // adicionaram (via applyItemChanges em key="cd" → resistencia.bonus).
-        type ParentLike = {
-            system?: {
-                attributes?: { conjuracao?: string };
-            };
-        };
+        // (linha 13181 do tormenta20.mjs). O brew cria um type="consumivel" e NÃO
+        // copia o atributo → `prepareFinalAttributes` pula a computação do CD →
+        // fica 0. Solução: computamos o CD nós mesmos e armazenamos na nossa flag.
+        //
+        // Fórmula T20: cd = 10 + nivel/2 + atributo_mod + bonus.
+        // - origSpell.system.resistencia.cd = CD base da magia (sem aprimoramentos,
+        //   pois aprimoramentos vivem só no clone usado no cast).
+        // - granada.system.resistencia.bonus = bonus com aprimoramentos aplicados
+        //   (o brew clona da clone modificada → vem inflado).
+        // Logo: effectiveCD = origSpellCD + granadaBonus.
+        const origSpellResist = (origSpell?.system?.["resistencia"]
+                              ?? {}) as Record<string, unknown>;
+        const origSpellCD     = Number(origSpellResist["cd"] ?? 0);
+        const origSpellAtr    = String(origSpellResist["atributo"] ?? "");
+
+        const granadaResist   = (item.system?.["resistencia"]
+                              ?? {}) as Record<string, unknown>;
+        const granadaBonus    = Number(granadaResist["bonus"] ?? 0);
+
+        type ParentLike = { system?: { attributes?: { conjuracao?: string } } };
         const parent     = item.parent as ParentLike | null | undefined;
-        const conjuracao = String(parent?.system?.attributes?.conjuracao ?? "int");
+        const conjuracao = origSpellAtr
+                        || String(parent?.system?.attributes?.conjuracao ?? "int");
+
+        // Fallback se origSpell não existir: computa direto do actor
+        let effectiveCD = origSpellCD + granadaBonus;
+        if (!effectiveCD || effectiveCD <= 10) {
+            type ActorSys = {
+                atributos?:  Record<string, { value?: number } | undefined>;
+                attributes?: { nivel?: { value?: number } };
+            };
+            const actorSys = (parent as unknown as { system?: ActorSys })?.system;
+            const atrVal   = Number(actorSys?.atributos?.[conjuracao]?.value ?? 0);
+            const nvl      = Math.floor(Number(actorSys?.attributes?.nivel?.value ?? 0) / 2);
+            effectiveCD    = 10 + nvl + atrVal + granadaBonus;
+        }
 
         // Atualiza nome, img, e flags
         const actorId = item.parent?.id ?? "";
@@ -1022,14 +1051,17 @@ export function setupBolaDeFogo(): void {
             name: `Pedra Flamejante (${dado} fogo)`,
             img:  ESFERA_TEXTURE,
             "system.resistencia.atributo": conjuracao,
+            "system.resistencia.cd":       effectiveCD,
             [`flags.${MODULE_ID}.${FLAG_SPELL}`]: PEDRA_KEY,
             [`flags.${MODULE_ID}.casterActorId`]: actorId,
             [`flags.${MODULE_ID}.casterUserId`]:  userId,
             [`flags.${MODULE_ID}.casterName`]:    item.parent?.name ?? "Lançador",
             [`flags.${MODULE_ID}.createdAtMs`]:   Date.now(),
+            [`flags.${MODULE_ID}.cd`]:            effectiveCD,
             ...animFlags,
         });
-        ui.notifications?.info(`Pedra Flamejante criada no inventário (${dado} fogo). Clique no item para arremessar.`);
+        console.warn(`[t20-theme-overhaul] Pedra Flamejante criada — CD computado: ${effectiveCD} (origSpellCD=${origSpellCD}, granadaBonus=${granadaBonus}, atributo=${conjuracao}).`);
+        ui.notifications?.info(`Pedra Flamejante criada no inventário (${dado} fogo, CD ${effectiveCD}). Clique no item para arremessar.`);
     });
 
     // 0. preCreateChatMessage — quando imp 2 ativo no cast:
@@ -1109,9 +1141,10 @@ export function setupBolaDeFogo(): void {
                 }
                 const t20Item = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
                 const resist  = t20Item?.["resistencia"] as Record<string, unknown> | undefined;
-                // CD: tenta system.resistencia.cd primeiro; fallback parseia "CD X" do HTML do chat card;
-                // último fallback: 10 + base CD do actor (raramente necessário).
-                let cd = Number(resist?.["cd"] ?? 0);
+                // CD: nossa flag (bake at createItem) é fonte mais confiável; depois
+                // tenta system.resistencia.cd do snapshot; depois extractCD do HTML.
+                let cd = Number(liveItem?.flags?.[MODULE_ID]?.["cd"] ?? 0);
+                if (!cd) cd = Number(resist?.["cd"] ?? 0);
                 if (!cd || cd <= 10) {
                     const cdFromHtml = extractCD(message);
                     if (cdFromHtml > 0) cd = cdFromHtml;
