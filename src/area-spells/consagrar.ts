@@ -20,6 +20,7 @@
 import { MODULE_ID } from "@/constants";
 import { extractSpellName, normalizeCondName, getMsgAuthorId } from "@/spell-resistance/index";
 import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
+import CONSAGRAR_STYLES from "./consagrar.css?inline";
 
 const SPELL_KEY = "consagrar";
 const FLAG_SPELL = "spell";                          // template flag: identifica como Consagrar
@@ -683,71 +684,7 @@ const CONSAGRAR_STYLES_ID = "bg3-t20-consagrar-styles";
 
 // CSS específico do dialog Consagrar — pequeno complemento ao tema bg3-dialog
 // (que já cuida do gradiente, header, footer, botões e checkboxes).
-const CONSAGRAR_STYLES = `
-.window-app.bg3-dialog .bg3-consagrar-remove {
-    padding: 14px 16px 6px;
-}
-.window-app.bg3-dialog .bg3-consagrar-remove p {
-    margin: 0 0 8px;
-    color: var(--bg3-text-primary);
-    font-family: "Palatino Linotype", "Book Antiqua", serif;
-    font-size: 0.95rem;
-    line-height: 1.4;
-}
-.window-app.bg3-dialog .bg3-consagrar-remove p b {
-    color: var(--bg3-accent);
-    font-weight: 700;
-}
-.window-app.bg3-dialog .bg3-consagrar-remove .hint {
-    color: var(--bg3-accent-muted);
-    font-size: 0.82rem;
-    font-style: italic;
-    margin-top: 4px;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker {
-    padding: 12px 16px 8px;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker > .picker-intro {
-    color: var(--bg3-accent-muted);
-    font-family: "Modesto Condensed", "Palatino Linotype", serif;
-    font-size: 0.78rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    margin: 0 0 10px;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker .picker-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--bg3-divider-med);
-    cursor: pointer;
-    transition: background 0.15s;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker .picker-row:last-child {
-    border-bottom: none;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker .picker-row:hover {
-    background: var(--bg3-divider-soft);
-}
-.window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-idx {
-    color: var(--bg3-accent-muted);
-    font-family: "Modesto Condensed", "Palatino Linotype", serif;
-    font-size: 0.78rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    min-width: 56px;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-name {
-    color: var(--bg3-text-primary);
-    font-family: "Palatino Linotype", serif;
-    font-size: 0.95rem;
-}
-.window-app.bg3-dialog .bg3-consagrar-picker .picker-row .row-name b {
-    color: var(--bg3-accent);
-    font-weight: 700;
-}
-`;
+
 
 function ensureConsagrarStyles(): void {
     if (document.getElementById(CONSAGRAR_STYLES_ID)) return;

@@ -1,3 +1,5 @@
+import MENU_STYLES from "./skills-menu.css?inline";
+
 /**
  * Skills Menu — botão único da toolbar que agrega ações de skills ativas.
  *
@@ -53,37 +55,7 @@ export function unregisterSkillAction(id: string): void {
 const MENU_BTN_ID    = "bg3-t20-skills-menu-btn";
 const MENU_STYLES_ID = "bg3-t20-skills-menu-styles";
 
-const MENU_STYLES = `
-.window-app.bg3-dialog .bg3-skills-menu-list {
-    padding: 12px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-.window-app.bg3-dialog .bg3-skills-menu-list > .skill-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    background: var(--bg3-divider-soft);
-    border: 1px solid rgba(var(--bg3-accent-rgb), 0.30);
-    border-radius: 4px;
-    color: var(--bg3-text-primary);
-    font-family: "Palatino Linotype", "Book Antiqua", serif;
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-}
-.window-app.bg3-dialog .bg3-skills-menu-list > .skill-row:hover {
-    background: var(--bg3-divider-med);
-    border-color: rgba(var(--bg3-accent-rgb), 0.55);
-}
-.window-app.bg3-dialog .bg3-skills-menu-list > .skill-row > i {
-    width: 18px;
-    text-align: center;
-    color: var(--bg3-accent);
-}
-`;
+
 
 function ensureMenuStyles(): void {
     if (document.getElementById(MENU_STYLES_ID)) return;

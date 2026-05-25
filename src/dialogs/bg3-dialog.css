@@ -1,0 +1,565 @@
+
+/* ── BG3-style roll dialog ───────────────────────────────────────────────── */
+
+.window-app.bg3-dialog {
+    background: radial-gradient(ellipse at top, var(--bg3-bg-mid) 0%, var(--bg3-bg-deepest) 100%) !important;
+    border: none !important;
+    border-radius: 6px !important;
+    box-shadow:
+        0 0 0 1px var(--bg3-border-ambient),
+        0 0 0 3px #0a0704,
+        0 0 0 5px var(--bg3-border-ambient),
+        0 0 0 7px #0a0704,
+        0 0 0 8px #4a360e,
+        0 0 40px rgba(0, 0, 0, 0.95),
+        inset 0 0 60px rgba(0, 0, 0, 0.5) !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", "Book Antiqua", serif !important;
+    min-width: 480px !important;
+}
+
+/* Non-ability-use dialogs: auto-size to content */
+.window-app.bg3-dialog:not(.ability-use-form) {
+    height: auto !important;
+    width: auto !important;
+}
+.window-app.bg3-dialog:not(.ability-use-form) .window-content {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+/* AbilityUseDialog: scroll — height is set by JS (syncContentHeight) */
+.window-app.ability-use-form.bg3-dialog .window-content {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+/* Corner resize handle — bottom-right, bidirectional */
+.window-app.ability-use-form .window-resizable-handle {
+    position: absolute !important;
+    bottom: 0 !important;
+    right: 0 !important;
+    width: 22px !important;
+    height: 22px !important;
+    cursor: se-resize !important;
+    background: transparent !important;
+    border: none !important;
+    overflow: hidden !important;
+    border-radius: 0 0 6px 0 !important;
+    z-index: 10 !important;
+}
+.window-app.ability-use-form .window-resizable-handle::after {
+    content: "" !important;
+    position: absolute !important;
+    right: 3px !important;
+    bottom: 3px !important;
+    width: 14px !important;
+    height: 14px !important;
+    background:
+        linear-gradient(135deg,
+            transparent 0%,   transparent 38%,
+            rgba(var(--bg3-accent-rgb),0.65) 38%, rgba(var(--bg3-accent-rgb),0.65) 46%,
+            transparent 46%,  transparent 54%,
+            rgba(var(--bg3-accent-rgb),0.45) 54%, rgba(var(--bg3-accent-rgb),0.45) 62%,
+            transparent 62%,  transparent 70%,
+            rgba(var(--bg3-accent-rgb),0.28) 70%, rgba(var(--bg3-accent-rgb),0.28) 78%,
+            transparent 78%
+        ) !important;
+}
+
+.window-app.bg3-dialog::before {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border: 1px solid var(--bg3-border);
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
+
+.window-app.bg3-dialog .window-header {
+    background: linear-gradient(to right, transparent, var(--bg3-divider-med), transparent) !important;
+    border-bottom: 1px solid var(--bg3-border-strong) !important;
+    padding: 6px 10px !important;
+    position: relative;
+    z-index: 1;
+}
+
+.window-app.bg3-dialog .window-title {
+    color: var(--bg3-accent) !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.14em !important;
+    text-transform: uppercase !important;
+    text-shadow: 0 0 14px rgba(var(--bg3-accent-rgb), 0.55) !important;
+}
+
+.window-app.bg3-dialog .header-button,
+.window-app.bg3-dialog .window-header > a {
+    color: var(--bg3-accent-muted) !important;
+    transition: color 0.15s !important;
+}
+.window-app.bg3-dialog .header-button:hover,
+.window-app.bg3-dialog .window-header > a:hover {
+    color: var(--bg3-accent) !important;
+}
+
+/* ── Skill name banner ───────────────────────────────────────────────────── */
+
+.bg3-skill-banner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 16px 10px;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+}
+
+.bg3-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+}
+
+.bg3-skill-img {
+    border: 1px solid var(--bg3-tint-bold);
+    border-radius: 4px;
+    box-shadow: 0 0 14px var(--bg3-tint-strong);
+    flex-shrink: 0;
+    height: 56px;
+    object-fit: cover;
+    width: 56px;
+}
+
+.bg3-skill-name {
+    font-family: "Modesto Condensed", "Palatino Linotype", serif;
+    font-size: clamp(1.5rem, 4vw, 2.2rem);
+    font-weight: 700;
+    color: var(--bg3-accent) !important;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    text-shadow: 0 0 20px rgba(var(--bg3-accent-rgb), 0.65);
+    line-height: 1.1;
+}
+
+.bg3-skill-divider {
+    width: 180px;
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(var(--bg3-accent-rgb), 0.55), transparent);
+    margin: 8px 0 0;
+}
+
+/* ── Form body ──────────────────────────────────────────────────────────── */
+
+.window-app.bg3-dialog .window-content,
+.window-app.bg3-dialog form,
+.window-app.bg3-dialog .dialog-content {
+    background: transparent !important;
+    color: var(--bg3-text-primary) !important;
+    position: relative;
+    z-index: 1;
+}
+
+.window-app.bg3-dialog .form-group {
+    border-bottom: 1px solid var(--bg3-divider-soft) !important;
+    padding: 6px 16px !important;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.window-app.bg3-dialog .form-group:last-of-type {
+    border-bottom: none !important;
+}
+
+/* Direct-child labels = field names ("BÔNUS NO TESTE", "ROLL MODE") */
+.window-app.bg3-dialog .form-group > label {
+    color: var(--bg3-accent-muted) !important;
+    font-size: 0.78rem !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.window-app.bg3-dialog input[type="text"],
+.window-app.bg3-dialog input[type="number"],
+.window-app.bg3-dialog input:not([type]),
+.window-app.bg3-dialog select {
+    background: rgba(0, 0, 0, 0.55) !important;
+    border: 1px solid #3a2a0e !important;
+    border-radius: 3px !important;
+    color: var(--bg3-accent-bright) !important;
+    font-family: "Palatino Linotype", serif !important;
+    font-size: 0.9rem !important;
+    padding: 3px 8px !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+    flex: 1 1 auto;
+}
+
+/* AbilityUseDialog "Custo de Mana Total" + similar T20 readouts.
+   T20 ships these inputs/outputs with dark inline colours.  Override broadly. */
+.window-app.ability-use-form input,
+.window-app.ability-use-form output,
+.window-app.ability-use-form progress,
+.window-app.ability-use-form meter {
+    color: var(--bg3-btn-text) !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 4px rgba(0,0,0,0.6) !important;
+    background-color: rgba(0, 0, 0, 0.55) !important;
+}
+.window-app.ability-use-form input[readonly],
+.window-app.ability-use-form output {
+    background: linear-gradient(to right, var(--bg3-divider-med), rgba(0,0,0,0.45)) !important;
+    border: 1px solid var(--bg3-border-strong) !important;
+    border-radius: 3px !important;
+}
+/* T20 progress-bar style total-cost display (a styled <input> or <progress>) */
+.window-app.ability-use-form progress::-webkit-progress-bar,
+.window-app.ability-use-form progress::-moz-progress-bar {
+    background: rgba(0,0,0,0.55) !important;
+}
+.window-app.ability-use-form progress::-webkit-progress-value {
+    background: linear-gradient(to right, var(--bg3-btn-bg-top), var(--bg3-accent)) !important;
+}
+
+.window-app.bg3-dialog input:focus,
+.window-app.bg3-dialog select:focus {
+    border-color: var(--bg3-btn-border) !important;
+    box-shadow: 0 0 8px rgba(139, 105, 20, 0.4) !important;
+    outline: none !important;
+}
+
+.window-app.bg3-dialog select option {
+    background: #12100a !important;
+    color: var(--bg3-accent-bright) !important;
+}
+
+/* ── Footer / submit buttons ─────────────────────────────────────────────── */
+
+.window-app.bg3-dialog footer,
+.window-app.bg3-dialog .dialog-buttons {
+    background: linear-gradient(to top, rgba(0,0,0,0.4), transparent) !important;
+    border-top: 1px solid var(--bg3-divider) !important;
+    padding: 12px 16px !important;
+    position: relative;
+    z-index: 1;
+}
+
+.window-app.bg3-dialog footer button,
+.window-app.bg3-dialog .dialog-buttons button {
+    align-items: center !important;
+    background: linear-gradient(to bottom, var(--bg3-btn-bg-top), var(--bg3-btn-bg-bottom)) !important;
+    border: 1px solid var(--bg3-btn-border) !important;
+    border-radius: 4px !important;
+    box-shadow: 0 0 16px rgba(139, 105, 20, 0.3), inset 0 1px rgba(255, 220, 150, 0.15) !important;
+    color: var(--bg3-btn-text) !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    justify-content: center !important;
+    letter-spacing: 0.2em !important;
+    padding: 9px 16px !important;
+    text-align: center !important;
+    text-shadow: 0 0 12px rgba(var(--bg3-accent-rgb), 0.5) !important;
+    text-transform: uppercase !important;
+    transition: all 0.15s !important;
+    width: 100% !important;
+}
+
+.window-app.bg3-dialog footer button:hover,
+.window-app.bg3-dialog .dialog-buttons button:hover {
+    background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
+    border-color: var(--bg3-accent) !important;
+    box-shadow: 0 0 24px rgba(var(--bg3-accent-rgb), 0.55), inset 0 1px rgba(255, 220, 150, 0.25) !important;
+    color: var(--bg3-btn-text-hover) !important;
+}
+
+.window-app.bg3-dialog footer button i,
+.window-app.bg3-dialog .dialog-buttons button i {
+    margin-right: 6px !important;
+    color: inherit !important;
+}
+
+/* ── Shared mixin for all small action buttons (counter +/-) ─────────────── */
+
+.window-app.bg3-dialog .minus,
+.window-app.bg3-dialog .plus,
+.window-app.bg3-dialog .decrease,
+.window-app.bg3-dialog .increase,
+.window-app.bg3-dialog .counter-down,
+.window-app.bg3-dialog .counter-up,
+.window-app.bg3-dialog [data-action="decrease"],
+.window-app.bg3-dialog [data-action="increase"],
+.window-app.bg3-dialog .form-group > a,
+.window-app.bg3-dialog .form-group > button:not([type="submit"]),
+.window-app.bg3-dialog .counter > a,
+.window-app.bg3-dialog .counter > button,
+/* t20 aprimoramento +/- buttons (class numCtrl inside .item-cost) */
+.window-app.bg3-dialog .numCtrl,
+.window-app.bg3-dialog .item-cost > button,
+.window-app.bg3-dialog li.item button,
+/* Buttons / anchors inside table cells */
+.window-app.bg3-dialog tbody td > button,
+.window-app.bg3-dialog tbody td > a {
+    background: linear-gradient(to bottom, var(--bg3-btn-bg-top), var(--bg3-btn-bg-bottom)) !important;
+    border: 1px solid var(--bg3-btn-border) !important;
+    border-radius: 3px !important;
+    box-shadow: 0 0 8px rgba(139, 105, 20, 0.25), inset 0 1px rgba(255, 220, 150, 0.12) !important;
+    color: var(--bg3-btn-text) !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    min-height: 24px !important;
+    min-width: 24px !important;
+    padding: 3px 8px !important;
+    text-shadow: 0 0 8px rgba(255, 200, 100, 0.4) !important;
+    transition: all 0.15s !important;
+}
+
+.window-app.bg3-dialog .minus:hover,
+.window-app.bg3-dialog .plus:hover,
+.window-app.bg3-dialog .decrease:hover,
+.window-app.bg3-dialog .increase:hover,
+.window-app.bg3-dialog .counter-down:hover,
+.window-app.bg3-dialog .counter-up:hover,
+.window-app.bg3-dialog [data-action="decrease"]:hover,
+.window-app.bg3-dialog [data-action="increase"]:hover,
+.window-app.bg3-dialog .form-group > a:hover,
+.window-app.bg3-dialog .form-group > button:not([type="submit"]):hover,
+.window-app.bg3-dialog .counter > a:hover,
+.window-app.bg3-dialog .counter > button:hover,
+.window-app.bg3-dialog .numCtrl:hover,
+.window-app.bg3-dialog .item-cost > button:hover,
+.window-app.bg3-dialog li.item button:hover,
+.window-app.bg3-dialog tbody td > button:hover,
+.window-app.bg3-dialog tbody td > a:hover {
+    background: linear-gradient(to bottom, #7c5218, #5a3210) !important;
+    border-color: var(--bg3-accent) !important;
+    box-shadow: 0 0 14px var(--bg3-tint-bold), inset 0 1px rgba(var(--bg3-accent-rgb), 0.2) !important;
+    color: var(--bg3-btn-text-hover) !important;
+}
+
+/* ── t20 enhancement list (ul.aprimoramentos-list) ──────────────────────── */
+
+.window-app.bg3-dialog .aprimoramentos-list {
+    list-style: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+}
+
+/* Header row */
+.window-app.bg3-dialog .aprimoramentos-list .items-header {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid var(--bg3-divider) !important;
+    margin: 0 !important;
+    padding: 4px 8px !important;
+}
+
+.window-app.bg3-dialog .aprimoramentos-list .items-header h3 {
+    color: var(--bg3-accent-muted) !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.75rem !important;
+    font-weight: normal !important;
+    letter-spacing: 0.1em !important;
+    margin: 0 !important;
+    text-transform: uppercase !important;
+}
+
+/* Each enhancement row — vertically centered, padding simétrico 4px */
+.window-app.bg3-dialog .aprimoramentos-list li.item {
+    align-items: center !important;
+    border-bottom: 1px solid var(--bg3-divider-soft) !important;
+    min-height: 28px !important;
+    padding: 4px 8px !important;
+}
+
+.window-app.bg3-dialog .aprimoramentos-list li.item:last-child {
+    border-bottom: none !important;
+}
+
+/* T20 às vezes insere <hr> entre os <li> — esconde para não duplicar o divisor */
+.window-app.bg3-dialog .aprimoramentos-list hr,
+.window-app.bg3-dialog .aprimoramentos-list li.item > hr {
+    display: none !important;
+}
+
+/* Botões +/- quadrados com ícone perfeitamente centralizado.
+   Especificidade extra (.tormenta20 + .aprimoramentos-list) para vencer a
+   regra genérica de botões em sheet/index.ts (.tormenta20:not(.sheet) button). */
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list button.numCtrl {
+    width: 24px !important;
+    height: 24px !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1 !important;
+}
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list button.numCtrl i {
+    display: block !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+}
+
+/* Input numérico no centro do +/- — tamanho de referência para os checkboxes */
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list .item-cost input.numInp {
+    width: 25px !important;
+    height: 24px !important;
+    padding: 0 !important;
+    text-align: center !important;
+}
+
+/* Checkboxes das linhas sem +/-: mesma dimensão do input numérico (25×24).
+   Precisa min-width + flex-basis porque o input vira flex-item e width sozinho
+   não vence o min-content default do checkbox (~20px). */
+.window-app.bg3-dialog.tormenta20 .aprimoramentos-list .item-cost > input[type="checkbox"] {
+    width: 25px !important;
+    min-width: 25px !important;
+    max-width: 25px !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    flex: 0 0 25px !important;
+    margin: 0 !important;
+    cursor: pointer !important;
+}
+
+/* Botões de ação no rodapé do modal (Lançar Magia / Preparar Poção):
+   T20 aplica margin-right: 5px no primeiro botão, deslocando o left-edge dele
+   em relação aos demais. Como o pai já tem gap: 8px, zeramos todas as margens
+   para alinhar perfeitamente. Nota: .ability-use-form e .bg3-dialog ficam no
+   MESMO elemento, então sem espaço entre eles no seletor. */
+.window-app.bg3-dialog.ability-use-form .dialog-buttons > button {
+    margin: 0 !important;
+}
+
+/* Left column: keep it compact, vertically center its own content */
+.window-app.bg3-dialog .aprimoramentos-list .item-cost {
+    align-items: center !important;
+    flex-shrink: 0 !important;
+    flex-wrap: nowrap !important;
+    gap: 4px !important;
+    min-height: 20px !important;
+}
+
+/* Right column: item description */
+.window-app.bg3-dialog .aprimoramentos-list h4.item-name {
+    border: none !important;       /* T20 default põe border-bottom no h4, duplicando o divisor do li.item */
+    font-size: 0.82rem !important;
+    font-weight: normal !important;
+    line-height: 1.4 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* ── Bonus table (enhancement list) ─────────────────────────────────────── */
+
+.window-app.bg3-dialog table {
+    background: transparent !important;
+    border-collapse: collapse !important;
+    color: var(--bg3-text-secondary) !important;
+    width: 100% !important;
+}
+
+.window-app.bg3-dialog thead th {
+    border-bottom: 1px solid var(--bg3-divider) !important;
+    color: var(--bg3-accent-muted) !important;
+    font-family: "Modesto Condensed", "Palatino Linotype", serif !important;
+    font-size: 0.75rem !important;
+    letter-spacing: 0.1em !important;
+    padding: 4px 8px !important;
+    text-transform: uppercase !important;
+}
+
+.window-app.bg3-dialog tbody tr {
+    border-bottom: 1px solid var(--bg3-divider-soft) !important;
+}
+
+.window-app.bg3-dialog tbody tr:last-child {
+    border-bottom: none !important;
+}
+
+.window-app.bg3-dialog tbody td {
+    color: var(--bg3-text-secondary) !important;
+    font-size: 0.82rem !important;
+    padding: 4px 8px !important;
+    vertical-align: middle !important;
+}
+
+/* ── Placeholders ───────────────────────────────────────────────────────── */
+
+.window-app.bg3-dialog input::placeholder,
+.window-app.bg3-dialog textarea::placeholder {
+    color: var(--bg3-text-muted) !important;
+    opacity: 1 !important;
+}
+
+/* ── Checkboxes ─────────────────────────────────────────────────────────── */
+
+.window-app.bg3-dialog input[type="checkbox"] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background: rgba(0, 0, 0, 0.7) !important;
+    border: 1px solid #4a3a18 !important;
+    border-radius: 2px !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    height: 14px !important;
+    transition: all 0.15s !important;
+    vertical-align: middle !important;
+    width: 14px !important;
+}
+
+.window-app.bg3-dialog input[type="checkbox"]:checked {
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M2 7l3.5 3.5L12 4' stroke='%23f0e0b0' stroke-width='2.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+        center / 80% no-repeat,
+        linear-gradient(to bottom, #6a4212, #3e2008) !important;
+    border-color: var(--bg3-accent) !important;
+}
+
+.window-app.bg3-dialog input[type="checkbox"]:hover {
+    border-color: var(--bg3-btn-border) !important;
+    box-shadow: 0 0 6px rgba(139, 105, 20, 0.35) !important;
+}
+
+/* ── Tormenta20 overrides ────────────────────────────────────────────────── */
+
+.window-app.bg3-dialog.tormenta20:not(.ability-use-form) .window-content {
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+.window-app.bg3-dialog.tormenta20.ability-use-form .window-content {
+    padding: 0 !important;
+}
+
+.window-app.bg3-dialog:not(.ability-use-form) form {
+    overflow: visible !important;
+    height: auto !important;
+}
+.window-app.ability-use-form.bg3-dialog form {
+    height: auto !important;
+    overflow: visible !important;
+    /* form is taller than window-content → window-content scrolls */
+}
