@@ -244,6 +244,11 @@ const _pendingEsferaTemplateDelete = new Map<string, number>(); // userId → ti
 // Guard contra detonação dupla (clique rápido na UI ou disparo simultâneo
 // por createChatMessage + skills-menu).
 let _pedraDetonationInProgress = false;
+// Metadados de Pedras Flamejantes pendentes de detonação, indexados por actorId.
+// Armazenado ao criar a pedra para garantir disponibilidade no detect via
+// createChatMessage mesmo quando T20 já consumiu/deletou o item antes da mensagem
+// chegar ao hook (ou quando itemData não inclui nossos flags custom).
+const _pendingPedras = new Map<string, { itemId: string; meta: PedraMeta }>();
 
 function registerPendingCast(uid: string, cast: Omit<PendingCast, "ts">): void {
     _pendingCasts.set(uid, { ...cast, ts: Date.now() });
@@ -769,7 +774,11 @@ async function createPedraFlamejante(
     try {
         const created = await actor.createEmbeddedDocuments("Item", [itemData]);
         const item    = created[0] as { id?: string } | undefined;
-        return item?.id ?? null;
+        const newId   = item?.id ?? null;
+        // Armazena metadados em memória — fallback para detecção no createChatMessage
+        // caso T20 consuma o item antes da mensagem chegar ao hook.
+        if (newId) _pendingPedras.set(meta.casterActorId, { itemId: newId, meta });
+        return newId;
     } catch (err) {
         console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao criar Pedra Flamejante:`, err);
         return null;
@@ -911,12 +920,14 @@ async function detonatePedra(
         });
     }
 
-    // Remove pedra do inventário após detonação
+    // Remove pedra do inventário após detonação (pode já ter sido consumido pelo T20 — ok)
     try {
         await actor.items.get(itemId)?.delete?.();
     } catch (err) {
         console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao deletar Pedra Flamejante:`, err);
     }
+    // Garante que _pendingPedras não fica stale após detonação via skills-menu
+    _pendingPedras.delete(actor.id);
     refreshSkillsMenu();
 }
 
@@ -1153,9 +1164,9 @@ export function setupBolaDeFogo(): void {
         const userId = args[3] as string;
         if (userId !== game.user?.id) return;
 
-        const content = (data["content"] as string | undefined) ?? "";
-        if (!/bola\s+de\s+fogo/i.test(content)) return;
-
+        // Não checa `data["content"]` aqui — no Foundry v13 o campo pode ainda ser
+        // um path de template HBS não renderizado, não o HTML final, e o guard falharia.
+        // Confiamos apenas nos onUseEffects que o T20 sempre inclui na criação.
         const entries = getOnUseEffectsFromData(data);
         if (!detectImp2Active(entries) && !detectImp3Active(entries)) return;
 
@@ -1185,44 +1196,81 @@ export function setupBolaDeFogo(): void {
         if (uid !== game.user?.id) return;
 
         // ── Detecta uso de Pedra Flamejante no inventário ────────────────────
-        // Quando o player clica no item consumivel "Pedra Flamejante" na ficha,
-        // o T20 cria um chat card com flags.tormenta20.itemData contendo o item.
-        // Verificamos por nossos flags (primário) e por nome+tipo (fallback).
-        const t20ItemData = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-        if (t20ItemData) {
-            const itemModFlags = (t20ItemData["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
-            const itemType     = (t20ItemData["type"] as string | undefined) ?? "";
-            const rawItemName  = (t20ItemData["name"] as string | undefined) ?? "";
-            const isPedraByFlag = itemModFlags?.[FLAG_SPELL] === PEDRA_KEY;
-            const isPedraByName = itemType === "consumivel"
-                               && normalizeCondName(rawItemName) === "pedra flamejante";
+        //
+        // Estratégia em camadas:
+        //  1. t20ItemData.flags  → T20 incluiu nossos flags no snapshot (mais confiável)
+        //  2. t20ItemData name+type → T20 incluiu nome mas não flags custom
+        //  3. _pendingPedras[actorId] → fallback memória: cobre o caso onde o T20
+        //     deletou o item ANTES de criar a msg de chat (sem snapshot confiável)
+        //     ou onde t20ItemData é null (T20 não inclui itemData para consumivel).
+        //
+        // Não dependemos mais de encontrar o item VIVO em actor.items.contents —
+        // o item pode já ter sido consumido pelo T20 quando chegamos aqui.
+        {
+            const speakerActorId = message.speaker?.actor ?? "";
+            const t20ItemData    = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
+            type ActorsGetter    = { get(id: string): PedraActorLike | undefined };
 
-            if (isPedraByFlag || isPedraByName) {
-                // Localiza o ator e o item específico no inventário
-                const actorId = message.speaker?.actor
-                    ?? (itemModFlags?.["casterActorId"] as string | undefined) ?? "";
-                type ActorsGetter = { get(id: string): PedraActorLike | undefined };
-                const pedraActor = actorId
-                    ? (game.actors as unknown as ActorsGetter).get(actorId)
-                    : null;
-                if (pedraActor) {
-                    // Prefere o item pelo ID do itemData (T20 inclui _id no snapshot);
-                    // fallback para o primeiro item com nossa flag no ator.
-                    const dataId   = (t20ItemData["_id"] as string | undefined)
-                                  ?? (t20ItemData["id"]  as string | undefined);
-                    const pedraItem = dataId
-                        ? pedraActor.items.contents?.find(
-                            i => i.id === dataId && i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY)
-                          ?? pedraActor.items.contents?.find(
-                            i => i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY)
-                        : pedraActor.items.contents?.find(
+            let pedraDetected  = false;
+            let pedraActorId   = "";
+            let pedraItemId    = "";
+            let resolvedFlags: Record<string, unknown> = {};
+
+            // Camada 1 & 2: snapshot do T20
+            if (t20ItemData) {
+                const itemModFlags = (t20ItemData["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
+                const itemType     = (t20ItemData["type"] as string | undefined) ?? "";
+                const rawItemName  = (t20ItemData["name"] as string | undefined) ?? "";
+                const isPedraByFlag = itemModFlags?.[FLAG_SPELL] === PEDRA_KEY;
+                const isPedraByName = itemType === "consumivel"
+                                   && normalizeCondName(rawItemName) === "pedra flamejante";
+
+                if (isPedraByFlag || isPedraByName) {
+                    pedraDetected = true;
+                    pedraActorId  = speakerActorId
+                                 || (itemModFlags?.["casterActorId"] as string | undefined)
+                                 || "";
+                    pedraItemId   = (t20ItemData["_id"] as string | undefined)
+                                 ?? (t20ItemData["id"]  as string | undefined)
+                                 ?? "";
+                    // Tenta pegar flags do item ainda vivo; usa snapshot como fallback
+                    if (pedraActorId) {
+                        const liveActor = (game.actors as unknown as ActorsGetter).get(pedraActorId);
+                        const liveItem  = liveActor?.items.contents?.find(
                             i => i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY);
-
-                    if (pedraItem) {
-                        const resolvedFlags = pedraItem.flags?.[MODULE_ID] ?? itemModFlags ?? {};
-                        void handlePedraDetonationFromItemUse(pedraActor, pedraItem.id, resolvedFlags);
-                        return;
+                        resolvedFlags = liveItem?.flags?.[MODULE_ID] ?? itemModFlags ?? {};
+                        if (!pedraItemId && liveItem) pedraItemId = liveItem.id;
+                    } else {
+                        resolvedFlags = itemModFlags ?? {};
                     }
+                }
+            }
+
+            // Camada 3: _pendingPedras — fallback quando t20ItemData é nulo ou
+            // sem flags/nome reconhecíveis, mas já sabemos que foi criada uma pedra.
+            if (!pedraDetected && speakerActorId && _pendingPedras.has(speakerActorId)) {
+                // Só dispara se a mensagem parece ser um uso de item (não qualquer roll).
+                // t20ItemData !== undefined = T20 incluiu itemData (qualquer item) → provável use.
+                // Fallback: content menciona "Pedra Flamejante".
+                const msgContent       = (message as unknown as { content?: string }).content ?? "";
+                const looksLikeUse     = t20ItemData !== undefined
+                                      || /pedra\s+flamejante/i.test(msgContent);
+                if (looksLikeUse) {
+                    const stored  = _pendingPedras.get(speakerActorId)!;
+                    pedraDetected = true;
+                    pedraActorId  = speakerActorId;
+                    pedraItemId   = stored.itemId;
+                    resolvedFlags = stored.meta as unknown as Record<string, unknown>;
+                }
+            }
+
+            if (pedraDetected && pedraActorId) {
+                // Limpa o map independente do caminho que detectou
+                _pendingPedras.delete(pedraActorId);
+                const pedraActor = (game.actors as unknown as ActorsGetter).get(pedraActorId);
+                if (pedraActor) {
+                    void handlePedraDetonationFromItemUse(pedraActor, pedraItemId, resolvedFlags);
+                    return;
                 }
             }
         }
@@ -1354,6 +1402,20 @@ export function setupBolaDeFogo(): void {
             ?? triggerUserId;
         if (authorUid !== currentUid) return;
 
+        // ── Backup Ap2/Ap3: preCreateMeasuredTemplate deveria ter cancelado via
+        //    return false, mas em alguns cenários do Foundry v13 isso pode não
+        //    funcionar (ex.: T20 chama createEmbeddedDocuments por caminho não-hook).
+        //    Neste caso o template já foi criado — deletamos imediatamente.
+        {
+            const esferaBackupTs = _pendingEsferaTemplateDelete.get(currentUid);
+            if (esferaBackupTs !== undefined && Date.now() - esferaBackupTs < PENDING_WINDOW_MS) {
+                _pendingEsferaTemplateDelete.delete(currentUid);
+                void (tplDoc as unknown as { delete?(): Promise<unknown> }).delete?.();
+                return;
+            }
+        }
+        // ── Fim backup ──
+
         const pending = _pendingCasts.get(currentUid);
         if (!pending || Date.now() - pending.ts >= PENDING_WINDOW_MS) return;
         _pendingCasts.delete(currentUid);
@@ -1474,11 +1536,18 @@ export function setupBolaDeFogo(): void {
         if (tokDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
     });
 
-    // 6b. deleteItem — pedra-flamejante removida do inventário → refresh skills menu
-    //     (cobre deleção manual pelo player além da deleção automática pós-detonação)
+    // 6b. deleteItem — pedra-flamejante removida do inventário → limpa _pendingPedras
+    //     + refresh skills menu (cobre deleção manual, auto-detonação e consumo pelo T20).
     Hooks.on("deleteItem", (...args: unknown[]) => {
-        const item = args[0] as { flags?: Record<string, Record<string, unknown>> };
-        if (item.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY) refreshSkillsMenu();
+        const item = args[0] as {
+            flags?:  Record<string, Record<string, unknown>>;
+            parent?: { id?: string } | null;
+        };
+        if (item.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY) {
+            const parentActorId = (item.parent as { id?: string } | null)?.id;
+            if (parentActorId) _pendingPedras.delete(parentActorId);
+            refreshSkillsMenu();
+        }
     });
 
     // 7. combatTurnChange — tick da esfera no início do turno do caster.
