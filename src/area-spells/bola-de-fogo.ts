@@ -845,24 +845,60 @@ function patchAbilityUseDialog(): void {
 
         if (ap3Active) {
             resTyped.brew = true;
-            // Captura o CD do clone modificado — applyOnUseEffects já rodou
-            // dentro do callback do dialog (callback do botão "use" em
-            // tormenta20.mjs linha 6257 chama applyOnUseEffects(item, fd.object)).
-            // Logo, item.system.resistencia.cd nesse momento É o CD final REAL
-            // (inclui bônus de items via AE + aprimoramentos como Fortalecimento).
+            // ── Captura do CD no momento do cast ──
+            // T20's prepareFinalAttributes (item) usa `10 + nivel/2 + atributo + bonus`,
+            // o que IGNORA bônus de items via Active Effects (ex: Foco Arcano +1 CD).
+            // O valor correto está em `actor.system.attributes.cd` (que JÁ inclui todos
+            // os modificadores aplicados ao actor pelos items/AEs).
+            //
+            // Logo, CD correto = actor.attributes.cd + atributo_conjuracao_mod + bonus_de_aprimoramentos.
+            // - actor.attributes.cd  = 10 + nivel/2 + Foco Arcano + outros AEs
+            // - atributo_mod         = INT/SAB/CAR do conjurador
+            // - bonus                = resistencia.bonus do clone (já modificado por Fortalecimento etc.)
             type ItemWithSystem = {
-                actor?: { id?: string };
-                system?: { resistencia?: { cd?: number; txt?: string } };
+                actor?: {
+                    id?: string;
+                    system?: {
+                        attributes?: { cd?: number; conjuracao?: string };
+                        atributos?:  Record<string, { value?: number } | undefined>;
+                    };
+                };
+                system?: { resistencia?: { cd?: number; txt?: string; bonus?: number; atributo?: string } };
             };
-            const itemSys      = (item as ItemWithSystem).system;
-            const cdAtCast     = Number(itemSys?.resistencia?.cd ?? 0);
-            const resistTxt    = String(itemSys?.resistencia?.txt ?? "Reflexos reduz à metade");
-            const castActorId  = (item as ItemWithSystem).actor?.id ?? "";
+            const itemTyped2 = item as ItemWithSystem;
+            const itemSys    = itemTyped2.system;
+            const actor      = itemTyped2.actor;
+            const actorSys   = actor?.system;
+            const resistTxt  = String(itemSys?.resistencia?.txt ?? "Reflexos reduz à metade");
+
+            // Resolve atributo de conjuracao (do item se setado, senão do actor)
+            const atrKey = String(
+                itemSys?.resistencia?.atributo
+                || actorSys?.attributes?.conjuracao
+                || "int",
+            );
+            const actorAttrCD = Number(actorSys?.attributes?.cd ?? 0);  // já com items bonus
+            const atrMod      = Number(actorSys?.atributos?.[atrKey]?.value ?? 0);
+            const bonusAfter  = Number(itemSys?.resistencia?.bonus ?? 0);
+
+            // Fórmula principal: usa attributes.cd do actor (CORRETO — tem Foco Arcano etc.)
+            let cdAtCast = 0;
+            let formula  = "";
+            if (actorAttrCD > 0) {
+                cdAtCast = actorAttrCD + atrMod + bonusAfter;
+                formula  = `actorAttrCD(${actorAttrCD}) + atr_${atrKey}(${atrMod}) + bonus(${bonusAfter})`;
+            } else {
+                // Fallback: usa o cd do clone (T20 formula — sem items bonus)
+                cdAtCast = Number(itemSys?.resistencia?.cd ?? 0);
+                formula  = `fallback: itemSys.resistencia.cd = ${cdAtCast}`;
+            }
+
+            const castActorId = actor?.id ?? "";
             if (castActorId && cdAtCast > 0) {
                 _pendingPedraCDs.set(castActorId, { cd: cdAtCast, resistTxt, ts: Date.now() });
-                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 — CD capturado do cast: ${cdAtCast} (resist: "${resistTxt}"). Será aplicado na Pedra Flamejante.`);
+                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 — CD capturado: ${cdAtCast} = ${formula} (resist: "${resistTxt}").`);
             } else {
-                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado mas CD do cast indisponível (item.system.resistencia.cd=${cdAtCast}). Fallback será usado.`);
+                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado mas CD do cast indisponível. Fallback será usado.`);
             }
             console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado — forçando brew=true (T20 vai criar a Pedra Flamejante via seu fluxo nativo).`);
         }
