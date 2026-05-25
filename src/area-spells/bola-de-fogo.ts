@@ -790,6 +790,13 @@ async function detonatePedra(
     const snappedX = Math.round(pos.x / gridSize) * gridSize;
     const snappedY = Math.round(pos.y / gridSize) * gridSize;
 
+    // Garante que nenhuma entrada stale de supressão de template bloqueie o
+    // template visual da detonação (pode sobrar caso T20 tenha criado o
+    // template do cast em outro cliente e preCreateMeasuredTemplate não
+    // tenha consumido a entrada).
+    const _currentUidDetonate = game.user?.id;
+    if (_currentUidDetonate) _pendingEsferaTemplateDelete.delete(_currentUidDetonate);
+
     // Cria template visual temporário (mostra a área de explosão durante 3.5s)
     type SceneLike = {
         createEmbeddedDocuments(type: string, data: unknown[]): Promise<Array<{ delete?(): Promise<unknown> }>>;
@@ -1086,8 +1093,12 @@ export function setupBolaDeFogo(): void {
     });
 
 
-    // 0. preCreateChatMessage — suprime o roll de damage quando imp 2 ou 3 ativo
-    //    (imp 2: a esfera tem dano próprio; imp 3: explosão só acontece ao detonar).
+    // 0. preCreateChatMessage — quando imp 2 ou 3 ativo:
+    //    a) seta _pendingEsferaTemplateDelete ANTES que o T20 processe o
+    //       createChatMessage (garante que preCreateMeasuredTemplate já
+    //       encontra o flag quando o T20 criar o template automático).
+    //    b) suprime o roll de damage (imp 2: esfera tem dano próprio;
+    //       imp 3: explosão só acontece ao detonar).
     Hooks.on("preCreateChatMessage", (...args: unknown[]) => {
         type DocLike = { updateSource(changes: Record<string, unknown>): void };
         const doc    = args[0] as DocLike;
@@ -1100,6 +1111,11 @@ export function setupBolaDeFogo(): void {
 
         const entries = getOnUseEffectsFromData(data);
         if (!detectImp2Active(entries) && !detectImp3Active(entries)) return;
+
+        // Seta o flag AQUI (preCreate) em vez de createChatMessage para
+        // garantir que preCreateMeasuredTemplate o encontre mesmo que o hook
+        // do T20 em createChatMessage rode antes do nosso.
+        _pendingEsferaTemplateDelete.set(userId, Date.now());
 
         const rolls = data["rolls"] as unknown[] | undefined;
         if (!Array.isArray(rolls) || !rolls.length) return;
@@ -1128,10 +1144,9 @@ export function setupBolaDeFogo(): void {
 
         // FASE 2: imp 2 ativo → esfera flamejante persistente
         if (detectImp2Active(entries)) {
-            // O T20 vai criar um MeasuredTemplate de área logo após esse hook.
-            // Registramos o uid pra que createMeasuredTemplate o delete imediatamente —
-            // na FASE 2 a "área" é o Token da esfera, não um template de grid.
-            _pendingEsferaTemplateDelete.set(uid, Date.now());
+            // _pendingEsferaTemplateDelete já foi setado em preCreateChatMessage.
+            // O T20 vai criar um MeasuredTemplate de área logo após esse hook;
+            // preCreateMeasuredTemplate o cancela antes de aparecer no mapa.
             const imp1Qty = detectImp1Qty(entries);
             const dice    = 3 + imp1Qty * 2;
             const damageFormula = `${dice}d6[fogo]`;
@@ -1154,8 +1169,8 @@ export function setupBolaDeFogo(): void {
 
         // FASE 3: imp 3 ativo → pedra flamejante no inventário
         if (detectImp3Active(entries)) {
-            // O T20 cria um template de área — registrar pra deletar imediatamente.
-            _pendingEsferaTemplateDelete.set(uid, Date.now());
+            // _pendingEsferaTemplateDelete já foi setado em preCreateChatMessage.
+            // O T20 cria um template de área; preCreateMeasuredTemplate o cancela.
             const imp1Qty       = detectImp1Qty(entries);
             const dice          = 3 + imp1Qty * 2;
             const damageFormula = `${dice}d6[fogo]`;
