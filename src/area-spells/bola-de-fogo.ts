@@ -44,10 +44,12 @@ import type { SpellResistPreRollRequest } from "@/spell-resistance/types";
 
 const SPELL_KEY = "bola de fogo";
 const ESFERA_KEY = "bola-de-fogo-esfera";
+const PEDRA_KEY  = "pedra-flamejante";       // Ap3 — consumível no inventário
 const FLAG_SPELL = "spell";
 const PENDING_WINDOW_MS = 30_000;
 const TEMPLATE_LINGER_MS = 3500;
 const ESFERA_DIAMETRO_M = 1.5;  // diâmetro em metros = 1 quadrado do tabuleiro
+const PEDRA_RAIO_M = 6;         // raio da detonação da pedra (mesma área da Bola normal)
 const ESFERA_TEXTURE = `modules/${MODULE_ID}/assets/esfera-flamejante.png`;
 
 // ── GM election ──────────────────────────────────────────────────────────────
@@ -206,6 +208,17 @@ function detectImp2Active(entries: OnUseEntry[]): boolean {
         const desc = String(e?.description ?? "");
         // "muda a área para efeito de esfera flamejante..."
         if (/esfera\s+flamejante/i.test(desc)) return true;
+    }
+    return false;
+}
+
+function detectImp3Active(entries: OnUseEntry[]): boolean {
+    for (const e of entries) {
+        const qty = Number(e?.qty ?? 0);
+        if (!Number.isFinite(qty) || qty < 1) continue;
+        const desc = String(e?.description ?? "");
+        // "muda a duração para um dia... você cria uma pequena pedra flamejante..."
+        if (/pedra\s+flamejante/i.test(desc)) return true;
     }
     return false;
 }
@@ -685,6 +698,265 @@ async function postEsferaSummaryCard(
     });
 }
 
+// ── FASE 3: Pedra Flamejante ──────────────────────────────────────────────────
+//
+// Aprimoramento 3 (+3 PM): em vez da explosão imediata, cria uma pedra
+// flamejante no inventário do conjurador. Pode ser detonada como reação
+// (arremesso, alcance curto) via skills-menu. Ao detonar, causa o dano da
+// magia numa área de esfera com 6m de raio (mesmo CD/Reflexos do normal).
+//
+// Ap1 é stack-compatível: 3d6 + qty×2d6 ao detonar.
+
+type PedraActorLike = {
+    id: string;
+    name?: string | null;
+    items: {
+        contents?: Array<{ id: string; flags?: Record<string, Record<string, unknown>>; delete?(): Promise<unknown> }>;
+        get(id: string): { id?: string; flags?: Record<string, Record<string, unknown>>; delete?(): Promise<unknown> } | undefined;
+    };
+    createEmbeddedDocuments(type: string, data: unknown[], opts?: object): Promise<unknown[]>;
+};
+
+type PedraMeta = {
+    casterActorId: string;
+    casterName:    string;
+    casterUserId:  string;
+    cd:            number;
+    resistTxt:     string;
+    damageFormula: string;
+    spellName:     string;
+};
+
+async function createPedraFlamejante(
+    actor: PedraActorLike,
+    meta: PedraMeta,
+): Promise<string | null> {
+    const itemData = {
+        name: "Pedra Flamejante",
+        type: "consumivel",
+        img:  ESFERA_TEXTURE,
+        system: {
+            descricao: `Pedra flamejante criada por Bola de Fogo (Aprimoramento 3). Pode ser detonada como reação — arremesse com alcance curto. Ao detonar, causa ${meta.damageFormula} de dano de fogo em esfera de ${PEDRA_RAIO_M}m de raio (CD ${meta.cd}, Reflexos reduz à metade).`,
+        },
+        flags: {
+            [MODULE_ID]: {
+                [FLAG_SPELL]:  PEDRA_KEY,
+                casterActorId: meta.casterActorId,
+                casterName:    meta.casterName,
+                casterUserId:  meta.casterUserId,
+                cd:            meta.cd,
+                resistTxt:     meta.resistTxt,
+                damageFormula: meta.damageFormula,
+                spellName:     meta.spellName,
+                createdAt:     Date.now(),
+            },
+        },
+    };
+    try {
+        const created = await actor.createEmbeddedDocuments("Item", [itemData]);
+        const item    = created[0] as { id?: string } | undefined;
+        return item?.id ?? null;
+    } catch (err) {
+        console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao criar Pedra Flamejante:`, err);
+        return null;
+    }
+}
+
+/**
+ * Executa a detonação: canvas click → enumera tokens na área → dispatcha
+ * modais de resistência → deleta a pedra do inventário.
+ * Chamado pelo skills-menu ("Detonar Pedra Flamejante").
+ */
+async function detonatePedra(
+    actor: PedraActorLike,
+    itemId: string,
+    pedraFlags: Record<string, unknown>,
+): Promise<void> {
+    const pos = await promptCanvasClick(
+        `Clique no canvas para detonar a Pedra Flamejante (área de ${PEDRA_RAIO_M}m de raio). ESC cancela.`,
+    );
+    if (!pos) return;
+
+    const casterName    = (pedraFlags["casterName"]    as string) ?? "Lançador";
+    const casterUserId  = (pedraFlags["casterUserId"]  as string) ?? "";
+    const damageFormula = (pedraFlags["damageFormula"] as string) ?? "3d6[fogo]";
+    const cd            = (pedraFlags["cd"]            as number) ?? 0;
+    const resistTxt     = (pedraFlags["resistTxt"]     as string) ?? "Reflexos reduz à metade";
+    const spellName     = (pedraFlags["spellName"]     as string) ?? "Bola de Fogo";
+
+    type CanvasLike = { scene?: { grid?: { size?: number } } };
+    const cv       = canvas as unknown as CanvasLike;
+    const gridSize = cv.scene?.grid?.size ?? 100;
+    const snappedX = Math.round(pos.x / gridSize) * gridSize;
+    const snappedY = Math.round(pos.y / gridSize) * gridSize;
+
+    const tokens             = tokensInTemplate({ x: snappedX, y: snappedY, distance: PEDRA_RAIO_M });
+    const { skill, outcome } = parseResistance(resistTxt);
+
+    type RollCtor = new (formula: string) => Roll & { evaluate(opts?: object): Promise<Roll> };
+    const RollCls    = (globalThis as unknown as { Roll: RollCtor }).Roll;
+    const dmgRoll    = new RollCls(damageFormula);
+    await dmgRoll.evaluate({ async: true } as never);
+    const damageTotal = dmgRoll.total ?? 0;
+
+    type RandomIDFn = () => string;
+    const rid = (globalThis as unknown as { randomID?: RandomIDFn }).randomID
+             ?? (() => Math.random().toString(36).slice(2, 18));
+
+    if (tokens.length === 0) {
+        ui.notifications?.info(`Pedra Flamejante: nenhum alvo na área (${damageTotal} de dano rolado).`);
+    } else {
+        const targetNames: string[] = [];
+        for (const token of tokens) {
+            const targetActor = token.actor;
+            if (!targetActor) continue;
+            const targetUserId = getTargetUserId(targetActor);
+            if (!targetUserId) {
+                ui.notifications?.warn(`Pedra Flamejante: nenhum usuário ativo para ${targetActor.name}.`);
+                continue;
+            }
+            targetNames.push(token.name ?? targetActor.name ?? "Alvo");
+            const preReq: SpellResistPreRollRequest = {
+                type:              "spell-resist-preroll",
+                requestId:         rid(),
+                targetUserId,
+                casterUserId,
+                targetActorId:     targetActor.id,
+                targetActorUuid:   targetActor.uuid,
+                casterName,
+                spellName:         `${spellName} (Pedra Flamejante)`,
+                resistTxt,
+                resistSkill:       skill,
+                resistOutcome:     outcome,
+                cd,
+                messageId:         "",
+                damageTotal,
+                damageFormula,
+                isHeal:            false,
+                maxHealValue:      0,
+                removeFadiga:      false,
+                truqueAtivo:       false,
+                conditions:        [],
+                customEffectNames: [],
+            };
+            dispatchSpellResistanceToTarget(preReq);
+        }
+
+        const escHtml      = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const targetsHtml  = targetNames.map(n =>
+            `<span style="display:inline-block; padding:2px 8px; margin:2px; background:rgba(var(--bg3-color-danger-rgb),0.12); border:1px solid rgba(var(--bg3-color-danger-rgb),0.35); border-radius:3px; color:var(--bg3-accent-bright); font-size:0.82rem;">${escHtml(n)}</span>`
+        ).join("");
+        const rollRendered = await dmgRoll.render();
+        const content      = `
+            <div class="t20-theme-chat-card" style="padding:10px 12px; background:linear-gradient(180deg, rgba(var(--bg3-color-danger-rgb),0.10) 0%, transparent 100%); border-left:3px solid #ff6600;">
+                <div style="color:#ff6600; font-size:0.7rem; letter-spacing:0.14em; text-transform:uppercase; font-weight:700;">Pedra Flamejante — ${escHtml(casterName)}</div>
+                <div style="color:var(--bg3-accent-muted); font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; font-style:italic; margin:2px 0 8px;">Detonação</div>
+                <div style="margin-bottom:8px;">${rollRendered}</div>
+                <div style="color:var(--bg3-accent-muted); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase; margin-bottom:4px;">Alvos atingidos (${targetNames.length}) — cada dono rola Reflexos no modal:</div>
+                <div>${targetsHtml}</div>
+                <div style="color:var(--bg3-text-muted); font-size:0.75rem; font-style:italic; margin-top:6px;">CD ${cd} · Falhar = dano integral, passar = metade</div>
+            </div>`;
+        type CMCreate = { create(data: Record<string, unknown>): Promise<unknown> };
+        await (ChatMessage as unknown as CMCreate).create({
+            content,
+            rolls:   [dmgRoll.toJSON()],
+            type:    5,
+            speaker: { alias: casterName },
+            flags:   { [MODULE_ID]: { pedraFlamejante: true } },
+        });
+    }
+
+    // Remove pedra do inventário após detonação
+    try {
+        await actor.items.get(itemId)?.delete?.();
+    } catch (err) {
+        console.warn(`[t20-theme-overhaul] Bola de Fogo: falha ao deletar Pedra Flamejante:`, err);
+    }
+    refreshSkillsMenu();
+}
+
+function getMyPedras(): Array<{ actorId: string; itemId: string; flags: Record<string, unknown> }> {
+    const uid  = game.user?.id;
+    const isGM = game.user?.isGM;
+    type ActorsLike = {
+        contents?: Array<{
+            id: string;
+            items?: {
+                contents?: Array<{
+                    id: string;
+                    flags?: Record<string, Record<string, unknown>>;
+                }>;
+            };
+        }>;
+    };
+    const actors  = (game.actors as unknown as ActorsLike)?.contents ?? [];
+    const results: Array<{ actorId: string; itemId: string; flags: Record<string, unknown> }> = [];
+    for (const actor of actors) {
+        const items = actor.items?.contents ?? [];
+        for (const item of items) {
+            const flags = item.flags?.[MODULE_ID];
+            if (!flags || flags[FLAG_SPELL] !== PEDRA_KEY) continue;
+            if (!isGM && (flags["casterUserId"] as string | undefined) !== uid) continue;
+            results.push({ actorId: actor.id, itemId: item.id, flags });
+        }
+    }
+    return results;
+}
+
+async function onClickDetonarPedra(): Promise<void> {
+    const pedras = getMyPedras();
+    if (pedras.length === 0) {
+        ui.notifications?.info("Nenhuma Pedra Flamejante no inventário.");
+        refreshSkillsMenu();
+        return;
+    }
+
+    type ActorsGetter = { get(id: string): PedraActorLike | undefined };
+    const actorsMap = game.actors as unknown as ActorsGetter;
+    let pedra       = pedras[0];
+
+    // Múltiplas pedras → picker
+    if (pedras.length > 1) {
+        type DialogCtor = new (data: object, opts?: object) => { render(force?: boolean): unknown };
+        const DialogCls = (globalThis as unknown as { Dialog: DialogCtor }).Dialog;
+        const escHtml   = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const rows = pedras.map((p, i) => {
+            const caster = escHtml((p.flags["casterName"] as string | undefined) ?? "Lançador");
+            const dmg    = escHtml((p.flags["damageFormula"] as string | undefined) ?? "?d6");
+            return `<label class="picker-row" style="display:flex; align-items:center; gap:10px; padding:6px 8px; cursor:pointer;">
+                <input type="radio" name="pedra-pick" data-pedra-idx="${i}" ${i === 0 ? "checked" : ""} />
+                <span style="color:var(--bg3-text-primary);"><b style="color:#ff6600;">${caster}</b> · <span style="color:var(--bg3-accent-muted);">${dmg}</span></span>
+                <span style="color:var(--bg3-accent-muted); font-size:0.75rem; font-style:italic;">Pedra #${i + 1}</span>
+            </label>`;
+        }).join("");
+        const chosen = await new Promise<number | null>((resolve) => {
+            new DialogCls({
+                title:   "Detonar Pedra Flamejante",
+                content: `<div style="padding:8px 12px;"><p style="color:var(--bg3-accent-muted); font-size:0.78rem; letter-spacing:0.12em; text-transform:uppercase;">Selecione a pedra a detonar</p>${rows}</div>`,
+                buttons: {
+                    detonar: {
+                        icon: '<i class="fas fa-bomb"></i>', label: "Detonar",
+                        callback: ($html: JQuery) => {
+                            const root  = ($html as unknown as { 0?: HTMLElement })[0] ?? ($html as unknown as HTMLElement);
+                            const radio = (root as HTMLElement).querySelector("input[name='pedra-pick']:checked");
+                            const idx   = radio ? Number(radio.getAttribute("data-pedra-idx")) : 0;
+                            resolve(Number.isFinite(idx) ? idx : 0);
+                        },
+                    },
+                    cancel: { icon: '<i class="fas fa-times"></i>', label: "Cancelar", callback: () => resolve(null) },
+                },
+                default: "detonar", close: () => resolve(null),
+            }, { classes: ["bg3-dialog"] }).render(true);
+        });
+        if (chosen === null) return;
+        pedra = pedras[chosen];
+    }
+
+    const actor = actorsMap.get(pedra.actorId);
+    if (!actor) return;
+    await detonatePedra(actor, pedra.itemId, pedra.flags);
+}
+
 // ── Skills menu (cancelar esfera) ────────────────────────────────────────────
 
 type EsferaTokenDoc = {
@@ -779,9 +1051,19 @@ export function setupBolaDeFogo(): void {
         onClick:   () => onClickCancelEsfera(),
     });
 
+    // Skills-menu: botão para detonar Pedra Flamejante (Fase 3 — Ap3)
+    registerSkillAction({
+        id:    "pedra-flamejante-detonar",
+        label: "Detonar Pedra Flamejante",
+        icon:  "fa-solid fa-bomb",
+        color: "#ff6600",
+        isVisible: () => getMyPedras().length > 0,
+        onClick:   () => onClickDetonarPedra(),
+    });
 
-    // 0. preCreateChatMessage — suprime o roll de damage quando imp 2 ativo
-    //    (a esfera tem dano próprio rolado por hit; a "explosão" não acontece).
+
+    // 0. preCreateChatMessage — suprime o roll de damage quando imp 2 ou 3 ativo
+    //    (imp 2: a esfera tem dano próprio; imp 3: explosão só acontece ao detonar).
     Hooks.on("preCreateChatMessage", (...args: unknown[]) => {
         type DocLike = { updateSource(changes: Record<string, unknown>): void };
         const doc    = args[0] as DocLike;
@@ -793,7 +1075,7 @@ export function setupBolaDeFogo(): void {
         if (!/bola\s+de\s+fogo/i.test(content)) return;
 
         const entries = getOnUseEffectsFromData(data);
-        if (!detectImp2Active(entries)) return;
+        if (!detectImp2Active(entries) && !detectImp3Active(entries)) return;
 
         const rolls = data["rolls"] as unknown[] | undefined;
         if (!Array.isArray(rolls) || !rolls.length) return;
@@ -843,6 +1125,42 @@ export function setupBolaDeFogo(): void {
                 spellName:     "Bola de Fogo (Esfera Flamejante)",
             };
             void placeEsfera(meta);
+            return;
+        }
+
+        // FASE 3: imp 3 ativo → pedra flamejante no inventário
+        if (detectImp3Active(entries)) {
+            // O T20 cria um template de área — registrar pra deletar imediatamente.
+            _pendingEsferaTemplateDelete.set(uid, Date.now());
+            const imp1Qty       = detectImp1Qty(entries);
+            const dice          = 3 + imp1Qty * 2;
+            const damageFormula = `${dice}d6[fogo]`;
+            const cd            = extractCD(message);
+            const resistTxt     = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim()
+                                  || "Reflexos reduz à metade";
+            type ActorsGetter   = { get(id: string): PedraActorLike | undefined };
+            const actorId       = message.speaker?.actor ?? "";
+            const actor         = actorId
+                ? (game.actors as unknown as ActorsGetter)?.get(actorId)
+                : null;
+            if (!actor) {
+                ui.notifications?.warn("Bola de Fogo: ator não encontrado para criar Pedra Flamejante.");
+                return;
+            }
+            void createPedraFlamejante(actor, {
+                casterActorId: actorId,
+                casterName:    message.speaker?.alias ?? "Lançador",
+                casterUserId:  uid,
+                cd,
+                resistTxt,
+                damageFormula,
+                spellName:     extractSpellName(message),
+            }).then((itemId) => {
+                if (itemId) {
+                    ui.notifications?.info(`Pedra Flamejante criada no inventário. Use o skills-menu para detonar.`);
+                    refreshSkillsMenu();
+                }
+            });
             return;
         }
 
@@ -1018,6 +1336,13 @@ export function setupBolaDeFogo(): void {
     Hooks.on("deleteToken", (...args: unknown[]) => {
         const tokDoc = args[0] as { flags?: Record<string, Record<string, unknown>> };
         if (tokDoc.flags?.[MODULE_ID]?.[FLAG_SPELL] === ESFERA_KEY) refreshSkillsMenu();
+    });
+
+    // 6b. deleteItem — pedra-flamejante removida do inventário → refresh skills menu
+    //     (cobre deleção manual pelo player além da deleção automática pós-detonação)
+    Hooks.on("deleteItem", (...args: unknown[]) => {
+        const item = args[0] as { flags?: Record<string, Record<string, unknown>> };
+        if (item.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY) refreshSkillsMenu();
     });
 
     // 7. combatTurnChange — tick da esfera no início do turno do caster.
