@@ -41,6 +41,7 @@
 import { MODULE_ID } from "@/constants";
 import {
     extractSpellName,
+    extractItemId,
     normalizeCondName,
     getMsgAuthorId,
     parseResistance,
@@ -947,7 +948,9 @@ export function setupBolaDeFogo(): void {
     });
 
     // Quando T20 cria a granada da Bola de Fogo (resultado do brew),
-    // renomeamos pra "Pedra Flamejante" + adicionamos nossa flag PEDRA_KEY.
+    // renomeamos pra "Pedra Flamejante" + adicionamos nossa flag PEDRA_KEY +
+    // copiamos flags de animação (automated-animations, sequencer) da magia
+    // original — assim quando a pedra é usada, a animação da Bola de Fogo dispara.
     Hooks.on("createItem", (...args: unknown[]) => {
         const item = args[0] as {
             id: string;
@@ -956,7 +959,11 @@ export function setupBolaDeFogo(): void {
             img?:  string;
             system?: Record<string, unknown>;
             flags?: Record<string, Record<string, unknown>>;
-            parent?: { id?: string; name?: string } | null;
+            parent?: {
+                id?: string;
+                name?: string;
+                items?: { contents?: Array<{ name?: string; type?: string; flags?: Record<string, Record<string, unknown>> }> };
+            } | null;
             update(data: Record<string, unknown>): Promise<unknown>;
         };
         if (item.type !== "consumivel") return;
@@ -974,6 +981,24 @@ export function setupBolaDeFogo(): void {
         const danoDef = rolls.find(r => r?.type === "dano");
         const dado    = String(danoDef?.parts?.[0]?.[0] ?? "6d6");
 
+        // Procura a magia "Bola de Fogo" no inventário do mesmo actor — vamos
+        // copiar flags de automated-animations / sequencer pra que a animação
+        // continue tocando quando a pedra for usada.
+        const actorItems = item.parent?.items?.contents ?? [];
+        const origSpell  = actorItems.find(i =>
+            i.type === "magia"
+            && normalizeCondName(i.name ?? "").includes("bola de fogo"),
+        );
+        const animFlags: Record<string, unknown> = {};
+        if (origSpell?.flags) {
+            const aaFlags = origSpell.flags["automated-animations"];
+            const seqFlags = origSpell.flags["sequencer"];
+            const jb2aFlags = origSpell.flags["jb2a"];
+            if (aaFlags)   animFlags["flags.automated-animations"] = aaFlags;
+            if (seqFlags)  animFlags["flags.sequencer"]            = seqFlags;
+            if (jb2aFlags) animFlags["flags.jb2a"]                 = jb2aFlags;
+        }
+
         // Atualiza nome, img, e flags
         const actorId = item.parent?.id ?? "";
         const userId  = game.user?.id ?? "";
@@ -985,6 +1010,7 @@ export function setupBolaDeFogo(): void {
             [`flags.${MODULE_ID}.casterUserId`]:  userId,
             [`flags.${MODULE_ID}.casterName`]:    item.parent?.name ?? "Lançador",
             [`flags.${MODULE_ID}.createdAtMs`]:   Date.now(),
+            ...animFlags,
         });
         ui.notifications?.info(`Pedra Flamejante criada no inventário (${dado} fogo). Clique no item para arremessar.`);
     });
@@ -1035,13 +1061,22 @@ export function setupBolaDeFogo(): void {
         //  1. Rola o dano via item.rollDamage
         //  2. Cria MeasuredTemplate via AbilityTemplate (user posiciona)
         //  3. Posta chat msg via item.displayCard
-        // Aqui detectamos a chat msg via flag PEDRA_KEY no itemData snapshot e
-        // "reivindicamos" o template recém-criado adicionando flags.SPELL_KEY —
-        // o hook updateMeasuredTemplate existente vai chamar dispatchExplosion.
+        //
+        // T20 grava `flags.tormenta20.itemData = this.system` (linha 7339) —
+        // só o `system`, SEM flags. Por isso não dá pra checar flags.MODULE_ID
+        // no itemData. Detectamos via data-item-id no HTML → lookup no actor.
         {
-            const t20Item = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-            const itemMod = (t20Item?.["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
-            const isPedraUse = itemMod?.[FLAG_SPELL] === PEDRA_KEY;
+            const itemId = extractItemId(message);
+            const actorId = message.speaker?.actor ?? "";
+            type ActorsGetter = {
+                get(id: string): {
+                    items?: { get(id: string): { flags?: Record<string, Record<string, unknown>> } | undefined };
+                } | undefined;
+            };
+            const liveItem = (itemId && actorId)
+                ? (game.actors as unknown as ActorsGetter).get(actorId)?.items?.get(itemId)
+                : undefined;
+            const isPedraUse = liveItem?.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY;
             if (isPedraUse) {
                 const damageRoll = (message.rolls ?? []).find(r =>
                     (r.options as Record<string, unknown>)?.["type"] === "damage",
@@ -1050,6 +1085,7 @@ export function setupBolaDeFogo(): void {
                     console.warn(`[t20-theme-overhaul] Pedra Flamejante usada mas sem damage roll na msg.`);
                     return;
                 }
+                const t20Item = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
                 // Procura o template mais recente desse user ainda não reivindicado
                 const recent = _recentTemplatesByUser.get(uid) ?? [];
                 type TplDoc = {
