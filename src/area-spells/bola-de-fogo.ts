@@ -225,6 +225,9 @@ type PendingCast = {
     ts:            number;
 };
 const _pendingCasts = new Map<string, PendingCast>();
+// Marcador para templates do T20 que devem ser deletados imediatamente (FASE 2 —
+// a área padrão é substituída pelo esfera-Token; o MeasuredTemplate não é usado).
+const _pendingEsferaTemplateDelete = new Map<string, number>(); // userId → timestamp
 
 function registerPendingCast(uid: string, cast: Omit<PendingCast, "ts">): void {
     _pendingCasts.set(uid, { ...cast, ts: Date.now() });
@@ -819,6 +822,10 @@ export function setupBolaDeFogo(): void {
 
         // FASE 2: imp 2 ativo → esfera flamejante persistente
         if (detectImp2Active(entries)) {
+            // O T20 vai criar um MeasuredTemplate de área logo após esse hook.
+            // Registramos o uid pra que createMeasuredTemplate o delete imediatamente —
+            // na FASE 2 a "área" é o Token da esfera, não um template de grid.
+            _pendingEsferaTemplateDelete.set(uid, Date.now());
             const imp1Qty = detectImp1Qty(entries);
             const dice    = 3 + imp1Qty * 2;
             const damageFormula = `${dice}d6[fogo]`;
@@ -881,6 +888,17 @@ export function setupBolaDeFogo(): void {
             ?? (typeof tplDoc.user === "string" ? tplDoc.user : tplDoc.user?.id)
             ?? triggerUserId;
         if (authorUid !== currentUid) return;
+
+        // FASE 2: esfera flamejante — o T20 criou um template de área que não usamos.
+        // Deletar imediatamente; a esfera é representada pelo Token, não pelo template.
+        const esferaPendingTs = _pendingEsferaTemplateDelete.get(currentUid);
+        if (esferaPendingTs !== undefined && Date.now() - esferaPendingTs < PENDING_WINDOW_MS) {
+            _pendingEsferaTemplateDelete.delete(currentUid);
+            const tplDocDeletable = tplDoc as unknown as { delete?(): Promise<unknown> };
+            // Delay mínimo pra o T20 terminar de processar antes de deletar
+            setTimeout(() => void tplDocDeletable.delete?.(), 200);
+            return;
+        }
 
         const pending = _pendingCasts.get(currentUid);
         if (!pending || Date.now() - pending.ts >= PENDING_WINDOW_MS) return;
