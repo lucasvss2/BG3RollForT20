@@ -1059,22 +1059,27 @@ export function setupBolaDeFogo(): void {
         // ── Detecta USO da Pedra Flamejante (item no inventário) ─────────────
         // Quando o user clica no item da pedra, T20 nativo:
         //  1. Rola o dano via item.rollDamage
-        //  2. Cria MeasuredTemplate via AbilityTemplate (user posiciona)
-        //  3. Posta chat msg via item.displayCard
+        //  2. AbilityTemplate.fromItem(item).drawPreview() — abre placement UI (async)
+        //  3. Imediatamente em seguida posta chat msg via item.displayCard
+        //  4. (depois) user clica no canvas → MeasuredTemplate document é criado
         //
-        // T20 grava `flags.tormenta20.itemData = this.system` (linha 7339) —
-        // só o `system`, SEM flags. Por isso não dá pra checar flags.MODULE_ID
-        // no itemData. Detectamos via data-item-id no HTML → lookup no actor.
+        // Por isso, a chat msg da Pedra Flamejante chega ANTES do template existir.
+        // Registramos um pending cast (mesmo padrão da FASE 1) — o hook
+        // createMeasuredTemplate vai reivindicar o template quando ele aparecer.
+        //
+        // T20 grava `flags.tormenta20.itemData = this.system` (linha 7339) — só o
+        // `system`, SEM flags. Por isso checamos flags via lookup do item vivo
+        // usando data-item-id do HTML.
         {
-            const itemId = extractItemId(message);
-            const actorId = message.speaker?.actor ?? "";
+            const itemIdMaybe = extractItemId(message);
+            const actorIdMaybe = message.speaker?.actor ?? "";
             type ActorsGetter = {
                 get(id: string): {
                     items?: { get(id: string): { flags?: Record<string, Record<string, unknown>> } | undefined };
                 } | undefined;
             };
-            const liveItem = (itemId && actorId)
-                ? (game.actors as unknown as ActorsGetter).get(actorId)?.items?.get(itemId)
+            const liveItem = (itemIdMaybe && actorIdMaybe)
+                ? (game.actors as unknown as ActorsGetter).get(actorIdMaybe)?.items?.get(itemIdMaybe)
                 : undefined;
             const isPedraUse = liveItem?.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY;
             if (isPedraUse) {
@@ -1086,46 +1091,21 @@ export function setupBolaDeFogo(): void {
                     return;
                 }
                 const t20Item = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-                // Procura o template mais recente desse user ainda não reivindicado
-                const recent = _recentTemplatesByUser.get(uid) ?? [];
-                type TplDoc = {
-                    id: string; uuid: string; x: number; y: number; distance: number;
-                    flags?: Record<string, Record<string, unknown>>;
-                    delete?(): Promise<unknown>;
-                    update(data: Record<string, unknown>): Promise<unknown>;
-                };
-                type CanvasLike = { scene?: { templates?: { get(id: string): TplDoc | undefined } } };
-                const cv = canvas as unknown as CanvasLike;
-                let claimed = false;
-                for (let i = recent.length - 1; i >= 0; i--) {
-                    const t = cv.scene?.templates?.get(recent[i].id);
-                    if (!t) continue;
-                    const ourF = t.flags?.[MODULE_ID]?.[FLAG_SPELL];
-                    if (ourF) continue;
-                    // Extrai CD + resistTxt do itemData da pedra
-                    const resist  = t20Item?.["resistencia"] as Record<string, unknown> | undefined;
-                    const cd      = Number(resist?.["cd"] ?? 0);
-                    const resTxt  = String(resist?.["txt"] ?? "Reflexos reduz à metade");
-                    const meta: PendingCast = {
-                        casterActorId: message.speaker?.actor ?? "",
-                        casterName:    message.speaker?.alias ?? "Lançador",
-                        casterUserId:  uid,
-                        messageId:     message.id,
-                        damageTotal:   damageRoll.total ?? 0,
-                        damageFormula: damageRoll.formula ?? "",
-                        cd,
-                        resistTxt:     resTxt,
-                        spellName:     "Pedra Flamejante (Bola de Fogo)",
-                        ts:            Date.now(),
-                    };
-                    console.warn(`[t20-theme-overhaul] Pedra Flamejante detonada — reivindicando template ${t.id} (dano=${damageRoll.total}, cd=${cd}).`);
-                    void claimTemplate(t, meta);
-                    claimed = true;
-                    break;
-                }
-                if (!claimed) {
-                    console.warn(`[t20-theme-overhaul] Pedra Flamejante usada mas nenhum template recente encontrado pra reivindicar (recentes:`, recent, `).`);
-                }
+                const resist  = t20Item?.["resistencia"] as Record<string, unknown> | undefined;
+                const cd      = Number(resist?.["cd"] ?? 0);
+                const resTxt  = String(resist?.["txt"] ?? "Reflexos reduz à metade");
+                registerPendingCast(uid, {
+                    casterActorId: actorIdMaybe,
+                    casterName:    message.speaker?.alias ?? "Lançador",
+                    casterUserId:  uid,
+                    messageId:     message.id,
+                    damageTotal:   damageRoll.total ?? 0,
+                    damageFormula: damageRoll.formula ?? "",
+                    cd,
+                    resistTxt:     resTxt,
+                    spellName:     "Pedra Flamejante (Bola de Fogo)",
+                });
+                console.warn(`[t20-theme-overhaul] Pedra Flamejante detonada — pending cast registrado (dano=${damageRoll.total}, cd=${cd}). Aguardando user posicionar template.`);
                 return;
             }
         }
