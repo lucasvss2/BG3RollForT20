@@ -798,6 +798,13 @@ interface AbilityUseDialogLike {
     create: (item: unknown, ...args: unknown[]) => Promise<Record<string, unknown> | null>;
 }
 
+// Captura o CD da magia no momento exato do cast (depois que applyOnUseEffects
+// rodou dentro do callback do dialog). Esse CD é o "real" — inclui bônus de
+// items via Active Effects + bônus de aprimoramentos como Fortalecimento Arcano.
+// Lido pelo createItem hook quando T20 cria a granada do brew.
+type PedraPendingCD = { cd: number; resistTxt: string; ts: number };
+const _pendingPedraCDs = new Map<string, PedraPendingCD>();
+
 function patchAbilityUseDialog(): void {
     type T20Global = {
         applications?: { AbilityUseDialog?: AbilityUseDialogLike & { _bg3PatchedForAp3?: boolean } };
@@ -838,6 +845,25 @@ function patchAbilityUseDialog(): void {
 
         if (ap3Active) {
             resTyped.brew = true;
+            // Captura o CD do clone modificado — applyOnUseEffects já rodou
+            // dentro do callback do dialog (callback do botão "use" em
+            // tormenta20.mjs linha 6257 chama applyOnUseEffects(item, fd.object)).
+            // Logo, item.system.resistencia.cd nesse momento É o CD final REAL
+            // (inclui bônus de items via AE + aprimoramentos como Fortalecimento).
+            type ItemWithSystem = {
+                actor?: { id?: string };
+                system?: { resistencia?: { cd?: number; txt?: string } };
+            };
+            const itemSys      = (item as ItemWithSystem).system;
+            const cdAtCast     = Number(itemSys?.resistencia?.cd ?? 0);
+            const resistTxt    = String(itemSys?.resistencia?.txt ?? "Reflexos reduz à metade");
+            const castActorId  = (item as ItemWithSystem).actor?.id ?? "";
+            if (castActorId && cdAtCast > 0) {
+                _pendingPedraCDs.set(castActorId, { cd: cdAtCast, resistTxt, ts: Date.now() });
+                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 — CD capturado do cast: ${cdAtCast} (resist: "${resistTxt}"). Será aplicado na Pedra Flamejante.`);
+            } else {
+                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado mas CD do cast indisponível (item.system.resistencia.cd=${cdAtCast}). Fallback será usado.`);
+            }
             console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado — forçando brew=true (T20 vai criar a Pedra Flamejante via seu fluxo nativo).`);
         }
         return result;
@@ -1005,43 +1031,59 @@ export function setupBolaDeFogo(): void {
             if (jb2aFlags) animFlags["flags.jb2a"]                 = jb2aFlags;
         }
 
-        // ── CD fix ──────────────────────────────────────────────────────────
-        // T20 só seta `resistencia.atributo` automaticamente em itens type="magia"
-        // (linha 13181 do tormenta20.mjs). O brew cria um type="consumivel" e NÃO
-        // copia o atributo → `prepareFinalAttributes` pula a computação do CD →
-        // fica 0. Solução: computamos o CD nós mesmos e armazenamos na nossa flag.
+        // ── CD: prioriza o valor capturado do cast (fonte da verdade) ───────
         //
-        // Fórmula T20: cd = 10 + nivel/2 + atributo_mod + bonus.
-        // - origSpell.system.resistencia.cd = CD base da magia (sem aprimoramentos,
-        //   pois aprimoramentos vivem só no clone usado no cast).
-        // - granada.system.resistencia.bonus = bonus com aprimoramentos aplicados
-        //   (o brew clona da clone modificada → vem inflado).
-        // Logo: effectiveCD = origSpellCD + granadaBonus.
+        // O monkey-patch do AbilityUseDialog.create já capturou o CD do clone
+        // modificado — isso é o CD FINAL e inclui:
+        //   - bônus de items do actor via Active Effects (ex: Cajado Arcano)
+        //   - bônus de aprimoramentos selecionados (Fortalecimento Arcano, etc.)
+        //   - base 10 + nivel/2 + atributo_conjuracao
+        //
+        // Fallbacks (caso o map esteja vazio — pedras "stranger" criadas fora
+        // do nosso fluxo): origSpellCD + granadaBonus, depois fórmula direta.
+        const actorIdForCD = item.parent?.id ?? "";
+        const pendingCD    = actorIdForCD ? _pendingPedraCDs.get(actorIdForCD) : undefined;
+        const cdIsFresh    = !!pendingCD && Date.now() - pendingCD.ts < 60_000;
+
         const origSpellResist = (origSpell?.system?.["resistencia"]
                               ?? {}) as Record<string, unknown>;
         const origSpellCD     = Number(origSpellResist["cd"] ?? 0);
         const origSpellAtr    = String(origSpellResist["atributo"] ?? "");
-
         const granadaResist   = (item.system?.["resistencia"]
                               ?? {}) as Record<string, unknown>;
         const granadaBonus    = Number(granadaResist["bonus"] ?? 0);
-
         type ParentLike = { system?: { attributes?: { conjuracao?: string } } };
         const parent     = item.parent as ParentLike | null | undefined;
         const conjuracao = origSpellAtr
                         || String(parent?.system?.attributes?.conjuracao ?? "int");
 
-        // Fallback se origSpell não existir: computa direto do actor
-        let effectiveCD = origSpellCD + granadaBonus;
-        if (!effectiveCD || effectiveCD <= 10) {
-            type ActorSys = {
-                atributos?:  Record<string, { value?: number } | undefined>;
-                attributes?: { nivel?: { value?: number } };
-            };
-            const actorSys = (parent as unknown as { system?: ActorSys })?.system;
-            const atrVal   = Number(actorSys?.atributos?.[conjuracao]?.value ?? 0);
-            const nvl      = Math.floor(Number(actorSys?.attributes?.nivel?.value ?? 0) / 2);
-            effectiveCD    = 10 + nvl + atrVal + granadaBonus;
+        let effectiveCD = 0;
+        let cdSource    = "";
+        if (cdIsFresh && pendingCD) {
+            effectiveCD = pendingCD.cd;
+            cdSource    = "cast-time (captured from clone)";
+            _pendingPedraCDs.delete(actorIdForCD);
+        } else {
+            effectiveCD = origSpellCD + granadaBonus;
+            cdSource    = `origSpellCD(${origSpellCD}) + granadaBonus(${granadaBonus})`;
+            if (!effectiveCD || effectiveCD <= 10) {
+                type ActorSys = {
+                    atributos?:  Record<string, { value?: number } | undefined>;
+                    attributes?: { nivel?: { value?: number }; cd?: number };
+                };
+                const actorSys  = (parent as unknown as { system?: ActorSys })?.system;
+                // Usa actor.system.attributes.cd se disponível (já inclui bônus de items)
+                const actorBaseCD = Number(actorSys?.attributes?.cd ?? 0);
+                const atrVal      = Number(actorSys?.atributos?.[conjuracao]?.value ?? 0);
+                if (actorBaseCD > 0) {
+                    effectiveCD = actorBaseCD + atrVal + granadaBonus;
+                    cdSource    = `actorBaseCD(${actorBaseCD}) + atr(${atrVal}) + bonus(${granadaBonus})`;
+                } else {
+                    const nvl  = Math.floor(Number(actorSys?.attributes?.nivel?.value ?? 0) / 2);
+                    effectiveCD = 10 + nvl + atrVal + granadaBonus;
+                    cdSource    = `10 + nvl/2(${nvl}) + atr(${atrVal}) + bonus(${granadaBonus})`;
+                }
+            }
         }
 
         // Atualiza nome, img, e flags
@@ -1060,7 +1102,7 @@ export function setupBolaDeFogo(): void {
             [`flags.${MODULE_ID}.cd`]:            effectiveCD,
             ...animFlags,
         });
-        console.warn(`[t20-theme-overhaul] Pedra Flamejante criada — CD computado: ${effectiveCD} (origSpellCD=${origSpellCD}, granadaBonus=${granadaBonus}, atributo=${conjuracao}).`);
+        console.warn(`[t20-theme-overhaul] Pedra Flamejante criada — CD=${effectiveCD} (fonte: ${cdSource}, atributo=${conjuracao}).`);
         ui.notifications?.info(`Pedra Flamejante criada no inventário (${dado} fogo, CD ${effectiveCD}). Clique no item para arremessar.`);
     });
 
