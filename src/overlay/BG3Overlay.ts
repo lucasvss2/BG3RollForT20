@@ -22,7 +22,9 @@ function ensureStyles(): void {
     if (!document.getElementById(STYLES_ID)) {
         const el = document.createElement("style");
         el.id = STYLES_ID;
-        el.textContent = STYLES;
+        el.textContent = STYLES
+            .replace(/\$\{OVERLAY_ID\}/g, OVERLAY_ID)
+            .replace(/\$\{OVERLAY_Z\}/g, String(OVERLAY_Z));
         document.head.appendChild(el);
     }
 }
