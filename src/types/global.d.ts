@@ -179,7 +179,98 @@ declare class ChatMessage {
     static getSpeaker(options?: { actor?: FoundryActor | null; token?: FoundryToken }): Record<string, unknown>;
 }
 
-// ── Dialog ───────────────────────────────────────────────────────────────────
+// ── Foundry v13 ApplicationV2 / DialogV2 ─────────────────────────────────────
+
+declare namespace foundry {
+    namespace applications {
+        namespace api {
+            interface ApplicationPosition {
+                width?: number;
+                height?: number | "auto";
+                top?: number;
+                left?: number;
+                scale?: number;
+                zIndex?: number;
+            }
+
+            interface ApplicationConfiguration {
+                id?: string;
+                classes?: string[];
+                tag?: string;
+                window?: {
+                    title?: string;
+                    icon?: string;
+                    frame?: boolean;
+                    positioned?: boolean;
+                    resizable?: boolean;
+                    minimizable?: boolean;
+                };
+                position?: ApplicationPosition;
+                actions?: Record<string, unknown>;
+            }
+
+            interface DialogV2Button {
+                /** "submit" closes the dialog and resolves the Promise; "button" keeps it open. */
+                type?: "submit" | "button" | "reset";
+                /** Unique action string; becomes the Promise resolution value for submit buttons. */
+                action: string;
+                label: string;
+                icon?: string;
+                class?: string;
+                /** Mark this button as the default (triggered on Enter). */
+                default?: boolean;
+                /** Called when the button is activated. Return value resolves the wait() Promise. */
+                callback?: (
+                    event: Event,
+                    button: HTMLButtonElement,
+                    dialog: DialogV2,
+                ) => unknown;
+            }
+
+            interface DialogV2WaitConfig extends Partial<ApplicationConfiguration> {
+                content?: string;
+                buttons?: DialogV2Button[];
+                /** Called after the dialog is rendered; use dialog.element for DOM access. */
+                render?: (event: Event, dialog: DialogV2) => void;
+                /** When true, closing without a button rejects the Promise. Default: true. */
+                rejectClose?: boolean;
+                close?: (event: Event, dialog: DialogV2) => void;
+                modal?: boolean;
+            }
+
+            class ApplicationV2 {
+                get element(): HTMLElement;
+                render(options?: { force?: boolean }): Promise<ApplicationV2>;
+                close(options?: { force?: boolean }): Promise<void>;
+            }
+
+            class DialogV2 extends ApplicationV2 {
+                /** Open a dialog and await the user's button choice. Resolves with the action string. */
+                static wait(config: DialogV2WaitConfig): Promise<string | null>;
+                /** Open a single-prompt dialog. */
+                static prompt(config: Partial<ApplicationConfiguration> & {
+                    content?: string;
+                    label?: string;
+                    type?: string;
+                    callback?: (event: Event, button: HTMLButtonElement, dialog: DialogV2) => unknown;
+                    render?: (event: Event, dialog: DialogV2) => void;
+                    rejectClose?: boolean;
+                }): Promise<unknown>;
+                /** Open a yes/no confirmation dialog. Resolves with true (yes) or false (no). */
+                static confirm(config: Partial<ApplicationConfiguration> & {
+                    content?: string;
+                    yes?: Partial<DialogV2Button> & {
+                        callback?: (event: Event, button: HTMLButtonElement, dialog: DialogV2) => unknown;
+                    };
+                    no?: Partial<DialogV2Button>;
+                    rejectClose?: boolean;
+                }): Promise<boolean>;
+            }
+        }
+    }
+}
+
+// ── Dialog (legacy) ───────────────────────────────────────────────────────────
 
 declare interface DialogButtonConfig {
     icon?: string;

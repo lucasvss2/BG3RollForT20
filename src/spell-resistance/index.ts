@@ -793,127 +793,132 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
 
     // ── Dialog ────────────────────────────────────────────────────────────────
 
-    new Dialog(
-        {
-            title:   `${preReq.spellName} — ${targetName}`,
-            content,
-            buttons: {
-                finalize: {
-                    icon:  '<i class="fas fa-check"></i>',
-                    label: "Finalizar",
-                    callback: () => { /* todos os efeitos já foram aplicados inline */ },
-                },
+
+    // ── Dialog ────────────────────────────────────────────────────────────────
+
+    void foundry.applications.api.DialogV2.wait({
+        id:      `spell-modal-${preReq.requestId}`,
+        classes: ["bg3-dialog", "smf-dialog"],
+        window:  { title: `${preReq.spellName} \u2014 ${targetName}` },
+        position: { width: 480 },
+        content,
+        buttons: [
+            {
+                type:    "submit",
+                action:  "finalize",
+                label:   "Finalizar",
+                icon:    "fas fa-check",
+                default: true,
+                callback: () => { /* todos os efeitos já foram aplicados inline */ },
             },
-            default: "finalize",
-            render: ($html: JQuery) => {
+        ],
+        render: (_event, dialog) => {
+            const root = dialog.element;
 
-                // ── Collapse sections ─────────────────────────────────────────
-                // Apenas títulos com chevron filho são clicáveis para colapsar.
-                // Isso evita que sub-títulos internos (ex.: "DANO SAGRADO"
-                // dentro da seção de CURA) disparem o toggle da seção pai.
-                $html.find(".smf-section-title").filter(function () {
-                    return $(this).children(".smf-collapse-btn").length > 0;
-                }).on("click", function () {
-                    $(this).closest(".smf-section").toggleClass("smf-collapsed");
+            // ── Collapse sections ─────────────────────────────────────────────
+            // Only section-title elements that have a .smf-collapse-btn child are
+            // collapsible — prevents inner sub-titles from toggling the parent.
+            root.querySelectorAll<HTMLElement>(".smf-section-title").forEach((title) => {
+                if (!title.querySelector(".smf-collapse-btn")) return;
+                title.addEventListener("click", () => {
+                    title.closest(".smf-section")?.classList.toggle("smf-collapsed");
                 });
+            });
 
-                // ── PM total ──────────────────────────────────────────────────
-                $html.find(".smf-power-check").on("change", () => {
-                    const total = $html.find(".smf-power-check:checked").toArray()
-                        .reduce((s, el) => s + parseInt((el as HTMLElement).dataset["pm"] ?? "0", 10), 0);
-                    $html.find("#smf-pm-total").text(String(total));
+            // ── PM total ──────────────────────────────────────────────────────
+            root.querySelectorAll(".smf-power-check").forEach((el) => {
+                el.addEventListener("change", () => {
+                    const total = Array.from(root.querySelectorAll<HTMLElement>(".smf-power-check:checked"))
+                        .reduce((s, e) => s + parseInt(e.dataset["pm"] ?? "0", 10), 0);
+                    const pmTotalEl = root.querySelector("#smf-pm-total");
+                    if (pmTotalEl) pmTotalEl.textContent = String(total);
                 });
+            });
 
-                // ── Rolar Resistência (suporta reroll) ────────────────────────
-                let hasRolledResist = false;
-                $html.find("#smf-roll-resist").on("click", function () {
-                    const rollBtn = $(this);
-                    rollBtn.prop("disabled", true);
+            // ── Rolar Resist\u00eancia (suporta reroll) ────────────────────────────
+            let hasRolledResist = false;
+            const rollResistBtn = root.querySelector<HTMLButtonElement>("#smf-roll-resist");
+            rollResistBtn?.addEventListener("click", function () {
+                const btn = this;
+                btn.disabled = true;
 
-                    const bonusExtra = ($html.find('[name="bonusExtra"]').val() as string ?? "").trim();
-                    const selected = $html.find(".smf-power-check:checked").toArray().map(el => ({
-                        pm:         parseInt((el as HTMLElement).dataset["pm"]        ?? "0", 10),
-                        bonus:      (el as HTMLElement).dataset["bonus"]     ?? "",
-                        advantage:  (el as HTMLElement).dataset["advantage"] === "true",
-                        bonusLabel: (el as HTMLElement).dataset["label"]     ?? "",
-                        name:       (el as HTMLElement).dataset["name"]      ?? "",
-                    }));
+                const bonusExtra = (root.querySelector<HTMLInputElement>('[name="bonusExtra"]')?.value ?? "").trim();
+                const selected = Array.from(root.querySelectorAll<HTMLElement>(".smf-power-check:checked")).map((el) => ({
+                    pm:         parseInt(el.dataset["pm"]        ?? "0", 10),
+                    bonus:      el.dataset["bonus"]     ?? "",
+                    advantage:  el.dataset["advantage"] === "true",
+                    bonusLabel: el.dataset["label"]     ?? "",
+                    name:       el.dataset["name"]      ?? "",
+                }));
 
-                    // Monta fórmula
-                    const hasAdvantage = selected.some(p => p.advantage);
-                    const parts: string[] = [hasAdvantage ? "2d20kh1" : "1d20"];
-                    if (baseBonus !== 0) {
-                        parts.push(baseBonus > 0 ? `+ ${baseBonus}` : `- ${Math.abs(baseBonus)}`);
-                    }
-                    for (const p of selected) {
-                        if (!p.bonus || p.bonus === "kh") continue;
-                        const b = p.bonus.trim();
-                        parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
-                    }
-                    if (bonusExtra) {
-                        const b = bonusExtra.trim();
-                        parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
-                    }
+                const hasAdvantage = selected.some((p) => p.advantage);
+                const parts: string[] = [hasAdvantage ? "2d20kh1" : "1d20"];
+                if (baseBonus !== 0) {
+                    parts.push(baseBonus > 0 ? `+ ${baseBonus}` : `- ${Math.abs(baseBonus)}`);
+                }
+                for (const p of selected) {
+                    if (!p.bonus || p.bonus === "kh") continue;
+                    const b = p.bonus.trim();
+                    parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
+                }
+                if (bonusExtra) {
+                    const b = bonusExtra.trim();
+                    parts.push(b.startsWith("+") || b.startsWith("-") ? b : `+ ${b}`);
+                }
 
-                    void (async () => {
-                        const roll = new Roll(parts.join(" "));
-                        await roll.evaluate({ async: true });
+                void (async () => {
+                    const roll = new Roll(parts.join(" "));
+                    await roll.evaluate({ async: true });
 
-                        // Desconta PM apenas na PRIMEIRA rolagem; rerolls são livres
-                        if (!hasRolledResist) {
-                            const totalPm = selected.reduce((s, p) => s + p.pm, 0);
-                            if (totalPm > 0 && targetActor) {
-                                const cur = targetActor.system?.attributes?.pm?.value ?? 0;
-                                await targetActor.update({ "system.attributes.pm.value": Math.max(0, cur - totalPm) });
-                            }
+                    // Desconta PM apenas na PRIMEIRA rolagem; rerolls s\u00e3o livres
+                    if (!hasRolledResist) {
+                        const totalPm = selected.reduce((s, p) => s + p.pm, 0);
+                        if (totalPm > 0 && targetActor) {
+                            const cur = targetActor.system?.attributes?.pm?.value ?? 0;
+                            await targetActor.update({ "system.attributes.pm.value": Math.max(0, cur - totalPm) });
                         }
+                    }
 
-                        const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
-                            ?.results?.find(r => r.active)?.result ?? 0;
-                        const total  = roll.total ?? 0;
-                        // d20=1 → falha crítica (sempre falha); d20=20 → sucesso crítico (sempre passa)
-                        const critFail = d20Res === 1;
-                        const critPass = d20Res === 20;
-                        const passed   = critPass || (!critFail && total >= preReq.cd);
-                        const sl       = skillKey ? SKILL_LABELS[skillKey] : "Resistência";
+                    const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
+                        ?.results?.find((r) => r.active)?.result ?? 0;
+                    const total    = roll.total ?? 0;
+                    const critFail = d20Res === 1;
+                    const critPass = d20Res === 20;
+                    const passed   = critPass || (!critFail && total >= preReq.cd);
+                    const sl       = skillKey ? SKILL_LABELS[skillKey] : "Resist\u00eancia";
 
-                        const appliedLabels: string[] = selected.map(p => {
-                            const pmStr = p.pm > 0 ? ` (${p.pm} PM)` : "";
-                            return `${p.bonusLabel} · ${p.name}${pmStr}`;
-                        });
-                        if (bonusExtra) appliedLabels.push(`${bonusExtra} (manual)`);
+                    const appliedLabels: string[] = selected.map((p) => {
+                        const pmStr = p.pm > 0 ? ` (${p.pm} PM)` : "";
+                        return `${p.bonusLabel} \u00b7 ${p.name}${pmStr}`;
+                    });
+                    if (bonusExtra) appliedLabels.push(`${bonusExtra} (manual)`);
 
-                        // Publica no chat
-                        const chatBadge = critPass ? "✦ SUCESSO CRÍTICO" : critFail ? "☠ FALHA CRÍTICA" : (passed ? "✓ PASSOU" : "✗ FALHOU");
-                        await ChatMessage.create({
-                            content: await roll.render({
-                                flavor: `Resistência — ${sl} (${targetName}) vs CD ${preReq.cd} ${chatBadge}`,
-                            }),
-                            rolls:   [roll.toJSON()],
-                            type:    5,
-                            speaker: ChatMessage.getSpeaker({ actor: targetActor ?? null }),
-                            flags:   { [MODULE_ID]: { resistanceRoll: true } },
-                        });
+                    const chatBadge = critPass ? "\u2726 SUCESSO CR\u00cdTICO" : critFail ? "\u2620 FALHA CR\u00cdTICA" : (passed ? "\u2713 PASSOU" : "\u2717 FALHOU");
+                    await ChatMessage.create({
+                        content: await roll.render({ flavor: `Resist\u00eancia \u2014 ${sl} (${targetName}) vs CD ${preReq.cd} ${chatBadge}` }),
+                        rolls:   [roll.toJSON()],
+                        type:    5,
+                        speaker: ChatMessage.getSpeaker({ actor: targetActor ?? null }),
+                        flags:   { [MODULE_ID]: { resistanceRoll: true } },
+                    });
 
-                        // Resultado no outcome
-                        const outcomeText = passed
-                            ? (preReq.resistOutcome === "anula"   ? "Sem efeito (passou)" :
-                               preReq.resistOutcome === "metade"  ? "Metade do dano (passou)" :
-                               preReq.resistOutcome === "parcial" ? "Metade + sem condições (passou)" :
-                               "Passou — veja texto da magia")
-                            : "Falhou — efeito completo";
+                    const outcomeText = passed
+                        ? (preReq.resistOutcome === "anula"   ? "Sem efeito (passou)" :
+                           preReq.resistOutcome === "metade"  ? "Metade do dano (passou)" :
+                           preReq.resistOutcome === "parcial" ? "Metade + sem condi\u00e7\u00f5es (passou)" :
+                           "Passou \u2014 veja texto da magia")
+                        : "Falhou \u2014 efeito completo";
 
-                        const passClass   = passed ? "smf-rr-pass"       : "smf-rr-fail";
-                        const badgeClass  = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
-                        const badgeText   = critPass ? "SUCESSO CRÍTICO"
-                                          : critFail ? "FALHA CRÍTICA"
-                                          : (passed ? "PASSOU" : "FALHOU");
+                    const passClass  = passed ? "smf-rr-pass"       : "smf-rr-fail";
+                    const badgeClass = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
+                    const badgeText  = critPass ? "SUCESSO CR\u00cdTICO" : critFail ? "FALHA CR\u00cdTICA" : (passed ? "PASSOU" : "FALHOU");
+                    const powersHtmlResult = appliedLabels.length > 0
+                        ? `<div class="smf-applied-powers">${appliedLabels.map((l) => `<div class="smf-applied-power">\u2726 ${esc(l)}</div>`).join("")}</div>`
+                        : "";
 
-                        const powersHtmlResult = appliedLabels.length > 0
-                            ? `<div class="smf-applied-powers">${appliedLabels.map(l => `<div class="smf-applied-power">✦ ${esc(l)}</div>`).join("")}</div>`
-                            : "";
-
-                        $html.find("#smf-resist-result").html(`
+                    const resistResultEl = root.querySelector<HTMLElement>("#smf-resist-result");
+                    if (resistResultEl) {
+                        resistResultEl.innerHTML = `
                             <div class="smf-rr-row">
                                 <span class="smf-label-sm">${esc(sl.toUpperCase())}</span>
                                 <span class="${passClass}">${total}</span>
@@ -923,105 +928,108 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                             </div>
                             ${powersHtmlResult}
                             <div class="smf-rr-outcome">${esc(outcomeText)}</div>
-                        `).show();
-
-                        // Esconde form de poderes (PM já descontado); mantém botão como "Rerolar"
-                        $html.find("#smf-powers-wrap").hide();
-                        if (!hasRolledResist) {
-                            rollBtn.html(`<i class="fas fa-rotate"></i> Rerolar ${esc(skillLabel)} (CD ${preReq.cd})`);
-                            hasRolledResist = true;
-                        }
-                        rollBtn.prop("disabled", false);
-                    })();
-                });
-
-                // ── Consagrar (maximiza cura) ─────────────────────────────────
-                $html.find("#smf-consagrar").on("change", function () {
-                    const checked = $(this).is(":checked");
-                    const healBtn = $html.find("#smf-heal-full");
-                    const baseVal = parseInt(healBtn.data("heal-base") as string, 10) || preReq.damageTotal;
-                    const maxVal  = parseInt(healBtn.data("heal-max")  as string, 10) || preReq.damageTotal;
-                    const val     = checked ? maxVal : baseVal;
-                    const halfU   = Math.floor(val / 2);
-                    $html.find("#smf-heal-number").text(String(val));
-                    healBtn.data("heal-current", val);
-                    healBtn.html(`<i class="fas fa-heart"></i> Curar (${val})${preReq.removeFadiga ? " e Remover Fadiga" : ""}`);
-                    // Atualiza labels dos botões de dano sagrado
-                    $html.find("#smf-undead-full").html(`<i class="fas fa-skull-crossbones"></i> Dano Completo (${val})`);
-                    $html.find("#smf-undead-half").html(`<i class="fas fa-shield-halved"></i> Metade do Dano (${halfU})`);
-                });
-
-                // ── Auto-marca Consagrar se o alvo está em área de Consagrar ──
-                // Detecta o flag consagrarHealingBoost no ator alvo (criado pelo
-                // template de Consagrar). Se presente, marca o checkbox e dispara
-                // o change para aplicar o boost imediatamente.
-                if (preReq.isHeal && targetActor) {
-                    const hasBoost = (targetActor.effects?.contents ?? []).some(e => {
-                        const f = e.flags?.[MODULE_ID] as Record<string, unknown> | undefined;
-                        return f?.["consagrarHealingBoost"] === true;
-                    });
-                    if (hasBoost) {
-                        const $cb = $html.find("#smf-consagrar");
-                        if ($cb.length && !$cb.is(":checked")) {
-                            $cb.prop("checked", true).trigger("change");
-                            // Marca visualmente que veio do template (tooltip)
-                            $cb.closest(".smf-consagrar-label").attr("title", "Alvo está em área de Consagrar — bônus auto-aplicado");
-                        }
+                        `;
+                        resistResultEl.style.display = "block";
                     }
-                }
 
-                // ── Morto-Vivo (ativa seção de resistência e dano sagrado) ────
-                $html.find("#smf-morto-vivo").on("change", function () {
-                    $html.find("#smf-undead-section").toggle($(this).is(":checked"));
+                    const powersWrap = root.querySelector<HTMLElement>("#smf-powers-wrap");
+                    if (powersWrap) powersWrap.style.display = "none";
+                    if (!hasRolledResist) {
+                        btn.innerHTML = `<i class="fas fa-rotate"></i> Rerolar ${esc(skillLabel)} (CD ${preReq.cd})`;
+                        hasRolledResist = true;
+                    }
+                    btn.disabled = false;
+                })();
+            });
+
+            // ── Consagrar (maximiza cura) ─────────────────────────────────────
+            const consagrarCb = root.querySelector<HTMLInputElement>("#smf-consagrar");
+            consagrarCb?.addEventListener("change", () => {
+                const checked = consagrarCb.checked;
+                const healBtn = root.querySelector<HTMLButtonElement>("#smf-heal-full");
+                if (!healBtn) return;
+                const baseVal = parseInt(healBtn.dataset["healBase"] ?? "", 10) || preReq.damageTotal;
+                const maxVal  = parseInt(healBtn.dataset["healMax"]  ?? "", 10) || preReq.damageTotal;
+                const val     = checked ? maxVal : baseVal;
+                const halfU   = Math.floor(val / 2);
+                const healNum = root.querySelector<HTMLElement>("#smf-heal-number");
+                if (healNum) healNum.textContent = String(val);
+                healBtn.dataset["healCurrent"] = String(val);
+                healBtn.innerHTML = `<i class="fas fa-heart"></i> Curar (${val})${preReq.removeFadiga ? " e Remover Fadiga" : ""}`;
+                const undeadFull = root.querySelector<HTMLButtonElement>("#smf-undead-full");
+                const undeadHalf = root.querySelector<HTMLButtonElement>("#smf-undead-half");
+                if (undeadFull) undeadFull.innerHTML = `<i class="fas fa-skull-crossbones"></i> Dano Completo (${val})`;
+                if (undeadHalf) undeadHalf.innerHTML = `<i class="fas fa-shield-halved"></i> Metade do Dano (${halfU})`;
+            });
+
+            // ── Auto-marca Consagrar se o alvo est\u00e1 em \u00e1rea de Consagrar ──────
+            if (preReq.isHeal && targetActor) {
+                const hasBoost = (targetActor.effects?.contents ?? []).some((e) => {
+                    const f = e.flags?.[MODULE_ID] as Record<string, unknown> | undefined;
+                    return f?.["consagrarHealingBoost"] === true;
                 });
-
-                // ── Truque de Curar Ferimentos: dano de luz vs morto-vivo ─────
-                // Auto-marca Morto-Vivo, esconde checkbox Consagrar e botão Curar.
-                if (preReq.truqueAtivo) {
-                    $html.find("#smf-consagrar").closest(".smf-consagrar-label").hide();
-                    $html.find("#smf-heal-full").hide();
-                    const $mv = $html.find("#smf-morto-vivo");
-                    $mv.prop("checked", true).prop("disabled", true);
-                    $mv.closest(".smf-undead-label").attr("title", "Truque: alvo já é morto-vivo (1d8 dano de luz)");
-                    $html.find("#smf-undead-section").show();
+                if (hasBoost && consagrarCb && !consagrarCb.checked) {
+                    consagrarCb.checked = true;
+                    consagrarCb.dispatchEvent(new Event("change"));
+                    consagrarCb.closest<HTMLElement>(".smf-consagrar-label")?.setAttribute("title", "Alvo est\u00e1 em \u00e1rea de Consagrar \u2014 b\u00f4nus auto-aplicado");
                 }
+            }
 
-                // ── Rolar Vontade (resistência do morto-vivo) ─────────────────
-                $html.find("#smf-undead-roll").on("click", function () {
-                    const rollBtn  = $(this);
-                    rollBtn.prop("disabled", true);
-                    const vontBonus = targetActor ? computeSkillTotal(targetActor, "vont") : 0;
-                    const bonusStr  = vontBonus >= 0 ? `+${vontBonus}` : `${vontBonus}`;
-                    void (async () => {
-                        const roll = new Roll(`1d20 ${bonusStr}`);
-                        await roll.evaluate({ async: true } as never);
-                        const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
-                            ?.results?.find(r => r.active)?.result ?? 0;
-                        const total  = roll.total ?? 0;
-                        // d20=1 → falha crítica (sempre falha); d20=20 → sucesso crítico (sempre passa)
-                        const critFail = d20Res === 1;
-                        const critPass = d20Res === 20;
-                        const passed   = critPass || (!critFail && preReq.cd > 0 && total >= preReq.cd);
-                        const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
+            // ── Morto-Vivo ────────────────────────────────────────────────────
+            const mortoCb = root.querySelector<HTMLInputElement>("#smf-morto-vivo");
+            const undeadSection = root.querySelector<HTMLElement>("#smf-undead-section");
+            mortoCb?.addEventListener("change", () => {
+                if (undeadSection) undeadSection.style.display = mortoCb.checked ? "" : "none";
+            });
 
-                        const chatBadge = critPass ? "✦ SUCESSO CRÍTICO" : critFail ? "☠ FALHA CRÍTICA" : (passed ? "✓ PASSOU" : "✗ FALHOU");
-                        await ChatMessage.create({
-                            content: await roll.render({
-                                flavor: `Resistência Vontade (${targetName}) vs ${cdLabel} — ${chatBadge}`,
-                            }),
-                            rolls:   [roll.toJSON()],
-                            type:    5,
-                            speaker: ChatMessage.getSpeaker({ actor: targetActor ?? null }),
-                            flags:   { [MODULE_ID]: { resistanceRoll: true } },
-                        });
+            // ── Truque de Curar Ferimentos ────────────────────────────────────
+            if (preReq.truqueAtivo) {
+                consagrarCb?.closest<HTMLElement>(".smf-consagrar-label")?.style.setProperty("display", "none");
+                const healFullBtn = root.querySelector<HTMLElement>("#smf-heal-full");
+                if (healFullBtn) healFullBtn.style.display = "none";
+                if (mortoCb) {
+                    mortoCb.checked  = true;
+                    mortoCb.disabled = true;
+                    mortoCb.closest<HTMLElement>(".smf-undead-label")?.setAttribute("title", "Truque: alvo j\u00e1 \u00e9 morto-vivo (1d8 dano de luz)");
+                }
+                if (undeadSection) undeadSection.style.display = "block";
+            }
 
-                        const passClass  = passed ? "smf-rr-pass"       : "smf-rr-fail";
-                        const badgeClass = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
-                        const badgeText  = critPass ? "SUCESSO CRÍTICO"
-                                         : critFail ? "FALHA CRÍTICA"
-                                         : (passed ? "PASSOU" : "FALHOU");
-                        const outcome    = passed ? "Metade do dano (passou)" : "Dano completo (falhou)";
-                        $html.find("#smf-undead-result").html(`
+            // ── Rolar Vontade (resist\u00eancia do morto-vivo) ─────────────────────
+            const undeadRollBtn = root.querySelector<HTMLButtonElement>("#smf-undead-roll");
+            undeadRollBtn?.addEventListener("click", function () {
+                const btn = this;
+                btn.disabled = true;
+                const vontBonus = targetActor ? computeSkillTotal(targetActor, "vont") : 0;
+                const bonusStr  = vontBonus >= 0 ? `+${vontBonus}` : `${vontBonus}`;
+                void (async () => {
+                    const roll = new Roll(`1d20 ${bonusStr}`);
+                    await roll.evaluate({ async: true } as never);
+                    const d20Res = (roll.dice?.[0] as { results?: { active?: boolean; result?: number }[] } | undefined)
+                        ?.results?.find((r) => r.active)?.result ?? 0;
+                    const total    = roll.total ?? 0;
+                    const critFail = d20Res === 1;
+                    const critPass = d20Res === 20;
+                    const passed   = critPass || (!critFail && preReq.cd > 0 && total >= preReq.cd);
+                    const cdLabel  = preReq.cd > 0 ? `CD ${preReq.cd}` : "CD ?";
+
+                    const chatBadge = critPass ? "\u2726 SUCESSO CR\u00cdTICO" : critFail ? "\u2620 FALHA CR\u00cdTICA" : (passed ? "\u2713 PASSOU" : "\u2717 FALHOU");
+                    await ChatMessage.create({
+                        content: await roll.render({ flavor: `Resist\u00eancia Vontade (${targetName}) vs ${cdLabel} \u2014 ${chatBadge}` }),
+                        rolls:   [roll.toJSON()],
+                        type:    5,
+                        speaker: ChatMessage.getSpeaker({ actor: targetActor ?? null }),
+                        flags:   { [MODULE_ID]: { resistanceRoll: true } },
+                    });
+
+                    const passClass  = passed ? "smf-rr-pass"       : "smf-rr-fail";
+                    const badgeClass = passed ? "smf-rr-badge-pass" : "smf-rr-badge-fail";
+                    const badgeText  = critPass ? "SUCESSO CR\u00cdTICO" : critFail ? "FALHA CR\u00cdTICA" : (passed ? "PASSOU" : "FALHOU");
+                    const outcome    = passed ? "Metade do dano (passou)" : "Dano completo (falhou)";
+
+                    const undeadResultEl = root.querySelector<HTMLElement>("#smf-undead-result");
+                    if (undeadResultEl) {
+                        undeadResultEl.innerHTML = `
                             <div class="smf-rr-row">
                                 <span class="smf-label-sm">VONTADE</span>
                                 <span class="${passClass}">${total}</span>
@@ -1030,113 +1038,106 @@ function openUnifiedSpellModal(preReq: SpellResistPreRollRequest): void {
                                 <span class="${badgeClass}">${badgeText}</span>
                             </div>
                             <div class="smf-rr-outcome">${esc(outcome)}</div>
-                        `).show();
-                        rollBtn.hide();
-                        $html.find("#smf-undead-dmg-btns").show();
-                    })();
-                });
+                        `;
+                        undeadResultEl.style.display = "block";
+                    }
+                    btn.style.display = "none";
+                    const dmgBtns = root.querySelector<HTMLElement>("#smf-undead-dmg-btns");
+                    if (dmgBtns) dmgBtns.style.display = "block";
+                })();
+            });
 
-                // ── Dano sagrado ao morto-vivo ────────────────────────────────
-                $html.find(".smf-undead-dmg-btn").on("click", async function () {
-                    const btn = $(this);
-                    const id  = btn.attr("id");
-                    // Respeita Consagrar: lê o valor atual do número de cura exibido
-                    const curHeal = parseInt($html.find("#smf-heal-number").text(), 10) || preReq.damageTotal;
+            // ── Dano sagrado ao morto-vivo ────────────────────────────────────
+            root.querySelectorAll<HTMLButtonElement>(".smf-undead-dmg-btn").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    const healNum = root.querySelector<HTMLElement>("#smf-heal-number");
+                    const curHeal = parseInt(healNum?.textContent ?? "", 10) || preReq.damageTotal;
                     const halfU   = Math.floor(curHeal / 2);
                     let amt   = 0;
                     let label = "";
-                    if (id === "smf-undead-full") {
+                    if (btn.id === "smf-undead-full") {
                         amt   = curHeal;
-                        label = `✓ ${amt} de dano sagrado aplicado`;
-                    } else if (id === "smf-undead-half") {
+                        label = `\u2713 ${amt} de dano sagrado aplicado`;
+                    } else if (btn.id === "smf-undead-half") {
                         amt   = halfU;
-                        label = `✓ ${amt} de dano sagrado (metade) aplicado`;
+                        label = `\u2713 ${amt} de dano sagrado (metade) aplicado`;
                     } else {
-                        label = "✓ Dano sagrado não aplicado";
+                        label = "\u2713 Dano sagrado n\u00e3o aplicado";
                     }
-                    if (amt > 0) {
-                        await applySpellDamage(preReq.targetActorUuid, preReq.targetActorId, amt);
-                    }
-                    $html.find(".smf-undead-dmg-btn").addClass("smf-spent");
-                    $html.find("#smf-undead-feedback").text(label).show();
+                    if (amt > 0) await applySpellDamage(preReq.targetActorUuid, preReq.targetActorId, amt);
+                    root.querySelectorAll(".smf-undead-dmg-btn").forEach((b) => b.classList.add("smf-spent"));
+                    const fb = root.querySelector<HTMLElement>("#smf-undead-feedback");
+                    if (fb) { fb.textContent = label; fb.style.display = "block"; }
                 });
+            });
 
-                // ── Dano / Cura ───────────────────────────────────────────────
-                $html.find(".smf-dmg-btn, .smf-heal-btn").on("click", async function () {
-                    const btn = $(this);
-                    const id  = btn.attr("id");
+            // ── Dano / Cura ───────────────────────────────────────────────────
+            root.querySelectorAll<HTMLButtonElement>(".smf-dmg-btn, .smf-heal-btn").forEach((btn) => {
+                btn.addEventListener("click", async () => {
                     let label = "";
-
-                    if (id === "smf-heal-full") {
-                        // Usa valor Consagrado se checkbox marcado, senão o total rolado
-                        const healAmt = parseInt(btn.data("heal-current") as string, 10)
-                            || preReq.damageTotal;
+                    if (btn.id === "smf-heal-full") {
+                        const healAmt = parseInt(btn.dataset["healCurrent"] ?? "", 10) || preReq.damageTotal;
                         await applySpellHeal(preReq.targetActorUuid, preReq.targetActorId, healAmt);
-                        label = `✓ Cura de ${healAmt} aplicada`;
-                        // Aprimoramento: também remove uma condição de Fadiga do alvo
+                        label = `\u2713 Cura de ${healAmt} aplicada`;
                         if (preReq.removeFadiga) {
                             const removed = await removeFadigaCondition(preReq.targetActorUuid, preReq.targetActorId);
-                            label += removed ? " · Fadiga removida" : " · sem Fadiga para remover";
+                            label += removed ? " \u00b7 Fadiga removida" : " \u00b7 sem Fadiga para remover";
                         }
-                    } else if (id === "smf-no-heal" || id === "smf-dmg-none") {
-                        label = "✓ Não aplicado";
+                    } else if (btn.id === "smf-no-heal" || btn.id === "smf-dmg-none") {
+                        label = "\u2713 N\u00e3o aplicado";
                     } else {
-                        const amt = parseInt(btn.data("dmg") as string, 10) || 0;
-                        if (amt > 0) {
-                            await applySpellDamage(preReq.targetActorUuid, preReq.targetActorId, amt);
-                        }
-                        label = amt > 0 ? `✓ ${amt} de dano aplicado` : "✓ Não aplicado";
+                        const amt = parseInt(btn.dataset["dmg"] ?? "", 10) || 0;
+                        if (amt > 0) await applySpellDamage(preReq.targetActorUuid, preReq.targetActorId, amt);
+                        label = amt > 0 ? `\u2713 ${amt} de dano aplicado` : "\u2713 N\u00e3o aplicado";
                     }
-
-                    $html.find(".smf-dmg-btn, .smf-heal-btn").addClass("smf-spent");
-                    $html.find("#smf-dmg-feedback").text(label).show();
+                    root.querySelectorAll(".smf-dmg-btn, .smf-heal-btn").forEach((b) => b.classList.add("smf-spent"));
+                    const fb = root.querySelector<HTMLElement>("#smf-dmg-feedback");
+                    if (fb) { fb.textContent = label; fb.style.display = "block"; }
                 });
+            });
 
-                // ── Buff ──────────────────────────────────────────────────────
-                $html.find(".smf-buff-btn").on("click", async function () {
+            // ── Buff ──────────────────────────────────────────────────────────
+            root.querySelectorAll<HTMLButtonElement>(".smf-buff-btn").forEach((btn) => {
+                btn.addEventListener("click", async () => {
                     if (!targetActor) return;
-                    const btn = $(this);
-                    const idx = parseInt(btn.data("effect-index") as string, 10);
+                    const idx = parseInt(btn.dataset["effectIndex"] ?? "", 10);
                     if (isNaN(idx)) return;
                     await applyBuffEffect(preReq.messageId, idx, targetActor);
-                    btn.addClass("smf-spent").append(" ✓");
-                    $html.find("#smf-buff-feedback").text("✓ Efeito aplicado").show();
+                    btn.classList.add("smf-spent");
+                    btn.insertAdjacentText("beforeend", " \u2713");
+                    const fb = root.querySelector<HTMLElement>("#smf-buff-feedback");
+                    if (fb) { fb.textContent = "\u2713 Efeito aplicado"; fb.style.display = "block"; }
                 });
+            });
 
-                // ── Filtro de condições ───────────────────────────────────────
-                $html.find("#smf-cond-filter").on("input", function () {
-                    const q = ($(this).val() as string).toLowerCase().trim();
-                    $html.find(".smf-cond-item").each((_, el) => {
-                        const name = (el as HTMLElement).dataset["name"] ?? "";
-                        $(el).toggleClass("smf-hidden", q.length > 0 && !name.includes(q));
-                    });
+            // ── Filtro de condi\u00e7\u00f5es ───────────────────────────────────────────
+            const condFilter = root.querySelector<HTMLInputElement>("#smf-cond-filter");
+            condFilter?.addEventListener("input", () => {
+                const q = condFilter.value.toLowerCase().trim();
+                root.querySelectorAll<HTMLElement>(".smf-cond-item").forEach((el) => {
+                    const name = el.dataset["name"] ?? "";
+                    el.classList.toggle("smf-hidden", q.length > 0 && !name.includes(q));
                 });
+            });
 
-                // ── Aplicar condições ─────────────────────────────────────────
-                $html.find("#smf-cond-apply").on("click", () => {
-                    const checked: string[] = [];
-                    $html.find(".smf-cond-grid input:checked").each((_, el) => {
-                        const val = (el as HTMLInputElement).value;
-                        if (val) {
-                            void applyCondition(preReq.targetActorUuid, preReq.targetActorId, val);
-                            checked.push(val);
-                        }
-                    });
-                    if (checked.length > 0) {
-                        $html.find("#smf-cond-feedback")
-                            .text(`✓ ${checked.length} condição(ões) aplicada(s)`)
-                            .show();
-                        $html.find(".smf-cond-grid input:checked").prop("checked", false);
+            // ── Aplicar condi\u00e7\u00f5es ─────────────────────────────────────────────
+            root.querySelector("#smf-cond-apply")?.addEventListener("click", () => {
+                const checked: string[] = [];
+                root.querySelectorAll<HTMLInputElement>(".smf-cond-grid input:checked").forEach((el) => {
+                    if (el.value) {
+                        void applyCondition(preReq.targetActorUuid, preReq.targetActorId, el.value);
+                        checked.push(el.value);
                     }
                 });
-            },
+                if (checked.length > 0) {
+                    const fb = root.querySelector<HTMLElement>("#smf-cond-feedback");
+                    if (fb) { fb.textContent = `\u2713 ${checked.length} condi\u00e7\u00e3o(\u00f5es) aplicada(s)`; fb.style.display = "block"; }
+                    root.querySelectorAll<HTMLInputElement>(".smf-cond-grid input:checked").forEach((el) => { el.checked = false; });
+                }
+            });
         },
-        {
-            classes: ["bg3-dialog", "smf-dialog"],
-            width:   480,
-            id:      `spell-modal-${preReq.requestId}`,
-        },
-    ).render(true);
+        rejectClose: false,
+    });
 }
 
 // ── Socket ────────────────────────────────────────────────────────────────────

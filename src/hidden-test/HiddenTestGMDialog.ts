@@ -79,73 +79,73 @@ export function openHiddenTestGMDialog(): void {
         </div>
     `;
 
-    new Dialog(
-        {
-            title: "Solicitar Teste",
-            content,
-            buttons: {
-                send: {
-                    icon: '<i class="fas fa-dice-d20"></i>',
-                    label: "Solicitar",
-                    callback: ($html: JQuery) => {
-                        const raw = ($html.find('[name="skill"]').val() as string) ?? "";
-                        const [skillKey, ...rest] = raw.split("|");
-                        const skillLabel = rest.join("|");
-                        const dc = parseInt($html.find('[name="dc"]').val() as string, 10);
-                        const gmBonusRaw = parseInt($html.find('[name="gmBonus"]').val() as string, 10);
-                        const gmBonus = isNaN(gmBonusRaw) ? 0 : gmBonusRaw;
+    void foundry.applications.api.DialogV2.wait({
+        id: "hidden-test-gm",
+        classes: ["bg3-dialog"],
+        window: { title: "Solicitar Teste" },
+        position: { width: 420 },
+        content,
+        buttons: [
+            {
+                type: "submit",
+                action: "send",
+                label: "Solicitar",
+                icon: "fas fa-dice-d20",
+                default: true,
+                callback: (_event, _button, dialog) => {
+                    const root = dialog.element;
+                    const raw = root.querySelector<HTMLSelectElement>('[name="skill"]')?.value ?? "";
+                    const [skillKey, ...rest] = raw.split("|");
+                    const skillLabel = rest.join("|");
+                    const dc = parseInt(root.querySelector<HTMLInputElement>('[name="dc"]')?.value ?? "", 10);
+                    const gmBonusRaw = parseInt(root.querySelector<HTMLInputElement>('[name="gmBonus"]')?.value ?? "", 10);
+                    const gmBonus = isNaN(gmBonusRaw) ? 0 : gmBonusRaw;
 
-                        if (!skillKey || !skillLabel || isNaN(dc) || dc < 1) return;
+                    if (!skillKey || !skillLabel || isNaN(dc) || dc < 1) return;
 
-                        const checked = $html.find(".htg-target-check:checked").toArray();
-                        if (checked.length === 0) {
-                            ui.notifications.warn("Nenhum personagem selecionado.");
-                            return;
-                        }
+                    const checked = Array.from(root.querySelectorAll<HTMLElement>(".htg-target-check:checked"));
+                    if (checked.length === 0) {
+                        ui.notifications.warn("Nenhum personagem selecionado.");
+                        return;
+                    }
 
-                        const socket = getSocket();
-                        if (!socket) {
-                            ui.notifications.error(
-                                "socketlib não está pronto — recarregue a página.",
-                            );
-                            return;
-                        }
+                    const socket = getSocket();
+                    if (!socket) {
+                        ui.notifications.error("socketlib não está pronto — recarregue a página.");
+                        return;
+                    }
 
-                        for (const el of checked) {
-                            const actorId  = (el as HTMLElement).dataset["actorId"]  ?? "";
-                            const userId   = (el as HTMLElement).dataset["userId"]   ?? "";
-                            if (!actorId || !userId) continue;
+                    for (const el of checked) {
+                        const actorId = el.dataset["actorId"] ?? "";
+                        const userId  = el.dataset["userId"]  ?? "";
+                        if (!actorId || !userId) continue;
 
-                            const payload: HiddenTestRequest = {
-                                type: "hidden-test-request",
-                                requestId: randomID(),
-                                targetUserId: userId,
-                                actorId,
-                                skillKey,
-                                skillLabel,
-                                dc,
-                                gmBonus,
-                            };
-                            void socket.executeAsUser(
-                                SOCKET_HIDDEN_TEST_REQUEST,
-                                userId,
-                                payload,
-                            );
-                        }
+                        const payload: HiddenTestRequest = {
+                            type: "hidden-test-request",
+                            requestId: randomID(),
+                            targetUserId: userId,
+                            actorId,
+                            skillKey,
+                            skillLabel,
+                            dc,
+                            gmBonus,
+                        };
+                        void socket.executeAsUser(SOCKET_HIDDEN_TEST_REQUEST, userId, payload);
+                    }
 
-                        const n = checked.length;
-                        ui.notifications.info(
-                            `Teste secreto de ${skillLabel} enviado para ${n} jogador${n > 1 ? "es" : ""}.`,
-                        );
-                    },
-                },
-                cancel: {
-                    icon: '<i class="fas fa-times"></i>',
-                    label: "Cancelar",
+                    const n = checked.length;
+                    ui.notifications.info(
+                        `Teste secreto de ${skillLabel} enviado para ${n} jogador${n > 1 ? "es" : ""}.`,
+                    );
                 },
             },
-            default: "send",
-        },
-        { classes: ["bg3-dialog"], width: 420, id: "hidden-test-gm" },
-    ).render(true);
+            {
+                type: "submit",
+                action: "cancel",
+                label: "Cancelar",
+                icon: "fas fa-times",
+            },
+        ],
+        rejectClose: false,
+    });
 }

@@ -56,12 +56,12 @@ function getDef(actor: FoundryActor): number {
     return actor.system?.attributes?.defesa?.value ?? 10;
 }
 
-function readPmInput($html: JQuery): number {
-    return parseInt($html.find('[name="pmCost"]').val() as string, 10) || 0;
+function readPmInput(root: HTMLElement): number {
+    return parseInt(root.querySelector<HTMLInputElement>('[name="pmCost"]')?.value ?? "", 10) || 0;
 }
 
-function readRdInput($html: JQuery): number {
-    return Math.max(0, parseInt($html.find('[name="rd"]').val() as string, 10) || 0);
+function readRdInput(root: HTMLElement): number {
+    return Math.max(0, parseInt(root.querySelector<HTMLInputElement>('[name="rd"]')?.value ?? "", 10) || 0);
 }
 
 /** Aplica RD ao dano, garantindo mínimo 0 (nunca negativo). */
@@ -259,45 +259,52 @@ function openDamagePrompt(req: AutoDamageRequest): void {
         </div>
     `;
 
-    type DialogButton = {
-        icon: string;
-        label: string;
-        callback: ($html: JQuery) => void;
-    };
-    const buttons: Record<string, DialogButton> = {
-        full: {
-            icon:  '<i class="fas fa-sword"></i>',
-            label: `Aplicar Integral (${req.damageTotal})`,
-            callback: ($html: JQuery) => {
-                const finalDmg = applyRd(req.damageTotal, readRdInput($html));
-                void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
+    const buttons: foundry.applications.api.DialogV2Button[] = [
+        {
+            type:    "submit",
+            action:  "full",
+            label:   `Aplicar Integral (${req.damageTotal})`,
+            icon:    "fas fa-sword",
+            default: true,
+            callback: (_event, _button, dialog) => {
+                const root     = dialog.element;
+                const finalDmg = applyRd(req.damageTotal, readRdInput(root));
+                void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput(root));
             },
         },
-        half: {
-            icon:  '<i class="fas fa-shield-halved"></i>',
-            label: `Aplicar Metade (${halfDmg})`,
-            callback: ($html: JQuery) => {
-                const finalDmg = applyRd(halfDmg, readRdInput($html));
-                void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput($html));
+        {
+            type:   "submit",
+            action: "half",
+            label:  `Aplicar Metade (${halfDmg})`,
+            icon:   "fas fa-shield-halved",
+            callback: (_event, _button, dialog) => {
+                const root     = dialog.element;
+                const finalDmg = applyRd(halfDmg, readRdInput(root));
+                void applyDamage(req.targetTokenId, req.targetActorId, finalDmg, readPmInput(root));
             },
         },
-        none: {
-            icon:  '<i class="fas fa-ban"></i>',
-            label: "Não Aplicar",
-            callback: ($html: JQuery) => {
-                const pm = readPmInput($html);
+        {
+            type:   "submit",
+            action: "none",
+            label:  "Não Aplicar",
+            icon:   "fas fa-ban",
+            callback: (_event, _button, dialog) => {
+                const root = dialog.element;
+                const pm   = readPmInput(root);
                 if (pm > 0) void applyDamage(req.targetTokenId, req.targetActorId, 0, pm);
             },
         },
-    };
+    ];
 
     if (hasInvenc) {
-        buttons["invenc"] = {
-            icon:  '<i class="fas fa-shield-heart"></i>',
-            label: `Ignorar (Aura de Invencibilidade)`,
-            callback: ($html: JQuery) => {
-                const pm = readPmInput($html);
-                // Marca o uso + posta chat card (ignora antes de qualquer RD/PM)
+        buttons.push({
+            type:   "submit",
+            action: "invenc",
+            label:  "Ignorar (Aura de Invencibilidade)",
+            icon:   "fas fa-shield-heart",
+            callback: (_event, _button, dialog) => {
+                const root = dialog.element;
+                const pm   = readPmInput(root);
                 void markAuraInvencibilidadeUsed({
                     actorId:       req.targetActorId,
                     tokenId:       req.targetTokenId,
@@ -305,15 +312,16 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                     targetName,
                     damageIgnored: req.damageTotal,
                 });
-                // PM ainda é debitado se o usuário tiver colocado algo
                 if (pm > 0) void applyDamage(req.targetTokenId, req.targetActorId, 0, pm);
             },
-        };
+        });
     }
 
-    buttons["reroll"] = {
-        icon:  '<i class="fas fa-dice-d20"></i>',
-        label: "Forçar Rerolar Ataque",
+    buttons.push({
+        type:   "submit",
+        action: "reroll",
+        label:  "Forçar Rerolar Ataque",
+        icon:   "fas fa-dice-d20",
         callback: () => {
             const rerollReq: AttackRerollRequest = {
                 type:           "attack-reroll-request",
@@ -332,44 +340,36 @@ function openDamagePrompt(req: AutoDamageRequest): void {
             if (req.attackerUserId === game.user?.id) {
                 void handleReroll(rerollReq);
             } else {
-                void getSocket()?.executeAsUser(
-                    SOCKET_REROLL_REQUEST,
-                    req.attackerUserId,
-                    rerollReq,
-                );
+                void getSocket()?.executeAsUser(SOCKET_REROLL_REQUEST, req.attackerUserId, rerollReq);
             }
         },
-    };
+    });
 
-    new Dialog(
-        {
-            title: `Dano — ${targetName}`,
-            content,
-            buttons,
-            default: "full",
-            render: ($html: JQuery) => {
-                const $rd     = $html.find('[name="rd"]');
-                const $dialog = $html.closest(".app, .dialog, dialog");
-                const $full   = $dialog.find('button[data-button="full"]');
-                const $half   = $dialog.find('button[data-button="half"]');
+    void foundry.applications.api.DialogV2.wait({
+        id:      `auto-damage-${req.requestId}`,
+        classes: ["bg3-dialog", "aad-dialog"],
+        window:  { title: `Dano — ${targetName}` },
+        position: { width: 380 },
+        content,
+        buttons,
+        render: (_event, dialog) => {
+            const root    = dialog.element;
+            const rdInput = root.querySelector<HTMLInputElement>('[name="rd"]');
+            const fullBtn = root.querySelector<HTMLButtonElement>('button[data-action="full"]');
+            const halfBtn = root.querySelector<HTMLButtonElement>('button[data-action="half"]');
 
-                const refresh = (): void => {
-                    const rd       = readRdInput($html);
-                    const fullDmg  = applyRd(req.damageTotal, rd);
-                    const halfFinal = applyRd(halfDmg, rd);
-                    $full.html(`<i class="fas fa-sword"></i> Aplicar Integral (${fullDmg})`);
-                    $half.html(`<i class="fas fa-shield-halved"></i> Aplicar Metade (${halfFinal})`);
-                };
+            const refresh = (): void => {
+                const rd        = readRdInput(root);
+                const fullDmg   = applyRd(req.damageTotal, rd);
+                const halfFinal = applyRd(halfDmg, rd);
+                if (fullBtn) fullBtn.innerHTML = `<i class="fas fa-sword"></i> Aplicar Integral (${fullDmg})`;
+                if (halfBtn) halfBtn.innerHTML = `<i class="fas fa-shield-halved"></i> Aplicar Metade (${halfFinal})`;
+            };
 
-                $rd.on("input", refresh);
-            },
+            rdInput?.addEventListener("input", refresh);
         },
-        {
-            classes: ["bg3-dialog", "aad-dialog"],
-            width:   380,
-            id:      `auto-damage-${req.requestId}`,
-        },
-    ).render(true);
+        rejectClose: false,
+    });
 }
 
 // ── Socket handler ────────────────────────────────────────────────────────────

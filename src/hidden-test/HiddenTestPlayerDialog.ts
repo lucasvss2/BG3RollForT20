@@ -209,38 +209,46 @@ export function openHiddenTestPlayerDialog(request: HiddenTestRequest): void {
         </div>
     `;
 
-    new Dialog(
-        {
-            title: "Teste",
-            content,
-            buttons: {
-                roll: {
-                    icon: '<i class="fas fa-dice-d20"></i>',
-                    label: "Rolar Teste",
-                    callback: ($html: JQuery) => {
-                        const bonusExtra = (($html.find('[name="bonusExtra"]').val() as string) ?? "").trim();
-                        const selected = $html.find(".htg-power-check:checked").toArray().map((el) => ({
-                            pm:          parseInt((el as HTMLElement).dataset["pm"]        ?? "0", 10),
-                            bonus:       (el as HTMLElement).dataset["bonus"]      ?? "",
-                            advantage:   (el as HTMLElement).dataset["advantage"]  === "true",
-                            bonusLabel:  (el as HTMLElement).dataset["label"]      ?? "",
-                            name:        (el as HTMLElement).dataset["name"]       ?? "",
-                        }));
-                        void executeHiddenTestRoll(request, actorName, skillTotal, bonusExtra, selected);
-                    },
+    void foundry.applications.api.DialogV2.wait({
+        id: "hidden-test-player",
+        classes: ["bg3-dialog"],
+        window: { title: "Teste" },
+        position: { width: 440 },
+        content,
+        buttons: [
+            {
+                type: "submit",
+                action: "roll",
+                label: "Rolar Teste",
+                icon: "fas fa-dice-d20",
+                default: true,
+                callback: (_event, _button, dialog) => {
+                    const root = dialog.element;
+                    const bonusExtra = (root.querySelector<HTMLInputElement>('[name="bonusExtra"]')?.value ?? "").trim();
+                    const selected = Array.from(root.querySelectorAll<HTMLElement>(".htg-power-check:checked")).map((el) => ({
+                        pm:         parseInt(el.dataset["pm"]       ?? "0", 10),
+                        bonus:      el.dataset["bonus"]     ?? "",
+                        advantage:  el.dataset["advantage"] === "true",
+                        bonusLabel: el.dataset["label"]     ?? "",
+                        name:       el.dataset["name"]      ?? "",
+                    }));
+                    void executeHiddenTestRoll(request, actorName, skillTotal, bonusExtra, selected);
                 },
             },
-            default: "roll",
-            render: ($html: JQuery) => {
-                $html.find(".htg-power-check").on("change", () => {
-                    const totalPm = $html.find(".htg-power-check:checked").toArray()
-                        .reduce((s, el) => s + parseInt((el as HTMLElement).dataset["pm"] ?? "0", 10), 0);
-                    $html.find("#htg-pm-total").text(String(totalPm));
+        ],
+        render: (_event, dialog) => {
+            const root = dialog.element;
+            root.querySelectorAll(".htg-power-check").forEach((el) => {
+                el.addEventListener("change", () => {
+                    const totalPm = Array.from(root.querySelectorAll<HTMLElement>(".htg-power-check:checked"))
+                        .reduce((s, e) => s + parseInt(e.dataset["pm"] ?? "0", 10), 0);
+                    const pmTotal = root.querySelector("#htg-pm-total");
+                    if (pmTotal) pmTotal.textContent = String(totalPm);
                 });
-            },
+            });
         },
-        { classes: ["bg3-dialog"], width: 440, id: "hidden-test-player" },
-    ).render(true);
+        rejectClose: false,
+    });
 }
 
 // ── Roll execution ────────────────────────────────────────────────────────────
