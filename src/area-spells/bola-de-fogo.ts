@@ -59,7 +59,6 @@ const PENDING_WINDOW_MS = 30_000;
 const TEMPLATE_LINGER_MS = 3500;
 const ESFERA_DIAMETRO_M = 1.5;  // diâmetro em metros = 1 quadrado do tabuleiro
 const ESFERA_TEXTURE = `modules/${MODULE_ID}/assets/esfera-flamejante.png`;
-const PEDRA_RAIO_M_DEFAULT = 6;  // raio em metros (Bola de Fogo padrão: esfera grande)
 
 // ── GM election ──────────────────────────────────────────────────────────────
 //
@@ -769,184 +768,81 @@ async function postEsferaSummaryCard(
 }
 
 
-// ── FASE 3: Pedra Flamejante (deferred) ──────────────────────────────────────
+// ── FASE 3: Pedra Flamejante via T20 brew (deferred) ─────────────────────────
+//
+// Arquitetura: T20 já tem o mecanismo "Preparar Poção" (brew) que clona uma
+// magia num item consumível tipo "Granada" com TODAS as propriedades baked in
+// (rolls, area, resistencia, alcance). Ao usar a granada, T20 nativo:
+//  - rola dano via item.rollDamage (sem que a gente faça nada)
+//  - cria MeasuredTemplate via AbilityTemplate.fromItem (linha 7058 do T20)
+//  - posta chat card via item.displayCard
+//
+// Estratégia para Ap3:
+//  1. Monkey-patch `game.tormenta20.applications.AbilityUseDialog.create`
+//  2. Quando o user marca Ap3 da Bola de Fogo e clica "Lançar Magia",
+//     interceptamos o resultado do dialog e forçamos `result.brew = true`.
+//  3. T20 entra no brew branch (linha 7014 do tormenta20.mjs) — esse branch
+//     RETORNA antes de criar template (linha 7057), então o grid NÃO aparece.
+//  4. T20 cria o consumível "Granada de [Bola de Fogo]" com cost=0 e qtd=1.
+//  5. Nosso hook `createItem` detecta esse novo consumível por nome e:
+//     - renomeia pra "Pedra Flamejante"
+//     - troca icon pra esfera-flamejante.png
+//     - adiciona flag PEDRA_KEY (pra detectarmos no uso posterior)
+//  6. User clica no item → T20 dispara seu fluxo nativo (template + dano).
+//  7. Nosso hook em createChatMessage detecta msg com PEDRA_KEY flag e
+//     reivindica o template criado pelo T20 (via _recentTemplatesByUser),
+//     deixando o dispatchExplosion existente cuidar da resistência.
 
-type PedraMeta = {
-    casterActorId: string;
-    casterName:    string;
-    casterUserId:  string;
-    cd:            number;
-    resistTxt:     string;
-    damageFormula: string;     // "3d6[fogo]", "5d6[fogo]" — rolada fresca ao usar
-    spellName:     string;
-    raioM:         number;     // raio em metros do template
-};
-
-type ActorLike = {
-    id:   string;
-    uuid: string;
-    items: { contents: Array<{ id: string; flags?: Record<string, Record<string, unknown>> }> };
-    createEmbeddedDocuments(t: string, data: unknown[]): Promise<Array<{ id: string }>>;
-    deleteEmbeddedDocuments(t: string, ids: string[]): Promise<unknown>;
-};
-
-function buildPedraItemData(meta: PedraMeta): Record<string, unknown> {
-    return {
-        name: `Pedra Flamejante (${meta.damageFormula})`,
-        type: "consumivel",
-        img:  ESFERA_TEXTURE,
-        system: {
-            descricao: {
-                value: `<p>Pedra mágica carregada com a energia da <b>Bola de Fogo</b> de <b>${meta.casterName}</b>.</p>
-<p>Use o botão <b>Detonar Pedra Flamejante</b> no menu de skills (ícone de bomba)
-ou clique no item para arremessar e detonar: esfera de raio ${meta.raioM}m causa
-<b>${meta.damageFormula}</b> de dano (CD ${meta.cd} de Reflexos — passar reduz à metade).</p>`,
-            },
-            // Schema variations T20 might honor — manda tudo, deixa T20 ignorar o que não usar
-            quantidade: 1,
-            quantity:   1,
-            qtd:        1,
-            uses:       { value: 1, max: "1", autoDestroy: false, per: "carga" },
-            peso:       0,
-            espacos:    0,
-        },
-        flags: {
-            [MODULE_ID]: {
-                [FLAG_SPELL]:  PEDRA_KEY,
-                casterActorId: meta.casterActorId,
-                casterName:    meta.casterName,
-                casterUserId:  meta.casterUserId,
-                cd:            meta.cd,
-                resistTxt:     meta.resistTxt,
-                damageFormula: meta.damageFormula,
-                spellName:     meta.spellName,
-                raioM:         meta.raioM,
-                createdAtMs:   Date.now(),
-            },
-        },
-    };
+interface AbilityUseDialogLike {
+    create: (item: unknown, ...args: unknown[]) => Promise<Record<string, unknown> | null>;
 }
 
-async function createPedraFlamejante(actor: ActorLike, meta: PedraMeta): Promise<string | null> {
-    try {
-        const created = await actor.createEmbeddedDocuments("Item", [buildPedraItemData(meta)]);
-        return created?.[0]?.id ?? null;
-    } catch (err) {
-        console.warn(`[t20-theme-overhaul] Pedra Flamejante: falha ao criar item:`, err);
-        return null;
-    }
-}
-
-/**
- * Dispara a Bola de Fogo deferred ao usar a Pedra do inventário.
- *
- * Fluxo:
- *  1. promptCanvasClick — user marca onde a esfera explode
- *  2. Roll fresco da damageFormula
- *  3. Cria MeasuredTemplate com nossos flags já aplicados (raioM em metros)
- *  4. dispatchExplosion direto — reusa fluxo FASE 1 (resistência + auto-delete 3.5s)
- *  5. Deleta o item da pedra do inventário (single-charge)
- */
-async function firePedraFlamejante(actor: ActorLike, pedraItemId: string, meta: PedraMeta): Promise<void> {
-    const pos = await promptCanvasClick(
-        `Pedra Flamejante: clique no canvas para detonar (esfera ${meta.raioM}m de raio). ESC cancela.`,
-    );
-    if (!pos) return;
-
-    type RollCtor = new (formula: string) => Roll & { evaluate(opts?: object): Promise<Roll> };
-    const RollCls = (globalThis as unknown as { Roll: RollCtor }).Roll;
-    const dmgRoll = new RollCls(meta.damageFormula);
-    await dmgRoll.evaluate({ async: true } as never);
-    const damageTotal = dmgRoll.total ?? 0;
-
-    type SceneLike = {
-        id?: string;
-        grid?: { size?: number; distance?: number };
-        createEmbeddedDocuments(t: string, data: unknown[]): Promise<Array<{
-            id: string; uuid: string; x: number; y: number; distance: number;
-            flags?: Record<string, Record<string, unknown>>;
-            update(data: Record<string, unknown>): Promise<unknown>;
-            delete?(): Promise<unknown>;
-        }>>;
+function patchAbilityUseDialog(): void {
+    type T20Global = {
+        applications?: { AbilityUseDialog?: AbilityUseDialogLike & { _bg3PatchedForAp3?: boolean } };
     };
-    type CanvasLike = { scene?: SceneLike };
-    const scene = (canvas as unknown as CanvasLike).scene;
-    if (!scene) {
-        ui.notifications?.error("Pedra Flamejante: nenhuma cena ativa.");
+    const t20 = (game as unknown as { tormenta20?: T20Global }).tormenta20;
+    const Dlg = t20?.applications?.AbilityUseDialog;
+    if (!Dlg) {
+        console.warn(`[t20-theme-overhaul] AbilityUseDialog não encontrado — Pedra Flamejante (Ap3) desabilitada.`);
         return;
     }
+    if (Dlg._bg3PatchedForAp3) return;
+    const origCreate = Dlg.create.bind(Dlg);
+    Dlg.create = async function(item: unknown, ...args: unknown[]) {
+        const result = await origCreate(item, ...args);
+        if (!result || typeof result !== "object") return result;
+        const itemTyped = item as { name?: string; type?: string };
+        const isBolaDeFogo = itemTyped.type === "magia"
+            && normalizeCondName(itemTyped.name ?? "").includes("bola de fogo");
+        if (!isBolaDeFogo) return result;
 
-    // Snap pra centro do quadrado clicado (mesmo padrão da esfera).
-    const gridSize = scene.grid?.size ?? 100;
-    const snappedX = Math.floor(pos.x / gridSize) * gridSize + gridSize / 2;
-    const snappedY = Math.floor(pos.y / gridSize) * gridSize + gridSize / 2;
-
-    const pendingForFlags: PendingCast = {
-        casterActorId: meta.casterActorId,
-        casterName:    meta.casterName,
-        casterUserId:  meta.casterUserId,
-        messageId:     "",
-        damageTotal,
-        damageFormula: meta.damageFormula,
-        cd:            meta.cd,
-        resistTxt:     meta.resistTxt,
-        spellName:     meta.spellName,
-        ts:            Date.now(),
-    };
-
-    const templateData = {
-        t:           "circle",
-        x:           snappedX,
-        y:           snappedY,
-        distance:    meta.raioM,
-        fillColor:   "#ff6600",
-        borderColor: "#aa3300",
-        flags:       { [MODULE_ID]: buildBolaDeFogoFlags(pendingForFlags) },
-    };
-
-    let tplDoc: Awaited<ReturnType<SceneLike["createEmbeddedDocuments"]>>[number] | undefined;
-    try {
-        const [doc] = await scene.createEmbeddedDocuments("MeasuredTemplate", [templateData]);
-        tplDoc = doc;
-    } catch (err) {
-        console.warn(`[t20-theme-overhaul] Pedra Flamejante: falha ao criar template:`, err);
-        ui.notifications?.error("Pedra Flamejante: falha ao criar template (veja console).");
-        return;
-    }
-    if (!tplDoc) return;
-
-    // Posta chat card narrativo (pedra explodiu)
-    try {
-        const rollRendered = await dmgRoll.render();
-        const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const content = `
-        <div class="t20-theme-chat-card" style="padding:10px 12px; background:linear-gradient(180deg, rgba(var(--bg3-color-danger-rgb),0.10) 0%, transparent 100%); border-left:3px solid #cc4422;">
-            <div style="color:#cc4422; font-size:0.7rem; letter-spacing:0.14em; text-transform:uppercase; font-weight:700;">Pedra Flamejante — ${esc(meta.casterName)}</div>
-            <div style="color:var(--bg3-accent-muted); font-size:0.65rem; letter-spacing:0.1em; text-transform:uppercase; font-style:italic; margin: 2px 0 8px;">Pedra detonada (raio ${meta.raioM}m)</div>
-            <div>${rollRendered}</div>
-            <div style="color:var(--bg3-text-muted); font-size:0.75rem; font-style:italic; margin-top:6px;">CD ${meta.cd} · Reflexos reduz à metade · cada alvo na área recebe modal</div>
-        </div>`;
-        type CMCreate = { create(data: Record<string, unknown>): Promise<unknown> };
-        await (ChatMessage as unknown as CMCreate).create({
-            content,
-            rolls:   [dmgRoll.toJSON()],
-            type:    5,
-            speaker: { alias: meta.casterName },
-            flags:   { [MODULE_ID]: { pedraFlamejante: true } },
+        const resTyped = result as { onUseEffects?: Array<Record<string, unknown>>; brew?: boolean };
+        const onUseEffects = Array.isArray(resTyped.onUseEffects) ? resTyped.onUseEffects : [];
+        const ap3Active = onUseEffects.some(ef => {
+            const qty = Number((ef as { qty?: unknown }).qty ?? 0);
+            if (!Number.isFinite(qty) || qty < 1) return false;
+            const desc = String((ef as { description?: unknown }).description ?? "");
+            // Skip imp1/imp2 patterns
+            if (/aumenta\s+o?\s*dano\s+em\s+\+?2d6/i.test(desc)) return false;
+            if (/esfera\s+flamejante/i.test(desc))               return false;
+            // imp 3 patterns
+            return /pedra\s*flamejante/i.test(desc)
+                || /concentra(?:r|do|m|-?se)?\s+em\s+uma?\s+pedra/i.test(desc)
+                || /torna(?:r|-?se)?\s+uma?\s+pedra/i.test(desc)
+                || /transforma(?:r|-?se)?\s+em\s+uma?\s+pedra/i.test(desc)
+                || /descarreg/i.test(desc)
+                || (Number((ef as { cost?: unknown }).cost ?? 0) === 3 && /pedra/i.test(desc));
         });
-    } catch (err) {
-        console.warn(`[t20-theme-overhaul] Pedra Flamejante: falha ao postar chat card:`, err);
-    }
 
-    // Dispatch da explosão (resistência + auto-delete do template)
-    void dispatchExplosion(tplDoc);
-
-    // Deleta o item de pedra do inventário
-    try {
-        await actor.deleteEmbeddedDocuments("Item", [pedraItemId]);
-    } catch (err) {
-        console.warn(`[t20-theme-overhaul] Pedra Flamejante: falha ao deletar item:`, err);
-    }
+        if (ap3Active) {
+            resTyped.brew = true;
+            console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado — forçando brew=true (T20 vai criar a Pedra Flamejante via seu fluxo nativo).`);
+        }
+        return result;
+    };
+    Dlg._bg3PatchedForAp3 = true;
+    console.log(`[t20-theme-overhaul] AbilityUseDialog patched (Pedra Flamejante Ap3 ativo).`);
 }
 
 
@@ -1031,103 +927,6 @@ async function onClickCancelEsfera(): Promise<void> {
     }
 }
 
-// ── Skills menu (detonar pedra flamejante) ───────────────────────────────────
-//
-// Fallback garantido pra detonar a Pedra Flamejante caso o click no item do
-// inventário não dispare a detecção via createChatMessage. O botão aparece
-// sempre que houver pelo menos uma pedra viva nos atores do usuário.
-
-type PedraEntry = { actor: ActorLike; itemId: string; meta: PedraMeta };
-
-function getMyPedraItems(): PedraEntry[] {
-    type ActorsContents = { contents?: Array<ActorLike & {
-        ownership?: Record<string, number>;
-    }> };
-    const actors = (game.actors as unknown as ActorsContents).contents ?? [];
-    const myId   = game.user?.id ?? "";
-    const isGM   = game.user?.isGM ?? false;
-    const result: PedraEntry[] = [];
-    for (const actor of actors) {
-        if (!isGM) {
-            const lvl = actor.ownership?.[myId] ?? actor.ownership?.["default"] ?? 0;
-            if (lvl < 3) continue;
-        }
-        const items = actor.items?.contents ?? [];
-        for (const item of items) {
-            const f = item.flags?.[MODULE_ID];
-            if (f?.[FLAG_SPELL] !== PEDRA_KEY) continue;
-            if (!isGM && f?.["casterUserId"] !== myId) continue;
-            result.push({
-                actor,
-                itemId: item.id,
-                meta: {
-                    casterActorId: (f["casterActorId"] as string) ?? actor.id,
-                    casterName:    (f["casterName"]    as string) ?? "Lançador",
-                    casterUserId:  (f["casterUserId"]  as string) ?? myId,
-                    cd:            Number(f["cd"] ?? 0),
-                    resistTxt:     (f["resistTxt"]     as string) ?? "Reflexos reduz à metade",
-                    damageFormula: (f["damageFormula"] as string) ?? "6d6[fogo]",
-                    spellName:     (f["spellName"]     as string) ?? "Bola de Fogo (Pedra Flamejante)",
-                    raioM:         Number(f["raioM"] ?? PEDRA_RAIO_M_DEFAULT),
-                },
-            });
-        }
-    }
-    return result;
-}
-
-async function onClickDetonarPedra(): Promise<void> {
-    const mine = getMyPedraItems();
-    if (mine.length === 0) {
-        ui.notifications?.info("Nenhuma Pedra Flamejante no inventário.");
-        refreshSkillsMenu();
-        return;
-    }
-    if (mine.length === 1) {
-        const { actor, itemId, meta } = mine[0];
-        await firePedraFlamejante(actor, itemId, meta);
-        refreshSkillsMenu();
-        return;
-    }
-    // Múltiplas pedras — picker
-    type DialogCtor = new (data: object, opts?: object) => { render(force?: boolean): unknown };
-    const DialogCls = (globalThis as unknown as { Dialog: DialogCtor }).Dialog;
-    const escHtml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const rows = mine.map((p, i) => {
-        const caster = escHtml(p.meta.casterName);
-        const dmg    = escHtml(p.meta.damageFormula);
-        return `<label class="picker-row" style="display:flex; align-items:center; gap:10px; padding:6px 8px; cursor:pointer;">
-            <input type="radio" name="pedra-pick" data-idx="${i}" ${i === 0 ? "checked" : ""} />
-            <span style="color:var(--bg3-accent-muted); min-width:64px;">Pedra #${i + 1}</span>
-            <span style="color:var(--bg3-text-primary);"><b style="color:#ff6600;">${caster}</b> · ${dmg}</span>
-        </label>`;
-    }).join("");
-    const idx = await new Promise<number | null>((resolve) => {
-        new DialogCls({
-            title: "Detonar Pedra Flamejante",
-            content: `<div style="padding:8px 12px;"><p style="color:var(--bg3-accent-muted); font-size:0.78rem; letter-spacing:0.12em; text-transform:uppercase;">Selecione qual pedra detonar</p>${rows}</div>`,
-            buttons: {
-                fire: {
-                    icon: '<i class="fas fa-bomb"></i>', label: "Detonar",
-                    callback: ($html: JQuery) => {
-                        const root = ($html as unknown as { 0?: HTMLElement })[0] ?? ($html as unknown as HTMLElement);
-                        const sel = (root as HTMLElement).querySelector('input[name="pedra-pick"]:checked');
-                        const i = sel ? Number(sel.getAttribute("data-idx")) : -1;
-                        resolve(i >= 0 ? i : null);
-                    },
-                },
-                cancel: { icon: '<i class="fas fa-times"></i>', label: "Cancelar", callback: () => resolve(null) },
-            },
-            default: "fire", close: () => resolve(null),
-        }, { classes: ["bg3-dialog"] }).render(true);
-    });
-    if (idx === null || !mine[idx]) return;
-    const { actor, itemId, meta } = mine[idx];
-    await firePedraFlamejante(actor, itemId, meta);
-    refreshSkillsMenu();
-}
-
-
 // ── Setup ────────────────────────────────────────────────────────────────────
 
 export function setupBolaDeFogo(): void {
@@ -1141,33 +940,64 @@ export function setupBolaDeFogo(): void {
         onClick:   () => onClickCancelEsfera(),
     });
 
-    // Skills-menu: botão para detonar Pedra Flamejante (Fase 3 — fallback garantido)
-    registerSkillAction({
-        id:    "pedra-flamejante-detonar",
-        label: "Detonar Pedra Flamejante",
-        icon:  "fa-solid fa-bomb",
-        color: "#ff6600",
-        isVisible: () => getMyPedraItems().length > 0,
-        onClick:   () => onClickDetonarPedra(),
+    // Monkey-patch do AbilityUseDialog do T20 (ready garante game.tormenta20 inicializado).
+    // Detecta Ap3 da Bola de Fogo e força brew=true → T20 cria granada via fluxo nativo.
+    Hooks.once("ready", () => {
+        patchAbilityUseDialog();
     });
 
-    // Pedra criada/deletada → refresh skills-menu (botão aparece/desaparece)
+    // Quando T20 cria a granada da Bola de Fogo (resultado do brew),
+    // renomeamos pra "Pedra Flamejante" + adicionamos nossa flag PEDRA_KEY.
     Hooks.on("createItem", (...args: unknown[]) => {
-        const item = args[0] as { flags?: Record<string, Record<string, unknown>> };
-        if (item.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY) refreshSkillsMenu();
-    });
-    Hooks.on("deleteItem", (...args: unknown[]) => {
-        const item = args[0] as { flags?: Record<string, Record<string, unknown>> };
-        if (item.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY) refreshSkillsMenu();
+        const item = args[0] as {
+            id: string;
+            name?: string;
+            type?: string;
+            img?:  string;
+            system?: Record<string, unknown>;
+            flags?: Record<string, Record<string, unknown>>;
+            parent?: { id?: string; name?: string } | null;
+            update(data: Record<string, unknown>): Promise<unknown>;
+        };
+        if (item.type !== "consumivel") return;
+        if (item.flags?.[MODULE_ID]?.[FLAG_SPELL]) return; // já tem nossa flag
+
+        // T20 brew nomeia: "<Granada/Poção/Óleo> <nome da magia>" — pra Bola de Fogo com area,
+        // o nome contém "Granada" + "Bola de Fogo". Match defensivo:
+        const name = item.name ?? "";
+        const isGranadaBolaDeFogo = /granada/i.test(name) && /bola\s+de\s+fogo/i.test(name);
+        if (!isGranadaBolaDeFogo) return;
+
+        // Extrai fórmula de dano dos rolls (pra mostrar no nome do item)
+        type RollDef = { type?: string; parts?: Array<Array<string>> };
+        const rolls   = (item.system?.["rolls"] as RollDef[] | undefined) ?? [];
+        const danoDef = rolls.find(r => r?.type === "dano");
+        const dado    = String(danoDef?.parts?.[0]?.[0] ?? "6d6");
+
+        // Atualiza nome, img, e flags
+        const actorId = item.parent?.id ?? "";
+        const userId  = game.user?.id ?? "";
+        void item.update({
+            name: `Pedra Flamejante (${dado} fogo)`,
+            img:  ESFERA_TEXTURE,
+            [`flags.${MODULE_ID}.${FLAG_SPELL}`]: PEDRA_KEY,
+            [`flags.${MODULE_ID}.casterActorId`]: actorId,
+            [`flags.${MODULE_ID}.casterUserId`]:  userId,
+            [`flags.${MODULE_ID}.casterName`]:    item.parent?.name ?? "Lançador",
+            [`flags.${MODULE_ID}.createdAtMs`]:   Date.now(),
+        });
+        ui.notifications?.info(`Pedra Flamejante criada no inventário (${dado} fogo). Clique no item para arremessar.`);
     });
 
-    // 0. preCreateChatMessage — três casos:
-    //    a) imp 2 ou imp 3 ativos no cast: seta _pendingEsferaTemplateDelete
-    //       ANTES que o T20 processe o createChatMessage (pra preCreateMeasuredTemplate
-    //       cancelar o template auto) + suprime roll de damage.
-    //    b) uso da Pedra Flamejante no inventário: suprime quaisquer rolls que
-    //       o T20 venha a anexar (não rolamos nada nesse momento — o dano é
-    //       rolado em firePedraFlamejante, depois do prompt de canvas).
+    // 0. preCreateChatMessage — quando imp 2 ativo no cast:
+    //    a) seta _pendingEsferaTemplateDelete ANTES que o T20 processe o
+    //       createChatMessage (garante que preCreateMeasuredTemplate já
+    //       encontra o flag quando o T20 criar o template automático).
+    //    b) suprime o roll de damage (imp 2: esfera tem dano próprio).
+    //
+    // Ap3 (Pedra Flamejante) é tratado de forma diferente: o brew do T20
+    // (via patchAbilityUseDialog) já bypassa criação de template e damage
+    // antes do chat msg ser criado — não precisamos suprimir nada aqui.
     Hooks.on("preCreateChatMessage", (...args: unknown[]) => {
         type DocLike = { updateSource(changes: Record<string, unknown>): void };
         const doc    = args[0] as DocLike;
@@ -1175,26 +1005,8 @@ export function setupBolaDeFogo(): void {
         const userId = args[3] as string;
         if (userId !== game.user?.id) return;
 
-        // Caso (b): uso da Pedra Flamejante — suprime rolls do T20
-        const flags    = data["flags"] as Record<string, unknown> | undefined;
-        const t20      = flags?.["tormenta20"] as { itemData?: Record<string, unknown> } | undefined;
-        const itemData = t20?.itemData;
-        const itemMod  = (itemData?.["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
-        if (itemMod?.[FLAG_SPELL] === PEDRA_KEY) {
-            const rolls = data["rolls"] as unknown[] | undefined;
-            if (Array.isArray(rolls) && rolls.length > 0) {
-                doc.updateSource({ rolls: [] });
-            }
-            return;
-        }
-
-        // Caso (a): cast de Bola de Fogo com imp 2 ou imp 3
-        // Não checa `data["content"]` aqui — no Foundry v13 o campo pode ainda ser
-        // um path de template HBS não renderizado. Confiamos nos onUseEffects.
         const entries = getOnUseEffectsFromData(data);
-        const imp2 = detectImp2Active(entries);
-        const imp3 = detectImp3Active(entries);
-        if (!imp2 && !imp3) return;
+        if (!detectImp2Active(entries)) return;
 
         _pendingEsferaTemplateDelete.set(userId, Date.now());
 
@@ -1219,66 +1031,65 @@ export function setupBolaDeFogo(): void {
         if (uid !== game.user?.id) return;
 
         // ── Detecta USO da Pedra Flamejante (item no inventário) ─────────────
-        //
-        // Estratégia em camadas (tolerante a quirks do T20):
-        //   A. flags.MODULE_ID.spell === PEDRA_KEY no t20.itemData → match direto
-        //   B. name = "Pedra Flamejante (..." + type=consumivel → match por nome
-        //   C. content da msg contém "Pedra Flamejante" + speaker tem pedra viva
-        //
-        // Se A/B/C disparam, resolvemos meta pelo item vivo no actor (mais
-        // confiável que o snapshot do t20Item, que pode estar stale).
+        // Quando o user clica no item da pedra, T20 nativo:
+        //  1. Rola o dano via item.rollDamage
+        //  2. Cria MeasuredTemplate via AbilityTemplate (user posiciona)
+        //  3. Posta chat msg via item.displayCard
+        // Aqui detectamos a chat msg via flag PEDRA_KEY no itemData snapshot e
+        // "reivindicamos" o template recém-criado adicionando flags.SPELL_KEY —
+        // o hook updateMeasuredTemplate existente vai chamar dispatchExplosion.
         {
-            const t20Item   = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
-            const itemMod   = (t20Item?.["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
-            const itemType  = (t20Item?.["type"] as string | undefined) ?? "";
-            const itemName  = (t20Item?.["name"] as string | undefined) ?? "";
-            const msgContent = (message as unknown as { content?: string }).content ?? "";
-
-            const matchA = itemMod?.[FLAG_SPELL] === PEDRA_KEY;
-            const matchB = itemType === "consumivel"
-                        && /pedra\s+flamejante/i.test(itemName);
-            const speakerActorId = message.speaker?.actor ?? "";
-            type ActorsGetter = { get(id: string): ActorLike | undefined };
-            const actor = speakerActorId
-                ? (game.actors as unknown as ActorsGetter).get(speakerActorId)
-                : null;
-
-            // Camada C: chat msg sem itemData identificável, mas o speaker tem pedra viva
-            const liveItem = actor?.items.contents.find(
-                i => i.flags?.[MODULE_ID]?.[FLAG_SPELL] === PEDRA_KEY,
-            );
-            const matchC = !matchA && !matchB
-                        && /pedra\s+flamejante/i.test(msgContent)
-                        && !!liveItem;
-
-            if (matchA || matchB || matchC) {
-                // Log diagnóstico — remover após validar funcionamento
-                console.warn(
-                    `[t20-theme-overhaul] Pedra Flamejante uso detectado (matchA=${matchA} matchB=${matchB} matchC=${matchC}):`,
-                    { itemMod, itemType, itemName, msgContentFirst200: msgContent.slice(0, 200) },
+            const t20Item = message.getFlag("tormenta20", "itemData") as Record<string, unknown> | undefined;
+            const itemMod = (t20Item?.["flags"] as Record<string, Record<string, unknown>> | undefined)?.[MODULE_ID];
+            const isPedraUse = itemMod?.[FLAG_SPELL] === PEDRA_KEY;
+            if (isPedraUse) {
+                const damageRoll = (message.rolls ?? []).find(r =>
+                    (r.options as Record<string, unknown>)?.["type"] === "damage",
                 );
-                if (!actor) {
-                    ui.notifications?.warn("Pedra Flamejante: ator não encontrado.");
+                if (!damageRoll) {
+                    console.warn(`[t20-theme-overhaul] Pedra Flamejante usada mas sem damage roll na msg.`);
                     return;
                 }
-                const pedraItemId = liveItem?.id ?? (t20Item?.["_id"] as string | undefined) ?? "";
-                if (!pedraItemId) {
-                    ui.notifications?.warn("Pedra Flamejante: item já foi consumido ou não encontrado.");
-                    return;
-                }
-                // Prefere flags do item vivo (mais atual); fallback pro snapshot
-                const flagsSrc = (liveItem?.flags?.[MODULE_ID] as Record<string, unknown> | undefined) ?? itemMod ?? {};
-                const meta: PedraMeta = {
-                    casterActorId: (flagsSrc["casterActorId"] as string) ?? speakerActorId,
-                    casterName:    (flagsSrc["casterName"]    as string) ?? "Lançador",
-                    casterUserId:  (flagsSrc["casterUserId"]  as string) ?? uid,
-                    cd:            Number(flagsSrc["cd"] ?? 0),
-                    resistTxt:     (flagsSrc["resistTxt"]     as string) ?? "Reflexos reduz à metade",
-                    damageFormula: (flagsSrc["damageFormula"] as string) ?? "6d6[fogo]",
-                    spellName:     (flagsSrc["spellName"]     as string) ?? "Bola de Fogo (Pedra Flamejante)",
-                    raioM:         Number(flagsSrc["raioM"] ?? PEDRA_RAIO_M_DEFAULT),
+                // Procura o template mais recente desse user ainda não reivindicado
+                const recent = _recentTemplatesByUser.get(uid) ?? [];
+                type TplDoc = {
+                    id: string; uuid: string; x: number; y: number; distance: number;
+                    flags?: Record<string, Record<string, unknown>>;
+                    delete?(): Promise<unknown>;
+                    update(data: Record<string, unknown>): Promise<unknown>;
                 };
-                void firePedraFlamejante(actor, pedraItemId, meta);
+                type CanvasLike = { scene?: { templates?: { get(id: string): TplDoc | undefined } } };
+                const cv = canvas as unknown as CanvasLike;
+                let claimed = false;
+                for (let i = recent.length - 1; i >= 0; i--) {
+                    const t = cv.scene?.templates?.get(recent[i].id);
+                    if (!t) continue;
+                    const ourF = t.flags?.[MODULE_ID]?.[FLAG_SPELL];
+                    if (ourF) continue;
+                    // Extrai CD + resistTxt do itemData da pedra
+                    const resist  = t20Item?.["resistencia"] as Record<string, unknown> | undefined;
+                    const cd      = Number(resist?.["cd"] ?? 0);
+                    const resTxt  = String(resist?.["txt"] ?? "Reflexos reduz à metade");
+                    const meta: PendingCast = {
+                        casterActorId: message.speaker?.actor ?? "",
+                        casterName:    message.speaker?.alias ?? "Lançador",
+                        casterUserId:  uid,
+                        messageId:     message.id,
+                        damageTotal:   damageRoll.total ?? 0,
+                        damageFormula: damageRoll.formula ?? "",
+                        cd,
+                        resistTxt:     resTxt,
+                        spellName:     "Pedra Flamejante (Bola de Fogo)",
+                        ts:            Date.now(),
+                    };
+                    console.warn(`[t20-theme-overhaul] Pedra Flamejante detonada — reivindicando template ${t.id} (dano=${damageRoll.total}, cd=${cd}).`);
+                    void claimTemplate(t, meta);
+                    claimed = true;
+                    break;
+                }
+                if (!claimed) {
+                    console.warn(`[t20-theme-overhaul] Pedra Flamejante usada mas nenhum template recente encontrado pra reivindicar (recentes:`, recent, `).`);
+                }
                 return;
             }
         }
@@ -1323,55 +1134,6 @@ export function setupBolaDeFogo(): void {
                 spellName:     "Bola de Fogo (Esfera Flamejante)",
             };
             void placeEsfera(meta);
-            return;
-        }
-
-        // FASE 3: imp 3 ativo → cria Pedra Flamejante no inventário; NADA mais ocorre
-        // (sem grid, sem dano, sem resistência neste momento — só item criado).
-        // O T20 já debitou os 3 PM no cast.
-        if (detectImp3Active(entries)) {
-            // Sweep robusto: deleta o template do T20 criado nessa cast
-            // (race condition: createMeasuredTemplate pode rodar antes de preCreateChatMessage).
-            sweepRecentUnflaggedTemplates(uid);
-
-            // Dano da Pedra = dano que a magia teria com os outros aprimoramentos ligados:
-            //  - Ap2 ligado → dado base 3d6 (esfera flamejante "petrificada")
-            //  - Ap2 desligado → dado base 6d6 (Bola de Fogo padrão)
-            //  - +2d6 por qty de Ap1 em ambos os casos
-            const imp1Qty       = detectImp1Qty(entries);
-            const baseDice      = detectImp2Active(entries) ? 3 : 6;
-            const dice          = baseDice + imp1Qty * 2;
-            const damageFormula = `${dice}d6[fogo]`;
-            const cd            = extractCD(message);
-            const resistTxt     = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim()
-                                  || "Reflexos reduz à metade";
-            const areaTotal     = ((itemData["system"]      as Record<string, unknown> | undefined)?.["area"] as { total?: number } | undefined)?.total;
-            const raioM         = (typeof areaTotal === "number" && areaTotal > 0) ? areaTotal : PEDRA_RAIO_M_DEFAULT;
-            const actorId       = message.speaker?.actor ?? "";
-
-            type ActorsGetter = { get(id: string): ActorLike | undefined };
-            const actor = actorId ? (game.actors as unknown as ActorsGetter).get(actorId) : null;
-            if (!actor) {
-                ui.notifications?.warn("Pedra Flamejante: ator não encontrado.");
-                return;
-            }
-            void createPedraFlamejante(actor, {
-                casterActorId: actorId,
-                casterName:    message.speaker?.alias ?? "Lançador",
-                casterUserId:  uid,
-                cd,
-                resistTxt,
-                damageFormula,
-                spellName:     extractSpellName(message) || "Bola de Fogo",
-                raioM,
-            }).then((itemId) => {
-                if (itemId) {
-                    ui.notifications?.info(`Pedra Flamejante criada no inventário (${damageFormula}). Use o botão "Detonar Pedra Flamejante" no menu de skills (ícone de bomba) ou clique no item.`);
-                    refreshSkillsMenu();
-                } else {
-                    ui.notifications?.warn("Pedra Flamejante: falha ao criar o item no inventário (veja console).");
-                }
-            });
             return;
         }
 
