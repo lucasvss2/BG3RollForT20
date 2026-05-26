@@ -118,13 +118,24 @@ function buildMargemAEData(
     return {
         name: "Medalhão Afiado — Margem de Ameaça",
         icon: "icons/equipment/neck/amulet-gem-brown.webp",
+        // Key curta "criticoM" + flags T20 imita o T20WeaponUpgrades.precise:
+        // applyOnUseEffects processa AEs com `onuse: true`+`self: true` durante
+        // o roll do item, aplicando o -1 ao criticoM do clone (não persiste no
+        // item original). O label da ficha é atualizado por
+        // patchT20WeaponUpgradeLabels (que reconhece flag `tormenta20.upgrade`).
         changes: [
-            { key: "system.criticoM", value: "-1", mode: 2, priority: 20 },
+            { key: "criticoM", value: "-1", mode: 2, priority: 20 },
         ],
         duration,
         disabled: false,
         transfer: false,
         flags: {
+            tormenta20: {
+                onuse: true,
+                durationScene: false,
+                upgrade: "medalhao-afiado",
+                self: true,
+            },
             [MODULE_ID]: {
                 [MEDALHAO_FLAG]: true,
                 sourceMessageId: messageId,
