@@ -27,12 +27,15 @@ const SPELL_TIPOS = ["arc", "div", "uni"] as const;
  * Chaves de AE que indicam bônus em testes de ataque no T20.
  * system.modificadores.pericias.ataque — bônus no teste de Luta/Pontaria
  * system.modificadores.ataque.*        — bônus global/corpo-a-corpo/à distância
+ * "ataque"                              — chave curta T20 (Bênção e similares):
+ *                                          modifica o roll de ataque do item alvo
  */
 const ATTACK_BONUS_KEYS: ReadonlySet<string> = new Set([
     "system.modificadores.pericias.ataque",
     "system.modificadores.ataque.geral",
     "system.modificadores.ataque.cac",
     "system.modificadores.ataque.ad",
+    "ataque",
 ]);
 
 // ── Tipos de payload socket ───────────────────────────────────────────────────
@@ -57,11 +60,15 @@ function isItemEquipped(item: FoundryItem): boolean {
     return Boolean(eq);
 }
 
-/** Verifica se o ator tem "Medalhão Afiado" (equipamento) equipado. */
+/**
+ * Verifica se o ator tem "Medalhão Afiado" (equipamento) equipado.
+ * Usa .includes() porque o item pode vir com sufixo de melhoria, ex:
+ * "Medalhão Afiado Vigilante" — o nome base permanece como substring.
+ */
 function hasMedalhaoAfiado(actor: FoundryActor): boolean {
     for (const item of actor.items?.contents ?? []) {
         if (item.type !== "equipamento") continue;
-        if (normalizeCondName(item.name) !== MEDALHAO_NAME_NORMALIZED) continue;
+        if (!normalizeCondName(item.name).includes(MEDALHAO_NAME_NORMALIZED)) continue;
         if (isItemEquipped(item)) return true;
     }
     return false;
