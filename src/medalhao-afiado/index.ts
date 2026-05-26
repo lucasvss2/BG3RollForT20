@@ -13,7 +13,7 @@
  */
 
 import { MODULE_ID } from "@/constants";
-import { getMsgAuthorId, normalizeCondName } from "@/spell-resistance/index";
+import { extractSpellName, getMsgAuthorId, normalizeCondName } from "@/spell-resistance/index";
 import { getSocket, onSocketReady } from "@/socket";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -393,7 +393,9 @@ async function processMedalhaoMessage(message: ChatMessage): Promise<void> {
     if (!targetData.length) return;
 
     const casterName = message.speaker?.alias ?? casterActor.name ?? "Lançador";
-    const sourceSpellName = (itemData["name"] as string | undefined) ?? "Magia";
+    // itemData NÃO tem `name` top-level (é só `this.system` snapshot, T20 line 7339).
+    // Usamos extractSpellName que resolve via data-item-id no HTML do card.
+    const sourceSpellName = extractSpellName(message);
     const aeData = buildMargemAEData(effectGroups, message.id, sourceSpellName);
 
     if (game.user?.isGM) {
