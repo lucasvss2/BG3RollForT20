@@ -7,16 +7,26 @@
  *
  * Implementação via AE nativa do T20:
  *   - Detecta o poder "Kiai Divino" no inventário de qualquer ator.
- *   - Injeta um AE embedded no item do poder com:
- *       transfer: true  → Foundry propaga automaticamente ao ator
- *       disabled: true  → não pre-checked no dialog, não auto-aplicado
- *       flags.tormenta20.onuse: true, attack: true, custo: "3"
- *       changes: [{key:"dano", value:"max", mode:0}]
- *   - T20 trata `value:"max"` com mode CUSTOM setando `options.minmax = "max"`
- *     em applyRollChanges → damageRoll recebe minmax:"max" → evaluate({maximize:true}).
- *   - O custo de 3 PM é debitado automaticamente pelo mecanismo de consumeMana do T20.
- *
- * Não é necessário monkey-patch nenhum: é 100% T20-nativo.
+ *   - Cria a mesma AE em DUAS coleções (padrão T20, ver tormenta20.mjs:15248-15249):
+ *       (1) item.effects do poder      → para limpeza quando o item é removido
+ *       (2) actor.effects do ator      → necessário pois AbilityUseDialog do T20
+ *                                         (linha 6193) filtra `item.actor.effects`
+ *                                         para coletar aprimoramentos.
+ *     Em Foundry v13 `transfer: true` NÃO clona automaticamente o AE em
+ *     `actor.effects` — só fica acessível via `actor.allApplicableEffects()`.
+ *     T20 ignora esse último e itera direto a coleção, então a cópia precisa
+ *     ser criada manualmente.
+ *   - AE config:
+ *       disabled: true   → checkbox desmarcado no dialog ({{#unless ap.disabled}}checked{{/unless}}).
+ *                          T20 só consulta `disabled` para filtros passivos; AEs disabled
+ *                          que o jogador selecionar no dialog SÃO processadas em onUseEffects.
+ *       transfer: true   → mantido por convenção T20; não afeta nada porque criamos manual.
+ *       flags.tormenta20: { onuse, attack, custo: "3", durationScene: false }
+ *       changes: [{key:"dano", value:"max", mode:0 (CUSTOM)}]
+ *       origin: item.uuid → vincula AE do actor ao poder; usado na limpeza.
+ *   - applyRollChanges (T20) detecta `mode:0` + `value:"max"` em key matching
+ *     `/dano/` → seta `options.minmax = "max"` → damageRoll evaluate({maximize:true}).
+ *   - 3 PM debitados automaticamente via mecanismo `consumeMana` do T20.
  */
 
 import { MODULE_ID } from "@/constants";
@@ -28,61 +38,53 @@ import { log } from "@/utils/logging";
 const KIAI_FLAG = "kiai";
 const KIAI_PODER_NAME = "kiai divino";
 
-// ── GM election ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function isActiveGM(): boolean {
-    const myId = game.user?.id;
-    if (!myId || !game.user?.isGM) return false;
-    const activeGMs = (game.users?.contents ?? [])
-        .filter(u => u.isGM && u.active)
-        .map(u => u.id)
-        .sort();
-    return activeGMs[0] === myId;
+interface WithCreateEmbedded {
+    createEmbeddedDocuments(type: string, data: unknown[], options?: Record<string, unknown>): Promise<unknown>;
+    deleteEmbeddedDocuments(type: string, ids: string[], options?: Record<string, unknown>): Promise<unknown>;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+interface WithUuid {
+    uuid: string;
+}
 
 function isKiaiDivinoPoder(item: FoundryItem): boolean {
     if (item.type !== "poder") return false;
     return normalizeCondName(item.name).includes(KIAI_PODER_NAME);
 }
 
-function hasKiaiAE(item: FoundryItem): boolean {
-    return (item.effects?.contents ?? []).some(e => {
-        const flags = (e.flags as Record<string, Record<string, unknown>>)?.[MODULE_ID];
-        return Boolean(flags?.[KIAI_FLAG]);
+function isKiaiAE(ae: { flags?: unknown }): boolean {
+    const flags = ae.flags as Record<string, Record<string, unknown>> | undefined;
+    return Boolean(flags?.[MODULE_ID]?.[KIAI_FLAG]);
+}
+
+function hasKiaiAEOnItem(item: FoundryItem): boolean {
+    return (item.effects?.contents ?? []).some(isKiaiAE);
+}
+
+function hasKiaiAEOnActor(actor: FoundryActor, itemUuid: string): boolean {
+    return (actor.effects?.contents ?? []).some(e => {
+        const origin = (e as unknown as { origin?: string }).origin;
+        return isKiaiAE(e) && origin === itemUuid;
     });
 }
 
-function buildKiaiAEData(): Record<string, unknown> {
+function buildKiaiAEData(itemUuid: string): Record<string, unknown> {
     return {
         name: "Kiai Divino",
         icon: "systems/tormenta20/icons/svg/skills.svg",
-        // disabled: true → checkbox desmarcado por default no AbilityUseDialog
-        //   ({{#unless ap.disabled}}checked{{/unless}} no template HBS do T20)
-        // Impede auto-aplicação quando o dialog não abre (branch sem configureDialog
-        //   usa `!ef.disabled` como filtro) e não aplica passivamente ao ator.
+        origin: itemUuid,
         disabled: true,
-        // transfer: true → Foundry propaga cópia deste AE ao ator automaticamente
-        // quando o item é adicionado, e remove quando o item é deletado.
         transfer: true,
         changes: [
-            // mode 0 = CHANGEMODES.CUSTOM. Em applyRollChanges do T20, value "max"
-            // aciona `options.minmax = "max"`, que depois passa para
-            // damageRoll({ ..., minmax: "max" }) → roll.evaluate({ maximize: true }).
-            // key "dano" casa com r.key.match(/dano/) cobrindo "dano0", "dano1", etc.
-            // Para item.type="arma", ch.key==="roll" é excluído; usamos "dano".
             { key: "dano", value: "max", mode: 0, priority: 20 },
         ],
         flags: {
             tormenta20: {
                 onuse: true,
                 durationScene: false,
-                // attack: true → aparece no AbilityUseDialog de armas
-                // (actor.effects.filter(ae => filterAE(ae, ["onuse","attack"])))
                 attack: true,
-                // custo: "3" → mostrado no dialog como "3 PM"; T20 acumula em
-                // item.system.ativacao.custo e debita via consumeMana.
                 custo: "3",
             },
             [MODULE_ID]: {
@@ -93,28 +95,73 @@ function buildKiaiAEData(): Record<string, unknown> {
 }
 
 async function ensureKiaiAE(item: FoundryItem): Promise<void> {
-    if (hasKiaiAE(item)) return;
-    type ItemWithCreate = FoundryItem & {
-        createEmbeddedDocuments(type: string, data: unknown[]): Promise<unknown>;
-    };
+    const actor = (item as unknown as { actor?: FoundryActor }).actor;
+    if (!actor) return;
+    const itemUuid = (item as unknown as WithUuid).uuid;
+    if (!itemUuid) return;
+
+    const needsItem  = !hasKiaiAEOnItem(item);
+    const needsActor = !hasKiaiAEOnActor(actor, itemUuid);
+    if (!needsItem && !needsActor) return;
+
+    const effectData = buildKiaiAEData(itemUuid);
+
     try {
-        await (item as ItemWithCreate).createEmbeddedDocuments("ActiveEffect", [buildKiaiAEData()]);
-        log(`Kiai Divino: AE adicionado ao poder "${item.name}" (ator: ${(item as unknown as { parent?: { name?: string } }).parent?.name ?? "?"})`);
+        if (needsItem) {
+            await (item as unknown as WithCreateEmbedded)
+                .createEmbeddedDocuments("ActiveEffect", [effectData], { render: false });
+        }
+        if (needsActor) {
+            await (actor as unknown as WithCreateEmbedded)
+                .createEmbeddedDocuments("ActiveEffect", [effectData], { render: false });
+        }
+        log(`Kiai Divino: AE garantido em "${item.name}" (ator: ${actor.name}) — item=${needsItem ? "criado" : "ok"}, actor=${needsActor ? "criado" : "ok"}`);
     } catch (err) {
-        console.warn(`[${MODULE_ID}] Kiai Divino: falha ao adicionar AE em "${item.name}":`, err);
+        console.warn(`[${MODULE_ID}] Kiai Divino: falha ao garantir AE em "${item.name}":`, err);
+    }
+}
+
+async function cleanupKiaiAE(item: FoundryItem): Promise<void> {
+    const actor = (item as unknown as { actor?: FoundryActor; parent?: FoundryActor }).actor
+        ?? (item as unknown as { parent?: FoundryActor }).parent;
+    if (!actor) return;
+    const itemUuid = (item as unknown as WithUuid).uuid;
+    if (!itemUuid) return;
+
+    const stale = (actor.effects?.contents ?? []).filter(e => {
+        const origin = (e as unknown as { origin?: string }).origin;
+        return isKiaiAE(e) && origin === itemUuid;
+    });
+    if (!stale.length) return;
+
+    const ids = stale.map(e => (e as unknown as { id: string }).id).filter(Boolean);
+    if (!ids.length) return;
+
+    try {
+        await (actor as unknown as WithCreateEmbedded)
+            .deleteEmbeddedDocuments("ActiveEffect", ids, { render: false });
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Kiai Divino: falha ao limpar AE do ator (poder deletado):`, err);
     }
 }
 
 // ── Entrada pública ───────────────────────────────────────────────────────────
 
 export function setupKiaiDivino(): void {
-    // ready: GM primary sincroniza todos os atores existentes.
-    // Isso cobre personagens que já tinham o poder antes do módulo ser instalado
-    // ou atualizado.
+    // ready: cada usuário processa SEUS atores controlados (owner level 3).
+    // Election por owner evita race entre múltiplos GMs e cobre o caso comum
+    // do jogador controlando seu próprio PC.
     Hooks.once("ready", () => {
-        if (!isActiveGM()) return;
+        const myId = game.user?.id;
+        if (!myId) return;
         for (const actorLike of game.actors?.contents ?? []) {
             const actor = actorLike as FoundryActor;
+            const ownLevel = (actor.ownership as Record<string, number> | undefined)?.[myId] ?? 0;
+            // 3 = OWNER. Apenas o owner processa para evitar dups.
+            // Fallback: GM processa atores sem owner explícito.
+            const isOwner = ownLevel >= 3;
+            const isFallbackGM = game.user?.isGM && ownLevel === 0;
+            if (!isOwner && !isFallbackGM) continue;
             for (const item of actor.items?.contents ?? []) {
                 if (isKiaiDivinoPoder(item)) {
                     void ensureKiaiAE(item);
@@ -124,16 +171,28 @@ export function setupKiaiDivino(): void {
     });
 
     // createItem: quando o poder é adicionado ao ator (drag & drop ou importação).
-    // args[2] = userId — apenas quem criou o item processa, evitando duplicatas
-    // quando múltiplos clientes recebem o hook simultaneamente.
+    // userId-gated: apenas quem disparou processa.
     Hooks.on("createItem", (...args: unknown[]) => {
         const item   = args[0] as FoundryItem;
         const userId = args[2] as string | undefined;
 
         if (!userId || userId !== game.user?.id) return;
-        if (!(item as unknown as { parent?: unknown }).parent) return; // não é owned
+        if (!(item as unknown as { parent?: unknown }).parent) return;
         if (!isKiaiDivinoPoder(item)) return;
 
         void ensureKiaiAE(item);
+    });
+
+    // deleteItem: limpa AE residual do actor quando o poder é removido.
+    // Sem este hook, a AE no ator persistiria órfã (origin apontando para
+    // item.uuid que não existe mais).
+    Hooks.on("deleteItem", (...args: unknown[]) => {
+        const item   = args[0] as FoundryItem;
+        const userId = args[2] as string | undefined;
+
+        if (!userId || userId !== game.user?.id) return;
+        if (!isKiaiDivinoPoder(item)) return;
+
+        void cleanupKiaiAE(item);
     });
 }
