@@ -14,6 +14,7 @@
 
 import { MODULE_ID } from "@/constants";
 import { extractSpellName, getMsgAuthorId, normalizeCondName } from "@/spell-resistance/index";
+import { isUndead } from "@/area-spells/consagrar";
 import { getSocket, onSocketReady } from "@/socket";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -23,6 +24,18 @@ const SOCKET_CLEANUP = "medalhao-afiado/cleanup";
 const MEDALHAO_FLAG = "medalhaoAfiado";
 const MEDALHAO_NAME_NORMALIZED = "medalhao afiado";
 const SPELL_TIPOS = ["arc", "div", "uni"] as const;
+
+/**
+ * Magias cujo bônus em testes (e portanto o Medalhão Afiado) só se aplica a
+ * alvos específicos. Cada entrada define um filtro a ser aplicado nos alvos
+ * antes de criar o AE Medalhão.
+ *
+ * Profanar (Necromancia divina): "mortos-vivos na área recebem +2 na Defesa
+ * e +2 em todos os testes". Apenas alvos mortos-vivos recebem o bônus.
+ */
+const SPELL_TARGET_FILTERS: Record<string, (actor: FoundryActor) => boolean> = {
+    "profanar": isUndead,
+};
 
 /**
  * Determina se a key (e value) de uma change AE concede bônus em testes de
@@ -447,10 +460,35 @@ async function processMedalhaoMessage(message: ChatMessage): Promise<void> {
     // itemData NÃO tem `name` top-level (é só `this.system` snapshot, T20 line 7339).
     // Usamos extractSpellName que resolve via data-item-id no HTML do card.
     const sourceSpellName = extractSpellName(message);
+
+    // Filtra targetData por magias que só afetam alvos específicos (ex: Profanar
+    // só atinge mortos-vivos). Comparação por nome normalizado.
+    const normSpell = normalizeCondName(sourceSpellName);
+    const targetFilter: ((actor: FoundryActor) => boolean) | undefined =
+        Object.prototype.hasOwnProperty.call(SPELL_TARGET_FILTERS, normSpell)
+            ? SPELL_TARGET_FILTERS[normSpell]
+            : undefined;
+    const filteredTargetData = targetFilter
+        ? targetData.filter(t => {
+            const a = fromUuidSync(t.actorUuid) as FoundryActor | null;
+            return a ? targetFilter(a) : false;
+        })
+        : targetData;
+
+    if (!filteredTargetData.length) {
+        // Nenhum alvo elegível após filtro (ex: Profanar em um grupo sem mortos-vivos).
+        if (targetFilter) {
+            ui.notifications?.info(
+                `Medalhão Afiado: ${sourceSpellName} só afeta alvos específicos — nenhum alvo elegível.`,
+            );
+        }
+        return;
+    }
+
     const aeData = buildMargemAEData(effectGroups, message.id, sourceSpellName);
 
     if (game.user?.isGM) {
-        await applyMargemToWeapons(targetData, aeData, casterName);
+        await applyMargemToWeapons(filteredTargetData, aeData, casterName);
         return;
     }
 
@@ -466,7 +504,7 @@ async function processMedalhaoMessage(message: ChatMessage): Promise<void> {
     const req: MargemApplyRequest = {
         type: SOCKET_APPLY,
         casterName,
-        targets: targetData,
+        targets: filteredTargetData,
         aeData,
     };
     void getSocket()?.executeAsGM(SOCKET_APPLY, req);

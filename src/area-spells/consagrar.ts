@@ -113,7 +113,7 @@ function computeUndeadPenaltyFromMessage(message: ChatMessage): number {
  *
  * PCs: item de tipo "race" com nome "Osteon" ou "Soterrado".
  */
-function isUndead(actor: FoundryActor): boolean {
+export function isUndead(actor: FoundryActor): boolean {
     // NPCs — campos detalhes.raca / detalhes.tipo
     type DetalhesShape = { detalhes?: { raca?: string; tipo?: string } };
     const det  = (actor.system as DetalhesShape | undefined)?.detalhes;
