@@ -25,19 +25,55 @@ const MEDALHAO_NAME_NORMALIZED = "medalhao afiado";
 const SPELL_TIPOS = ["arc", "div", "uni"] as const;
 
 /**
- * Chaves de AE que indicam bônus em testes de ataque no T20.
- * system.modificadores.pericias.ataque — bônus no teste de Luta/Pontaria
- * system.modificadores.ataque.*        — bônus global/corpo-a-corpo/à distância
- * "ataque"                              — chave curta T20 (Bênção e similares):
- *                                          modifica o roll de ataque do item alvo
+ * Determina se a key (e value) de uma change AE concede bônus em testes de
+ * ataque. Cobre:
+ *
+ *  1. Chave curta "ataque" — T20 internal (Arma de Jade, etc.) → modifica
+ *     diretamente o roll de ataque do item.
+ *  2. `system.modificadores.ataque.*` — bônus global/cac/ad direto no ataque.
+ *  3. `system.modificadores.pericias.ataque*` — bônus específico em Luta/Pontaria.
+ *  4. `system.modificadores.pericias.geral*` — bônus em TODAS as perícias
+ *     (Heroísmo, Oração, Profanar). Inclui automaticamente Luta/Pontaria,
+ *     portanto afeta testes de ataque.
+ *
+ * EXCLUI:
+ *  - `system.modificadores.pericias.semataque*` — explicitamente "sem ataque",
+ *    usado para bônus em todas perícias EXCETO Luta/Pontaria.
+ *  - `system.modificadores.pericias.resistencia*` — testes de resistência (saves).
+ *  - Changes com value/mode neutros (ex: value=0).
+ *  - Penalidades (value negativo) — Medalhão é bônus, não compensa penalidade.
+ *
+ * Sufixos T20 `&bonus`, `&penalidade`, `&magico` são considerados — o key real
+ * é o prefixo antes do `&`.
  */
-const ATTACK_BONUS_KEYS: ReadonlySet<string> = new Set([
-    "system.modificadores.pericias.ataque",
-    "system.modificadores.ataque.geral",
-    "system.modificadores.ataque.cac",
-    "system.modificadores.ataque.ad",
-    "ataque",
-]);
+function isAttackBonusChange(change: { key?: string; value?: string | number; mode?: number }): boolean {
+    const fullKey = (change.key ?? "").toString();
+    if (!fullKey) return false;
+
+    // Parse sufixo &bonus / &penalidade / &magico etc.
+    const [baseKey, suffix] = fullKey.split("&");
+
+    // Penalidades não disparam o Medalhão (não compensa).
+    if (suffix === "penalidade") return false;
+
+    // Value > 0 (Medalhão é bônus). Strings tipo "1d4" também aceitas (valor > 0 implícito).
+    const numVal = Number(change.value);
+    if (Number.isFinite(numVal) && numVal <= 0) return false;
+
+    // Lista de exclusões EXATAS (saves, sem-ataque).
+    if (
+        baseKey.startsWith("system.modificadores.pericias.semataque")
+        || baseKey.startsWith("system.modificadores.pericias.resistencia")
+    ) return false;
+
+    // Lista de inclusões.
+    if (baseKey === "ataque") return true;
+    if (baseKey.startsWith("system.modificadores.ataque.")) return true;
+    if (baseKey.startsWith("system.modificadores.pericias.ataque")) return true;
+    if (baseKey.startsWith("system.modificadores.pericias.geral")) return true;
+
+    return false;
+}
 
 // ── Tipos de payload socket ───────────────────────────────────────────────────
 
@@ -118,9 +154,9 @@ function hasMedalhaoAfiado(actor: FoundryActor): boolean {
 function hasAttackBonusEffect(effectGroups: Record<string, unknown>[][]): boolean {
     for (const group of effectGroups) {
         for (const ae of group) {
-            const changes = (ae as { changes?: Array<{ key?: string }> }).changes ?? [];
+            const changes = (ae as { changes?: Array<{ key?: string; value?: string | number; mode?: number }> }).changes ?? [];
             for (const ch of changes) {
-                if (ch.key && ATTACK_BONUS_KEYS.has(ch.key)) return true;
+                if (isAttackBonusChange(ch)) return true;
             }
         }
     }
