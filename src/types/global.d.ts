@@ -318,7 +318,7 @@ declare class Roll {
     dice: DiceTerm[];
     /** Arbitrary options stored on the roll — T20 uses `options.type: "attack" | "damage"` */
     options: Record<string, unknown>;
-    evaluate(options?: { async?: boolean }): Promise<Roll>;
+    evaluate(options?: { async?: boolean; maximize?: boolean; minimize?: boolean }): Promise<Roll>;
     /** Returns rendered HTML for this roll (includes dice visuals and total) */
     render(options?: { flavor?: string; template?: string; isPrivate?: boolean }): Promise<string>;
     toJSON(): Record<string, unknown>;

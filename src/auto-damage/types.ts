@@ -15,6 +15,9 @@ export interface AutoDamageRequest {
     damageTotal: number;
     attackFormula: string;
     damageFormula: string;
+    /** Was the original damage roll maximized (e.g. via Kiai Divino)?
+     *  Reroll must apply the same maximize flag to evaluate. */
+    damageMaximized: boolean;
 }
 
 export interface AttackRerollRequest {
@@ -29,6 +32,7 @@ export interface AttackRerollRequest {
     attackerName: string;
     rollLabel: string;
     targetDef: number;
+    damageMaximized: boolean;
 }
 
 export interface AttackMissNotify {

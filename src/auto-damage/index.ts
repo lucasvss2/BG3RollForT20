@@ -125,6 +125,30 @@ async function buildRerollContent(rollLabel: string, attackRoll: Roll, damageRol
     return `<div class="bg3-reroll-header">↺ Rerolagem — ${esc(rollLabel)}</div>${attackHtml}${damageHtml}`;
 }
 
+/**
+ * Detecta se um Roll já avaliado foi rolado com maximize (todos os dados na face
+ * máxima). Usado para descobrir post-hoc se Kiai Divino (ou outro AE com value:"max")
+ * foi aplicado na rolagem original — essa flag é necessária pra reroll respeitar
+ * a mesma semântica.
+ *
+ * Heurística: cada Die term tem .results[].result === .faces para TODOS os
+ * resultados ativos, E há ≥2 dados no total (evita falso positivo de 1d20=20
+ * natural). Maximize por aprimoramento sempre envolve múltiplos dados de dano.
+ */
+function isRollMaximized(roll: Roll): boolean {
+    let totalDice = 0;
+    for (const term of roll.terms) {
+        const t = term as unknown as { faces?: number; results?: Array<{ result: number; active: boolean }> };
+        if (!t.faces || !t.results) continue;
+        for (const r of t.results) {
+            if (r.active === false) continue;
+            totalDice++;
+            if (r.result !== t.faces) return false;
+        }
+    }
+    return totalDice >= 2;
+}
+
 async function handleReroll(req: AttackRerollRequest): Promise<void> {
     const speaker = { alias: req.attackerName };
 
@@ -163,9 +187,12 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         return;
     }
 
-    // Still hits — reroll damage, post both rolls to chat, send new prompt
+    // Still hits — reroll damage, post both rolls to chat, send new prompt.
+    // Pass maximize through so Kiai Divino (e qualquer outro AE com value:"max")
+    // seja respeitado na rerolagem. Sem isto, "20d6+10 maximizado" viraria
+    // "20d6+10 rolado normal" no reroll, perdendo o efeito do aprimoramento.
     const damageRoll = new Roll(req.damageFormula);
-    await damageRoll.evaluate({ async: true });
+    await damageRoll.evaluate({ maximize: req.damageMaximized });
 
     await ChatMessage.create({
         content: await buildRerollContent(req.rollLabel, attackRoll, damageRoll),
@@ -188,6 +215,7 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         damageTotal:    damageRoll.total ?? 0,
         attackFormula:  req.attackFormula,
         damageFormula:  req.damageFormula,
+        damageMaximized: req.damageMaximized,
     };
 
     if (req.targetUserId === game.user?.id) {
@@ -335,6 +363,7 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 attackerName:   req.attackerName,
                 rollLabel:      req.rollLabel,
                 targetDef:      req.targetDef,
+                damageMaximized: req.damageMaximized,
             };
 
             if (req.attackerUserId === game.user?.id) {
@@ -416,6 +445,10 @@ function setupCreateChatHook(): void {
             || attackRoll.formula || "1d20";
         const damageFormula = damageRoll.terms.map((t) => t.expression).join(" ").trim()
             || damageRoll.formula || "";
+        // Detecta se o dano foi maximizado (Kiai Divino seleciona AE com value:"max"
+        // → T20 chama roll.evaluate({maximize:true}) → todos os dados saem na face
+        // máxima). Reroll precisa preservar essa semântica.
+        const damageMaximized = isRollMaximized(damageRoll);
         const attackerName  = message.speaker?.alias ?? "Atacante";
         const rollLabel     = message.flavor || "Ataque";
 
@@ -462,6 +495,7 @@ function setupCreateChatHook(): void {
                 damageTotal,
                 attackFormula,
                 damageFormula,
+                damageMaximized,
             };
 
             if (targetUserId === game.user?.id) {
