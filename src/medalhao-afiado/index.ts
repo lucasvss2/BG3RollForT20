@@ -59,8 +59,41 @@ interface MargemCleanupRequest {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Verifica se o item está equipado. T20 tem dois esquemas:
+ *  - Legacy: `system.equipado` (number 0-2 para armas, boolean para equipamento)
+ *  - Slot system (setting `equipmentSlots` true): `system.equipado2.slot > 0`
+ *
+ * Em mesas com `equipmentSlots: true` (caso da campanha atual), o campo legacy
+ * `equipado` fica em 0 mesmo para armas equipadas — temos que checar `equipado2.slot`.
+ */
 function isItemEquipped(item: FoundryItem): boolean {
-    const eq = (item.system as { equipado?: unknown })?.equipado;
+    type T20Sys = {
+        equipado?: unknown;
+        equipado2?: { slot?: unknown };
+    };
+    const sys = item.system as T20Sys;
+
+    // Slot system: se o setting está ativo, prefere checar equipado2.slot
+    const useSlots = (() => {
+        try {
+            return Boolean(game.settings?.get?.("tormenta20", "equipmentSlots"));
+        } catch {
+            return false;
+        }
+    })();
+
+    if (useSlots) {
+        const slot = sys.equipado2?.slot;
+        if (typeof slot === "number") return slot > 0;
+        if (typeof slot === "string") {
+            const n = Number(slot);
+            return Number.isFinite(n) && n > 0;
+        }
+    }
+
+    // Fallback / legacy
+    const eq = sys.equipado;
     if (typeof eq === "number") return eq > 0;
     if (typeof eq === "boolean") return eq;
     if (typeof eq === "string") return eq !== "" && eq !== "0" && eq !== "false";
