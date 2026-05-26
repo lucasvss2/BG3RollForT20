@@ -409,8 +409,13 @@ function setupCreateChatHook(): void {
 
         const attackTotal   = attackRoll.total ?? 0;
         const damageTotal   = damageRoll.total ?? 0;
-        const attackFormula = attackRoll.formula ?? "1d20";
-        const damageFormula = damageRoll.formula ?? "";
+        // roll.formula returns cached _formula (pre-crit value) — T20's alter() on
+        // terms[0] modifies the Die's .number but doesn't update _formula.
+        // Reconstruct from terms so critical multiplier (e.g. 4d6→20d6) is preserved.
+        const attackFormula = attackRoll.terms.map((t) => t.expression).join(" ").trim()
+            || attackRoll.formula || "1d20";
+        const damageFormula = damageRoll.terms.map((t) => t.expression).join(" ").trim()
+            || damageRoll.formula || "";
         const attackerName  = message.speaker?.alias ?? "Atacante";
         const rollLabel     = message.flavor || "Ataque";
 
