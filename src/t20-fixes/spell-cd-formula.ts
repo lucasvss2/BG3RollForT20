@@ -98,19 +98,10 @@ export function patchT20SpellCDFormula(): void {
 
     console.log(`[${MODULE_ID}] T20 spell CD formula patched — CD agora inclui bônus de items via actor.attributes.cd.`);
 
-    // Força re-prep de todos os atores para que items existentes recomputem o CD
-    // com a nova fórmula. Sem isso, CDs ficam cacheados com o valor antigo até
-    // o próximo evento que dispare prepareData() (ex: edit no actor sheet).
-    type ActorLike = { prepareData?(): void; name?: string };
-    const actors = ((game as unknown as { actors?: { contents?: ActorLike[] } }).actors?.contents ?? []);
-    let reprepped = 0;
-    for (const actor of actors) {
-        try {
-            actor.prepareData?.();
-            reprepped++;
-        } catch (err) {
-            console.warn(`[${MODULE_ID}] Falha ao re-prep actor "${actor.name}":`, err);
-        }
-    }
-    console.log(`[${MODULE_ID}] Re-prep de ${reprepped} atores → CDs atualizados.`);
+    // ⚠️ NÃO chamamos `actor.prepareData()` em loop aqui. T20 armazena bônus em
+    // ArrayField acumulativo (ex: `pm.bonus.total`); cada `prepareData()` extra
+    // duplica entradas — Sir Drake foi visto com pm.bonus.total de 11 entradas
+    // em vez de 3 (3 prepareData chamadas → 3× aplicação). O patch funcionará
+    // automaticamente no próximo prepareData natural (abrir ficha, fazer roll,
+    // mudar AE, etc.).
 }

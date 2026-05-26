@@ -18,7 +18,8 @@ import { getSocket, onSocketReady } from "@/socket";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const SOCKET_APPLY = "medalhao-afiado/apply-margem";
+const SOCKET_APPLY   = "medalhao-afiado/apply-margem";
+const SOCKET_CLEANUP = "medalhao-afiado/cleanup";
 const MEDALHAO_FLAG = "medalhaoAfiado";
 const MEDALHAO_NAME_NORMALIZED = "medalhao afiado";
 const SPELL_TIPOS = ["arc", "div", "uni"] as const;
@@ -48,6 +49,12 @@ interface MargemApplyRequest {
         weaponItemIds: string[];
     }>;
     aeData: Record<string, unknown>;
+}
+
+interface MargemCleanupRequest {
+    type: typeof SOCKET_CLEANUP;
+    actorUuid: string;
+    deletedAEName: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -97,10 +104,14 @@ function getEquippedWeapons(actor: FoundryActor): FoundryItem[] {
 /**
  * Constrói o AE de margem de ameaça para aplicar nas armas.
  * Copia a duração do primeiro AE do grupo de efeitos da magia, se disponível.
+ *
+ * `sourceSpellName` é o nome da magia (ex: "Bênção", "Arma de Jade") —
+ * usado depois para fazer cleanup quando o buff da magia for removido.
  */
 function buildMargemAEData(
     effectGroups: Record<string, unknown>[][],
     messageId: string,
+    sourceSpellName: string,
 ): Record<string, unknown> {
     const baseDuration = (
         effectGroups[0]?.[0] as Record<string, unknown> | undefined
@@ -139,6 +150,7 @@ function buildMargemAEData(
             [MODULE_ID]: {
                 [MEDALHAO_FLAG]: true,
                 sourceMessageId: messageId,
+                sourceSpellName,         // ex: "Bênção" — usado no cleanup
             },
         },
     };
@@ -197,6 +209,146 @@ async function handleApplyMargemSocket(req: unknown): Promise<void> {
     await applyMargemToWeapons(r.targets, r.aeData, r.casterName);
 }
 
+// ── Cleanup do Medalhão quando o buff fonte é removido ────────────────────────
+
+/**
+ * Remove AEs Medalhão Afiado das armas do ator cujo `sourceSpellName` bate com
+ * `deletedAEName` (com normalização). Chamada localmente pelo GM ou via socket
+ * por player quando um AE buff é removido do ator.
+ */
+async function cleanupMedalhaoForActor(actor: FoundryActor, deletedAEName: string): Promise<void> {
+    const normDeleted = normalizeCondName(deletedAEName);
+    if (!normDeleted) return;
+
+    type ItemWithDelete = FoundryItem & {
+        deleteEmbeddedDocuments(type: string, ids: string[]): Promise<unknown>;
+    };
+
+    let cleaned = 0;
+    for (const item of actor.items?.contents ?? []) {
+        if (item.type !== "arma") continue;
+        const toDelete: string[] = [];
+        for (const eff of item.effects?.contents ?? []) {
+            const flags = (eff.flags as Record<string, unknown> | undefined)?.[MODULE_ID] as
+                | { medalhaoAfiado?: boolean; sourceSpellName?: string }
+                | undefined;
+            if (!flags?.medalhaoAfiado) continue;
+            const sourceName = flags.sourceSpellName ?? "";
+            const normSource = normalizeCondName(sourceName);
+            // Match permissivo: normalizado igual OU um contém o outro
+            // (cobre nomes como "Bênção" → AE "Benção" sem cedilha).
+            const matches = normSource === normDeleted
+                || normSource.includes(normDeleted)
+                || normDeleted.includes(normSource);
+            if (matches) toDelete.push(eff.id);
+        }
+        if (toDelete.length) {
+            try {
+                await (item as ItemWithDelete).deleteEmbeddedDocuments("ActiveEffect", toDelete);
+                cleaned += toDelete.length;
+            } catch (err) {
+                console.warn(`[${MODULE_ID}] Cleanup falhou em ${item.name} (${actor.name}):`, err);
+            }
+        }
+    }
+
+    if (cleaned > 0) {
+        ui.notifications?.info(
+            `Medalhão Afiado: removido(s) ${cleaned} efeito(s) de ${actor.name} (buff "${deletedAEName}" terminou)`,
+        );
+    }
+}
+
+/** Handler GM-side do socket de cleanup. */
+async function handleCleanupSocket(req: unknown): Promise<void> {
+    if (!game.user?.isGM) return;
+    const r = req as MargemCleanupRequest;
+    const actor = fromUuidSync(r.actorUuid) as FoundryActor | null;
+    if (!actor) return;
+    await cleanupMedalhaoForActor(actor, r.deletedAEName);
+}
+
+/**
+ * Hook `deleteActiveEffect` — quando um AE é removido de um ator, verifica se
+ * há AEs Medalhão Afiado nas armas desse ator linkados a esse buff e remove.
+ *
+ * Multi-client: TODOS os clientes recebem o hook. Para evitar race, apenas o
+ * primeiro GM ativo (lexicograficamente menor userId) executa o cleanup.
+ * Player não pode deletar AEs em items de terceiros — delega via socket ao GM.
+ */
+function onDeleteActiveEffect(...args: unknown[]): void {
+    const effect = args[0] as {
+        parent?: { documentName?: string; uuid?: string };
+        name?: string;
+        flags?: Record<string, unknown>;
+    };
+
+    // Apenas AEs cuja parent é um Actor (não item ou outro)
+    const parent = effect.parent;
+    if (!parent || parent.documentName !== "Actor") return;
+
+    // Ignora a deleção do próprio AE Medalhão (ele está em items, não actor — mas defensivo)
+    const ourFlag = (effect.flags?.[MODULE_ID] as { medalhaoAfiado?: boolean } | undefined);
+    if (ourFlag?.medalhaoAfiado) return;
+
+    const deletedName = effect.name ?? "";
+    if (!deletedName) return;
+    const actorUuid = parent.uuid;
+    if (!actorUuid) return;
+
+    // Resolve actor
+    const actor = fromUuidSync(actorUuid) as FoundryActor | null;
+    if (!actor) return;
+
+    // Verifica se este ator tem armas com Medalhão antes de prosseguir
+    const hasAnyMedalhao = (actor.items?.contents ?? []).some(it =>
+        it.type === "arma"
+        && (it.effects?.contents ?? []).some(e => {
+            const f = (e.flags as Record<string, unknown> | undefined)?.[MODULE_ID] as
+                | { medalhaoAfiado?: boolean }
+                | undefined;
+            return Boolean(f?.medalhaoAfiado);
+        }),
+    );
+    if (!hasAnyMedalhao) return;
+
+    // GM: aplica direto (com election se múltiplos GMs)
+    if (game.user?.isGM) {
+        if (!isFirstActiveGM()) return;
+        void cleanupMedalhaoForActor(actor, deletedName);
+        return;
+    }
+
+    // Player: delega ao GM se o player é o trigger (evita duplicação)
+    // Só o usuário que tem o ator selecionado/owner dispara o socket.
+    type ActorWithOwnership = FoundryActor & { ownership?: Record<string, number> };
+    const myId = game.user?.id ?? "";
+    const ownLevel = ((actor as ActorWithOwnership).ownership?.[myId]
+        ?? (actor as ActorWithOwnership).ownership?.["default"] ?? 0);
+    if (ownLevel < 3) return; // só owner dispara (evita N players triggerando)
+
+    const req: MargemCleanupRequest = {
+        type: SOCKET_CLEANUP,
+        actorUuid,
+        deletedAEName: deletedName,
+    };
+    void getSocket()?.executeAsGM(SOCKET_CLEANUP, req);
+}
+
+/** True se o usuário atual é o GM ativo com menor userId (election determinística). */
+function isFirstActiveGM(): boolean {
+    const myId = game.user?.id;
+    if (!myId || !game.user?.isGM) return false;
+    const activeGMs = (game.users?.contents ?? [])
+        .filter((u: FoundryUser) =>
+            (u as unknown as { isGM: boolean }).isGM
+            && (u as unknown as { active: boolean }).active,
+        )
+        .map((u: FoundryUser) => (u as unknown as { id: string }).id)
+        .sort();
+    return activeGMs[0] === myId;
+}
+
 // ── Lógica principal ──────────────────────────────────────────────────────────
 
 async function processMedalhaoMessage(message: ChatMessage): Promise<void> {
@@ -241,7 +393,8 @@ async function processMedalhaoMessage(message: ChatMessage): Promise<void> {
     if (!targetData.length) return;
 
     const casterName = message.speaker?.alias ?? casterActor.name ?? "Lançador";
-    const aeData = buildMargemAEData(effectGroups, message.id);
+    const sourceSpellName = (itemData["name"] as string | undefined) ?? "Magia";
+    const aeData = buildMargemAEData(effectGroups, message.id, sourceSpellName);
 
     if (game.user?.isGM) {
         await applyMargemToWeapons(targetData, aeData, casterName);
@@ -273,11 +426,15 @@ async function processMedalhaoMessage(message: ChatMessage): Promise<void> {
 
 export function setupMedalhaoAfiado(): void {
     onSocketReady((socket) => {
-        socket.register(SOCKET_APPLY, handleApplyMargemSocket);
+        socket.register(SOCKET_APPLY,   handleApplyMargemSocket);
+        socket.register(SOCKET_CLEANUP, handleCleanupSocket);
     });
 
     Hooks.on("createChatMessage", (...args: unknown[]): void => {
         const message = args[0] as ChatMessage;
         void processMedalhaoMessage(message);
     });
+
+    // Cleanup automático: ao remover o buff fonte do ator, remove o Medalhão.
+    Hooks.on("deleteActiveEffect", onDeleteActiveEffect);
 }

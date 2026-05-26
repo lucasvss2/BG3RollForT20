@@ -115,17 +115,9 @@ export function patchT20WeaponUpgradeLabels(): void {
 
     console.log(`[${MODULE_ID}] Tormenta20Item._prepareLabels patched — labels de crítico em armas refletem AEs upgrade.`);
 
-    // Re-prep dos atores para refletir labels existentes.
-    type ActorLike = { prepareData?(): void; name?: string };
-    const actors = ((game as unknown as { actors?: { contents?: ActorLike[] } }).actors?.contents ?? []);
-    let reprepped = 0;
-    for (const actor of actors) {
-        try {
-            actor.prepareData?.();
-            reprepped++;
-        } catch (err) {
-            console.warn(`[${MODULE_ID}] Falha ao re-prep actor "${actor.name}" (labels):`, err);
-        }
-    }
-    console.log(`[${MODULE_ID}] Re-prep de ${reprepped} atores → labels de crítico atualizados.`);
+    // ⚠️ NÃO chamamos `actor.prepareData()` em loop aqui. T20 armazena bônus em
+    // ArrayField acumulativo (ex: `pm.bonus.total`); cada `prepareData()` extra
+    // duplica entradas — múltiplas chamadas inflam pm.max/bonus indefinidamente.
+    // O patch entrará em vigor no próximo prepareData natural (abrir ficha,
+    // fazer roll, mudar AE, etc.).
 }
