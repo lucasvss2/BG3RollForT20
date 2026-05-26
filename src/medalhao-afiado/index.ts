@@ -272,9 +272,10 @@ async function handleCleanupSocket(req: unknown): Promise<void> {
  * Hook `deleteActiveEffect` — quando um AE é removido de um ator, verifica se
  * há AEs Medalhão Afiado nas armas desse ator linkados a esse buff e remove.
  *
- * Multi-client: TODOS os clientes recebem o hook. Para evitar race, apenas o
- * primeiro GM ativo (lexicograficamente menor userId) executa o cleanup.
- * Player não pode deletar AEs em items de terceiros — delega via socket ao GM.
+ * Multi-client: o hook dispara em TODOS os clientes. Para evitar duplicação,
+ * apenas o usuário QUE DISPAROU o delete (`userId === game.user.id`) processa.
+ * Se ele for GM, aplica direto. Senão, delega via socketlib `executeAsGM`
+ * (que pega um GM qualquer pra rodar).
  */
 function onDeleteActiveEffect(...args: unknown[]): void {
     const effect = args[0] as {
@@ -282,12 +283,16 @@ function onDeleteActiveEffect(...args: unknown[]): void {
         name?: string;
         flags?: Record<string, unknown>;
     };
+    const userId = args[2] as string | undefined;
 
-    // Apenas AEs cuja parent é um Actor (não item ou outro)
+    // Apenas o usuário que fez o delete processa (evita N execuções)
+    if (!userId || userId !== game.user?.id) return;
+
+    // Apenas AEs cuja parent é um Actor
     const parent = effect.parent;
     if (!parent || parent.documentName !== "Actor") return;
 
-    // Ignora a deleção do próprio AE Medalhão (ele está em items, não actor — mas defensivo)
+    // Ignora deleção do próprio AE Medalhão (defensivo)
     const ourFlag = (effect.flags?.[MODULE_ID] as { medalhaoAfiado?: boolean } | undefined);
     if (ourFlag?.medalhaoAfiado) return;
 
@@ -296,11 +301,10 @@ function onDeleteActiveEffect(...args: unknown[]): void {
     const actorUuid = parent.uuid;
     if (!actorUuid) return;
 
-    // Resolve actor
     const actor = fromUuidSync(actorUuid) as FoundryActor | null;
     if (!actor) return;
 
-    // Verifica se este ator tem armas com Medalhão antes de prosseguir
+    // Skip se ator não tem armas com medalhão (evita socket round-trip à toa)
     const hasAnyMedalhao = (actor.items?.contents ?? []).some(it =>
         it.type === "arma"
         && (it.effects?.contents ?? []).some(e => {
@@ -312,41 +316,19 @@ function onDeleteActiveEffect(...args: unknown[]): void {
     );
     if (!hasAnyMedalhao) return;
 
-    // GM: aplica direto (com election se múltiplos GMs)
+    // GM: aplica direto.
     if (game.user?.isGM) {
-        if (!isFirstActiveGM()) return;
         void cleanupMedalhaoForActor(actor, deletedName);
         return;
     }
 
-    // Player: delega ao GM se o player é o trigger (evita duplicação)
-    // Só o usuário que tem o ator selecionado/owner dispara o socket.
-    type ActorWithOwnership = FoundryActor & { ownership?: Record<string, number> };
-    const myId = game.user?.id ?? "";
-    const ownLevel = ((actor as ActorWithOwnership).ownership?.[myId]
-        ?? (actor as ActorWithOwnership).ownership?.["default"] ?? 0);
-    if (ownLevel < 3) return; // só owner dispara (evita N players triggerando)
-
+    // Player: delega via socketlib.executeAsGM (escolhe 1 GM internamente).
     const req: MargemCleanupRequest = {
         type: SOCKET_CLEANUP,
         actorUuid,
         deletedAEName: deletedName,
     };
     void getSocket()?.executeAsGM(SOCKET_CLEANUP, req);
-}
-
-/** True se o usuário atual é o GM ativo com menor userId (election determinística). */
-function isFirstActiveGM(): boolean {
-    const myId = game.user?.id;
-    if (!myId || !game.user?.isGM) return false;
-    const activeGMs = (game.users?.contents ?? [])
-        .filter((u: FoundryUser) =>
-            (u as unknown as { isGM: boolean }).isGM
-            && (u as unknown as { active: boolean }).active,
-        )
-        .map((u: FoundryUser) => (u as unknown as { id: string }).id)
-        .sort();
-    return activeGMs[0] === myId;
 }
 
 // ── Lógica principal ──────────────────────────────────────────────────────────
