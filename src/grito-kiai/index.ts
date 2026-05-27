@@ -1,0 +1,418 @@
+/**
+ * Grito de Kiai — Samurai class ability
+ *
+ * Texto: "Quando faz um ataque corpo a corpo, você pode gastar 2 PM para rolar
+ * dois dados e usar o melhor resultado. Se acertar esse ataque, você recebe
+ * +XdY na rolagem de dano. Esse dano extra é multiplicado em caso de acerto
+ * crítico."
+ *
+ * Bônus de dano por nível de Samurai:
+ *   Nv 1-4:  +1d4
+ *   Nv 5-8:  +1d6
+ *   Nv 9-12: +1d8
+ *   Nv 13-16:+1d10
+ *   Nv 17+:  +1d12
+ *
+ * ── Arquitetura ───────────────────────────────────────────────────────────────
+ *
+ * 1. AE no actor (mesmo padrão do Kiai Divino):
+ *    `flags.tormenta20.{ onuse: true, attack: true, custo: "2", changes: [] }`
+ *    → aparece no AbilityUseDialog de armas via `item.validOnUseEffects`
+ *      (T20 filtra actor.effects com onuse+attack para armas — linha 6393-6399)
+ *    → T20 debita 2 PM ao selecionar
+ *    → entrada em `flags.tormenta20.onUseEffects` no chat msg (via applyOnUseEffects)
+ *
+ * 2. Detecção em createChatMessage:
+ *    Lê `message.flags.tormenta20.onUseEffects` e procura entry com description
+ *    matching /grito\s*de\s*kiai/i. Description = ef.sourceName (nome do poder)
+ *    ou ef.name (nome da AE) — conforme linha 5866-5868 do T20.
+ *
+ * 3. Processamento async:
+ *    - Rola segundo d20 com a MESMA fórmula do ataque original (mantém bônus).
+ *    - Determina qual rolo usar (maior total).
+ *    - Rola dado de dano bônus baseado no nível de Samurai do ator.
+ *    - Posta chat card "Grito de Kiai — Vantagem" com: ambos os rolos,
+ *      total efetivo e dano bônus.
+ *
+ * ── Gotchas ──────────────────────────────────────────────────────────────────
+ *
+ * • Mesmo problema do Kiai Divino: T20 pode ter AE placeholder nativa no item
+ *   do compêndio com transfer:true → força transfer:false via disableItemTransfer.
+ *
+ * • `ef.description` no onUseEffects: para armas, T20 usa ef.sourceName (nome
+ *   do poder via UUID origin). Fallback para ef.name se sourceName for "Unknown"
+ *   ou nome do ator. Ambos contêm "Grito de Kiai" → regex /grito\s*de\s*kiai/i.
+ *
+ * • Level de Samurai: procura item de classe com nome incluindo "samurai" e lê
+ *   system.nivel.value. Fallback: actor.system.nivel.value (total).
+ */
+
+import { MODULE_ID } from "@/constants";
+import { normalizeCondName, getMsgAuthorId } from "@/spell-resistance/index";
+import { log } from "@/utils/logging";
+import GRITO_STYLES from "./grito-kiai.css?inline";
+
+// ── Constantes ────────────────────────────────────────────────────────────────
+
+const GRITO_FLAG       = "gritoKiai";
+const GRITO_PODER_NAME = "grito de kiai";
+const GRITO_AE_NAME    = "Grito de Kiai";
+const GRITO_NAME_REGEX = /grito\s*de\s*kiai/i;
+const STYLES_ID        = "bg3-t20-grito-kiai-styles";
+
+// ── CSS ───────────────────────────────────────────────────────────────────────
+
+function ensureStyles(): void {
+    if (!document.getElementById(STYLES_ID)) {
+        const el = document.createElement("style");
+        el.id = STYLES_ID;
+        el.textContent = GRITO_STYLES;
+        document.head.appendChild(el);
+    }
+}
+
+function esc(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ── Level & Die helpers ───────────────────────────────────────────────────────
+
+function getSamuraiLevel(actor: FoundryActor): number {
+    for (const item of actor.items?.contents ?? []) {
+        if (item.type !== "classe") continue;
+        if (!normalizeCondName(item.name).includes("samurai")) continue;
+        const sys = item.system as { nivel?: { value?: number }; level?: number };
+        return sys.nivel?.value ?? sys.level ?? 1;
+    }
+    return (actor.system as { nivel?: { value?: number } })?.nivel?.value ?? 1;
+}
+
+function getBonusDie(level: number): string {
+    if (level >= 17) return "1d12";
+    if (level >= 13) return "1d10";
+    if (level >= 9)  return "1d8";
+    if (level >= 5)  return "1d6";
+    return "1d4";
+}
+
+// ── Poder detection ───────────────────────────────────────────────────────────
+
+function isGritoKiaiPoder(item: FoundryItem): boolean {
+    if (item.type !== "poder") return false;
+    return normalizeCondName(item.name).includes(GRITO_PODER_NAME);
+}
+
+// ── Helpers de tipos ──────────────────────────────────────────────────────────
+
+interface WithCreateEmbedded {
+    createEmbeddedDocuments(type: string, data: unknown[], options?: Record<string, unknown>): Promise<unknown>;
+    deleteEmbeddedDocuments(type: string, ids: string[], options?: Record<string, unknown>): Promise<unknown>;
+}
+
+interface WithUuid { uuid: string; }
+interface WithId   { id: string; }
+
+interface AEUpdate {
+    update(data: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown>;
+}
+
+interface AELike {
+    id?: string;
+    name?: string;
+    origin?: string;
+    flags?: Record<string, Record<string, unknown> | undefined>;
+}
+
+// ── AE data builder ───────────────────────────────────────────────────────────
+
+function buildGritoAEData(itemUuid: string): Record<string, unknown> {
+    return {
+        name: GRITO_AE_NAME,
+        icon: "systems/tormenta20/icons/svg/skills.svg",
+        origin: itemUuid,
+        disabled: true,
+        transfer: false,
+        changes: [],
+        flags: {
+            tormenta20: {
+                onuse: true,
+                durationScene: false,
+                attack: true,
+                custo: "2",
+            },
+            [MODULE_ID]: {
+                [GRITO_FLAG]: true,
+            },
+        },
+    };
+}
+
+// ── AE management helpers ─────────────────────────────────────────────────────
+
+async function deleteAEs(target: unknown, ids: string[], label: string): Promise<void> {
+    if (!ids.length) return;
+    try {
+        await (target as WithCreateEmbedded)
+            .deleteEmbeddedDocuments("ActiveEffect", ids, { render: false });
+    } catch (err) {
+        console.warn(`[${MODULE_ID}] Grito de Kiai: falha ao deletar ${label}:`, err);
+    }
+}
+
+function collectGritoActorAEs(actor: FoundryActor, itemUuid: string): AELike[] {
+    return (actor.effects?.contents ?? [])
+        .filter(e => {
+            const ae = e as unknown as AELike;
+            return ae.origin === itemUuid && GRITO_NAME_REGEX.test(ae.name ?? "");
+        }) as unknown as AELike[];
+}
+
+/**
+ * Força transfer:false na AE nativa do item (se existir), para evitar que
+ * Foundry recrie uma cópia transferida no actor em reloads — mesmo padrão
+ * do Kiai Divino.
+ */
+async function disableItemTransfer(item: FoundryItem): Promise<void> {
+    const nativeAEs = (item.effects?.contents ?? []).filter(ae => {
+        const aeAny = ae as unknown as { transfer?: boolean };
+        return GRITO_NAME_REGEX.test((ae as AELike).name ?? "") && aeAny.transfer === true;
+    });
+    for (const ae of nativeAEs) {
+        try {
+            await (ae as unknown as AEUpdate).update({ transfer: false }, { render: false });
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Grito de Kiai: falha ao setar transfer:false na AE nativa:`, err);
+        }
+    }
+}
+
+/**
+ * Garante exatamente UMA AE de Grito de Kiai no actor, com os flags corretos.
+ * Deduplica cópias transferidas ou antigas.
+ */
+async function ensureGritoAE(item: FoundryItem): Promise<void> {
+    const actor = (item as unknown as { actor?: FoundryActor }).actor;
+    if (!actor) return;
+    const itemUuid = (item as unknown as WithUuid).uuid;
+    if (!itemUuid) return;
+
+    await disableItemTransfer(item);
+
+    const existing = collectGritoActorAEs(actor, itemUuid);
+
+    if (existing.length === 0) {
+        try {
+            await (actor as unknown as WithCreateEmbedded)
+                .createEmbeddedDocuments("ActiveEffect", [buildGritoAEData(itemUuid)], { render: false });
+            log(`Grito de Kiai: AE criada em "${actor.name}".`);
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Grito de Kiai: falha ao criar AE:`, err);
+        }
+        return;
+    }
+
+    // Remove duplicatas
+    if (existing.length > 1) {
+        const ids = existing.slice(1).map(e => (e as WithId).id).filter((id): id is string => Boolean(id));
+        await deleteAEs(actor, ids, `${ids.length} AE(s) duplicada(s)`);
+        log(`Grito de Kiai: ${ids.length} AE(s) duplicada(s) removida(s) de "${actor.name}".`);
+    }
+
+    // Garante flag nossa na primary
+    const primary = existing[0];
+    const hasFlag = Boolean(primary?.flags?.[MODULE_ID]?.[GRITO_FLAG]);
+    if (primary && !hasFlag) {
+        try {
+            await (primary as unknown as AEUpdate).update(
+                { [`flags.${MODULE_ID}.${GRITO_FLAG}`]: true },
+                { render: false },
+            );
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Grito de Kiai: falha ao atualizar flag na AE:`, err);
+        }
+    }
+}
+
+/** Remove AEs do actor quando o poder é deletado. */
+async function cleanupGritoAE(item: FoundryItem): Promise<void> {
+    const actor = (item as unknown as { actor?: FoundryActor; parent?: FoundryActor }).actor
+        ?? (item as unknown as { parent?: FoundryActor }).parent;
+    if (!actor) return;
+    const itemUuid = (item as unknown as WithUuid).uuid;
+    if (!itemUuid) return;
+
+    const stale = collectGritoActorAEs(actor, itemUuid);
+    if (!stale.length) return;
+
+    const ids = stale.map(e => (e as WithId).id).filter((id): id is string => Boolean(id));
+    await deleteAEs(actor, ids, "AE residual (poder deletado)");
+    log(`Grito de Kiai: AE residual removida de "${actor.name}".`);
+}
+
+// ── onUseEffects detection ────────────────────────────────────────────────────
+
+/**
+ * Verifica se o Grito de Kiai foi ativado neste roll.
+ *
+ * T20 registra os efeitos selecionados em `flags.tormenta20.onUseEffects[]`.
+ * Para ataques com arma, a description de AEs do actor é ef.sourceName
+ * (nome do poder via origin UUID) ou ef.name se sourceName for inválido.
+ * Ambas contêm "Grito de Kiai" → /grito\s*de\s*kiai/i basta.
+ */
+function isGritoOnUseActive(message: ChatMessage): boolean {
+    type OnUseEntry = { description?: string; cost?: unknown; qty?: unknown };
+    const t20 = (message.flags as Record<string, unknown>)?.tormenta20 as
+        | { onUseEffects?: unknown } | undefined;
+    const raw = t20?.onUseEffects;
+    if (!Array.isArray(raw)) return false;
+    return (raw as OnUseEntry[]).some(ef => GRITO_NAME_REGEX.test(ef.description ?? ""));
+}
+
+// ── Chat processing ───────────────────────────────────────────────────────────
+
+async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
+    ensureStyles();
+
+    const attackRoll = (message.rolls ?? []).find(
+        r => (r.options as Record<string, unknown>)?.["type"] === "attack"
+    );
+    if (!attackRoll) return;
+
+    const originalTotal = attackRoll.total ?? 0;
+    const naturalDie = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
+        ?.results?.[0]?.result ?? 0;
+
+    // Reconstrói a fórmula de ataque (mesmo padrão do auto-damage)
+    const attackFormula = attackRoll.terms
+        .map(t => (t as { expression?: string }).expression)
+        .join(" ")
+        .trim() || attackRoll.formula || "1d20";
+
+    // Segundo rolo — mesma fórmula, nova aleatoriedade
+    const secondRoll = new Roll(attackFormula);
+    await secondRoll.evaluate({ async: true });
+    const secondTotal  = secondRoll.total ?? 0;
+    const secondNatural = (secondRoll.dice?.[0] as { results?: Array<{ result: number }> })
+        ?.results?.[0]?.result ?? 0;
+
+    const useSecond    = secondTotal > originalTotal;
+    const effectiveTotal = Math.max(originalTotal, secondTotal);
+
+    // Dado de dano bônus baseado no nível de Samurai
+    const actorId = (message.speaker as { actor?: string })?.actor ?? "";
+    const actor   = game.actors?.get(actorId);
+    const level   = actor ? getSamuraiLevel(actor) : 1;
+    const bonusDie = getBonusDie(level);
+
+    const bonusRoll = new Roll(bonusDie);
+    await bonusRoll.evaluate({ async: true });
+    const bonusTotal = bonusRoll.total ?? 0;
+
+    const attackerName = (message.speaker as { alias?: string })?.alias ?? "Atacante";
+
+    // Card HTML
+    const roll1Class = !useSecond ? "gk-roll-used" : "gk-roll-discarded";
+    const roll2Class =  useSecond ? "gk-roll-used" : "gk-roll-discarded";
+
+    const cardHtml = `
+        <div class="gk-card">
+            <div class="gk-header">
+                <i class="fas fa-wind"></i> ${esc(GRITO_AE_NAME)} — Vantagem
+            </div>
+            <div class="gk-divider"></div>
+            <div class="gk-rolls-row">
+                <div class="gk-roll-block ${roll1Class}">
+                    <div class="gk-roll-label">ROLO 1</div>
+                    <div class="gk-roll-total">${originalTotal}</div>
+                    <div class="gk-roll-natural">(natural ${naturalDie})</div>
+                    ${!useSecond ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
+                </div>
+                <div class="gk-vs-label">VS</div>
+                <div class="gk-roll-block ${roll2Class}">
+                    <div class="gk-roll-label">ROLO 2</div>
+                    <div class="gk-roll-total">${secondTotal}</div>
+                    <div class="gk-roll-natural">(natural ${secondNatural})</div>
+                    ${useSecond ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
+                </div>
+            </div>
+            <div class="gk-divider"></div>
+            <div class="gk-effective-row">
+                <span class="gk-label">ATAQUE EFETIVO</span>
+                <span class="gk-effective-total">${effectiveTotal}</span>
+            </div>
+            <div class="gk-divider"></div>
+            <div class="gk-bonus-row">
+                <span class="gk-label">DANO BÔNUS (${esc(bonusDie)})</span>
+                <span class="gk-bonus-total">+${bonusTotal}</span>
+                <span class="gk-bonus-note">× em crítico</span>
+            </div>
+        </div>
+    `;
+
+    const secondRollHtml = await secondRoll.render({
+        flavor: `${GRITO_AE_NAME} — Segundo Ataque (${esc(attackerName)})`,
+    });
+    const bonusRollHtml  = await bonusRoll.render({
+        flavor: `${GRITO_AE_NAME} — Dano Bônus (${bonusDie})`,
+    });
+
+    await ChatMessage.create({
+        content: cardHtml + secondRollHtml + bonusRollHtml,
+        rolls:   [secondRoll.toJSON(), bonusRoll.toJSON()],
+        type:    5,
+        speaker: { alias: attackerName },
+    });
+
+    log(`Grito de Kiai: rolo1=${originalTotal}, rolo2=${secondTotal}, efetivo=${effectiveTotal}, bônus=+${bonusTotal} (${bonusDie})`);
+}
+
+// ── Entrada pública ───────────────────────────────────────────────────────────
+
+export function setupGritoKiai(): void {
+    Hooks.once("ready", () => {
+        ensureStyles();
+        const myId = game.user?.id;
+        if (!myId) return;
+        for (const actorLike of game.actors?.contents ?? []) {
+            const actor = actorLike as FoundryActor;
+            const ownLevel = (actor.ownership as Record<string, number> | undefined)?.[myId] ?? 0;
+            const isOwner     = ownLevel >= 3;
+            const isFallbackGM = game.user?.isGM && ownLevel === 0;
+            if (!isOwner && !isFallbackGM) continue;
+            for (const item of actor.items?.contents ?? []) {
+                if (isGritoKiaiPoder(item)) void ensureGritoAE(item);
+            }
+        }
+    });
+
+    Hooks.on("createItem", (...args: unknown[]) => {
+        const item   = args[0] as FoundryItem;
+        const userId = args[2] as string | undefined;
+        if (!userId || userId !== game.user?.id) return;
+        if (!(item as unknown as { parent?: unknown }).parent) return;
+        if (!isGritoKiaiPoder(item)) return;
+        void ensureGritoAE(item);
+    });
+
+    Hooks.on("deleteItem", (...args: unknown[]) => {
+        const item   = args[0] as FoundryItem;
+        const userId = args[2] as string | undefined;
+        if (!userId || userId !== game.user?.id) return;
+        if (!isGritoKiaiPoder(item)) return;
+        void cleanupGritoAE(item);
+    });
+
+    Hooks.on("createChatMessage", (...args: unknown[]): void => {
+        const message = args[0] as ChatMessage;
+        if (getMsgAuthorId(message) !== game.user?.id) return;
+        if (!isGritoOnUseActive(message)) return;
+
+        // Precisa ter rolo de ataque para ser um ataque corpo-a-corpo
+        const hasAttack = (message.rolls ?? []).some(
+            r => (r.options as Record<string, unknown>)?.["type"] === "attack"
+        );
+        if (!hasAttack) return;
+
+        void processGritoKiaiAttack(message);
+    });
+}

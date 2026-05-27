@@ -19,6 +19,7 @@ import { setupBuffApply } from "./buff-apply/index";
 import { setupWeaponAETransfer } from "./weapon-ae-transfer/index";
 import { setupMedalhaoAfiado } from "./medalhao-afiado/index";
 import { setupKiaiDivino } from "./kiai-divino/index";
+import { setupGritoKiai } from "./grito-kiai/index";
 import { setupAreaSpells } from "./area-spells/index";
 import { diagnoseAuras } from "./area-spells/aura-sagrada";
 import { setupSkillsMenu } from "./ui/skills-menu";
@@ -63,6 +64,7 @@ Hooks.once("setup", () => {
     setupWeaponAETransfer();
     setupMedalhaoAfiado();
     setupKiaiDivino();
+    setupGritoKiai();
     setupSkillsMenu();   // antes de area-spells: estes registram ações no menu
     setupAreaSpells();
     setupSheetRedesign();
