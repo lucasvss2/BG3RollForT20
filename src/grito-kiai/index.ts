@@ -30,9 +30,11 @@
  * 3. Processamento async:
  *    - Rola segundo d20 com a MESMA fórmula do ataque original (mantém bônus).
  *    - Determina qual rolo usar (maior total).
- *    - Rola dado de dano bônus baseado no nível de Samurai do ator.
- *    - Posta chat card "Grito de Kiai — Vantagem" com: ambos os rolos,
- *      total efetivo e dano bônus.
+ *    - Lê criticoM/criticoX do itemData do message para detectar crítico.
+ *    - Multiplica o dado bônus pelo criticoX se o rolo usado foi crítico.
+ *    - Se Kiai Divino também ativo: maximiza o dado bônus em vez de rolar
+ *      (auto-damage já inclui esse valor no total quando ambos estão ativos).
+ *    - Posta chat card "Grito de Kiai — Vantagem".
  *
  * ── Gotchas ──────────────────────────────────────────────────────────────────
  *
@@ -45,6 +47,9 @@
  *
  * • Level de Samurai: procura item de classe com nome incluindo "samurai" e lê
  *   system.nivel.value. Fallback: actor.system.nivel.value (total).
+ *
+ * • criticoM em itemData: T20 armazena this.system no flag (linha 7339 do T20),
+ *   incluindo o valor pós-applyOnUseEffects. Usar sempre itemData.criticoM; default 20.
  */
 
 import { MODULE_ID } from "@/constants";
@@ -58,6 +63,7 @@ const GRITO_FLAG       = "gritoKiai";
 const GRITO_PODER_NAME = "grito de kiai";
 const GRITO_AE_NAME    = "Grito de Kiai";
 const GRITO_NAME_REGEX = /grito\s*de\s*kiai/i;
+const KIAI_DIVINO_REGEX = /kiai\s*divino/i;
 const STYLES_ID        = "bg3-t20-grito-kiai-styles";
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -75,9 +81,9 @@ function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// ── Level & Die helpers ───────────────────────────────────────────────────────
+// ── Level & Die helpers (exported for auto-damage integration) ────────────────
 
-function getSamuraiLevel(actor: FoundryActor): number {
+export function getSamuraiLevel(actor: FoundryActor): number {
     for (const item of actor.items?.contents ?? []) {
         if (item.type !== "classe") continue;
         if (!normalizeCondName(item.name).includes("samurai")) continue;
@@ -87,12 +93,18 @@ function getSamuraiLevel(actor: FoundryActor): number {
     return (actor.system as { nivel?: { value?: number } })?.nivel?.value ?? 1;
 }
 
-function getBonusDie(level: number): string {
+export function getBonusDie(level: number): string {
     if (level >= 17) return "1d12";
     if (level >= 13) return "1d10";
     if (level >= 9)  return "1d8";
     if (level >= 5)  return "1d6";
     return "1d4";
+}
+
+/** Retorna o valor máximo de uma face de um dado (ex: "1d6" → 6). */
+export function getBonusDieMax(die: string): number {
+    const m = die.match(/d(\d+)$/);
+    return m ? parseInt(m[1], 10) : 4;
 }
 
 // ── Poder detection ───────────────────────────────────────────────────────────
@@ -259,13 +271,22 @@ async function cleanupGritoAE(item: FoundryItem): Promise<void> {
  * (nome do poder via origin UUID) ou ef.name se sourceName for inválido.
  * Ambas contêm "Grito de Kiai" → /grito\s*de\s*kiai/i basta.
  */
-function isGritoOnUseActive(message: ChatMessage): boolean {
-    type OnUseEntry = { description?: string; cost?: unknown; qty?: unknown };
+export function isGritoOnUseActive(message: ChatMessage): boolean {
+    type OnUseEntry = { description?: string };
     const t20 = (message.flags as Record<string, unknown>)?.tormenta20 as
         | { onUseEffects?: unknown } | undefined;
     const raw = t20?.onUseEffects;
     if (!Array.isArray(raw)) return false;
     return (raw as OnUseEntry[]).some(ef => GRITO_NAME_REGEX.test(ef.description ?? ""));
+}
+
+function isKiaiDivinoOnUseActive(message: ChatMessage): boolean {
+    type OnUseEntry = { description?: string };
+    const t20 = (message.flags as Record<string, unknown>)?.tormenta20 as
+        | { onUseEffects?: unknown } | undefined;
+    const raw = t20?.onUseEffects;
+    if (!Array.isArray(raw)) return false;
+    return (raw as OnUseEntry[]).some(ef => KIAI_DIVINO_REGEX.test(ef.description ?? ""));
 }
 
 // ── Chat processing ───────────────────────────────────────────────────────────
@@ -279,40 +300,76 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     if (!attackRoll) return;
 
     const originalTotal = attackRoll.total ?? 0;
-    const naturalDie = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
+    const naturalDie    = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
         ?.results?.[0]?.result ?? 0;
 
-    // Reconstrói a fórmula de ataque (mesmo padrão do auto-damage)
+    // Reconstrói a fórmula de ataque via terms (preserva crítico e todos os bônus)
     const attackFormula = attackRoll.terms
         .map(t => (t as { expression?: string }).expression)
         .join(" ")
         .trim() || attackRoll.formula || "1d20";
 
+    // Lê limites de crítico do item (itemData = this.system pós-applyOnUseEffects)
+    type ItemDataFlags = { criticoM?: number; criticoX?: number };
+    const itemFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
+    const criticoM  = itemFlags?.criticoM ?? 20;
+    const criticoX  = itemFlags?.criticoX ?? 2;
+
     // Segundo rolo — mesma fórmula, nova aleatoriedade
     const secondRoll = new Roll(attackFormula);
     await secondRoll.evaluate({ async: true });
-    const secondTotal  = secondRoll.total ?? 0;
+    const secondTotal   = secondRoll.total ?? 0;
     const secondNatural = (secondRoll.dice?.[0] as { results?: Array<{ result: number }> })
         ?.results?.[0]?.result ?? 0;
 
-    const useSecond    = secondTotal > originalTotal;
+    const useSecond      = secondTotal > originalTotal;
     const effectiveTotal = Math.max(originalTotal, secondTotal);
 
-    // Dado de dano bônus baseado no nível de Samurai
-    const actorId = (message.speaker as { actor?: string })?.actor ?? "";
-    const actor   = game.actors?.get(actorId);
-    const level   = actor ? getSamuraiLevel(actor) : 1;
+    // Detecta crítico em cada rolo
+    const isCrit1    = naturalDie    >= criticoM;
+    const isCrit2    = secondNatural >= criticoM;
+    const isCritUsed = useSecond ? isCrit2 : isCrit1;
+    const critMult   = isCritUsed ? criticoX : 1;
+
+    // Dado bônus baseado no nível de Samurai
+    const actorId  = (message.speaker as { actor?: string })?.actor ?? "";
+    const actor    = game.actors?.get(actorId);
+    const level    = actor ? getSamuraiLevel(actor) : 1;
     const bonusDie = getBonusDie(level);
 
-    const bonusRoll = new Roll(bonusDie);
-    await bonusRoll.evaluate({ async: true });
-    const bonusTotal = bonusRoll.total ?? 0;
+    // Kiai Divino também ativo? Se sim, maximizamos o dado em vez de rolar.
+    // O auto-damage já soma esse valor maximizado no total do prompt.
+    const kiaiDivinoActive = isKiaiDivinoOnUseActive(message);
+
+    const bonusDieFaces = getBonusDieMax(bonusDie);
+    // Com crítico: multiplica número de dados (ex: 1d4 × 2 = 2d4)
+    const bonusExpr = critMult > 1 ? `${critMult}d${bonusDieFaces}` : bonusDie;
+    let bonusTotal: number;
+    let bonusRollInstance: Roll | null = null;
+
+    if (kiaiDivinoActive) {
+        // Kiai Divino maximiza — dano é determinístico
+        bonusTotal = bonusDieFaces * critMult;
+    } else {
+        bonusRollInstance = new Roll(bonusExpr);
+        await bonusRollInstance.evaluate({ async: true });
+        bonusTotal = bonusRollInstance.total ?? 0;
+    }
 
     const attackerName = (message.speaker as { alias?: string })?.alias ?? "Atacante";
 
-    // Card HTML
+    // ── Card HTML ──────────────────────────────────────────────────────────────
     const roll1Class = !useSecond ? "gk-roll-used" : "gk-roll-discarded";
     const roll2Class =  useSecond ? "gk-roll-used" : "gk-roll-discarded";
+
+    const critBadge1 = isCrit1 ? '<div class="gk-crit-tag">⚡ CRÍTICO!</div>' : "";
+    const critBadge2 = isCrit2 ? '<div class="gk-crit-tag">⚡ CRÍTICO!</div>' : "";
+
+    const bonusDieLabel = isCritUsed ? `${esc(bonusExpr)} ×${critMult}` : esc(bonusDie);
+    const bonusNote     = isCritUsed ? "crítico aplicado" : "× em crítico";
+    const bonusMaxNote  = kiaiDivinoActive
+        ? '<span class="gk-bonus-note gk-maximized">✓ MAXIMIZADO — incluído no dano automático</span>'
+        : "";
 
     const cardHtml = `
         <div class="gk-card">
@@ -326,6 +383,7 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
                     <div class="gk-roll-total">${originalTotal}</div>
                     <div class="gk-roll-natural">(natural ${naturalDie})</div>
                     ${!useSecond ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
+                    ${critBadge1}
                 </div>
                 <div class="gk-vs-label">VS</div>
                 <div class="gk-roll-block ${roll2Class}">
@@ -333,6 +391,7 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
                     <div class="gk-roll-total">${secondTotal}</div>
                     <div class="gk-roll-natural">(natural ${secondNatural})</div>
                     ${useSecond ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
+                    ${critBadge2}
                 </div>
             </div>
             <div class="gk-divider"></div>
@@ -342,28 +401,36 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
             </div>
             <div class="gk-divider"></div>
             <div class="gk-bonus-row">
-                <span class="gk-label">DANO BÔNUS (${esc(bonusDie)})</span>
+                <span class="gk-label">DANO BÔNUS (${bonusDieLabel})</span>
                 <span class="gk-bonus-total">+${bonusTotal}</span>
-                <span class="gk-bonus-note">× em crítico</span>
+                <span class="gk-bonus-note">${bonusNote}</span>
+                ${bonusMaxNote}
             </div>
         </div>
     `;
 
+    // ── Chat message ───────────────────────────────────────────────────────────
+    const rollsForMsg: object[] = [secondRoll.toJSON()];
     const secondRollHtml = await secondRoll.render({
         flavor: `${GRITO_AE_NAME} — Segundo Ataque (${esc(attackerName)})`,
     });
-    const bonusRollHtml  = await bonusRoll.render({
-        flavor: `${GRITO_AE_NAME} — Dano Bônus (${bonusDie})`,
-    });
+
+    let bonusRollHtml = "";
+    if (bonusRollInstance) {
+        rollsForMsg.push(bonusRollInstance.toJSON());
+        bonusRollHtml = await bonusRollInstance.render({
+            flavor: `${GRITO_AE_NAME} — Dano Bônus (${bonusExpr})`,
+        });
+    }
 
     await ChatMessage.create({
         content: cardHtml + secondRollHtml + bonusRollHtml,
-        rolls:   [secondRoll.toJSON(), bonusRoll.toJSON()],
+        rolls:   rollsForMsg,
         type:    5,
         speaker: { alias: attackerName },
     });
 
-    log(`Grito de Kiai: rolo1=${originalTotal}, rolo2=${secondTotal}, efetivo=${effectiveTotal}, bônus=+${bonusTotal} (${bonusDie})`);
+    log(`Grito de Kiai: rolo1=${originalTotal}${isCrit1?"(crit)":""}, rolo2=${secondTotal}${isCrit2?"(crit)":""}, efetivo=${effectiveTotal}, bônus=+${bonusTotal} (${bonusExpr})${kiaiDivinoActive?" [KD max]":""}`);
 }
 
 // ── Entrada pública ───────────────────────────────────────────────────────────

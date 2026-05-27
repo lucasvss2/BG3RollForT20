@@ -5,6 +5,7 @@ import {
     markAuraInvencibilidadeUsed,
 } from "@/area-spells/aura-sagrada";
 import { getMsgAuthorId } from "@/spell-resistance/index";
+import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax } from "@/grito-kiai/index";
 import AUTO_DAMAGE_STYLES from "./auto-damage.css?inline";
 
 // ── socketlib handler names ──────────────────────────────────────────────────
@@ -449,6 +450,25 @@ function setupCreateChatHook(): void {
         // → T20 chama roll.evaluate({maximize:true}) → todos os dados saem na face
         // máxima). Reroll precisa preservar essa semântica.
         const damageMaximized = isRollMaximized(damageRoll);
+
+        // Kiai Divino + Grito de Kiai simultâneos: o dado bônus do Grito é
+        // maximizado e somado ao total. O Grito card mostra "incluído no dano auto".
+        let effectiveDamageTotal = damageTotal;
+        if (damageMaximized && isGritoOnUseActive(message)) {
+            const msgActorId  = (message.speaker as Record<string, unknown>)?.actor as string | undefined ?? "";
+            const msgActor    = game.actors?.get(msgActorId);
+            const samuraiLvl  = msgActor ? getSamuraiLevel(msgActor) : 1;
+            const bonusDieStr = getBonusDie(samuraiLvl);
+            type ItemDataFlags = { criticoM?: number; criticoX?: number };
+            const iFlags  = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
+            const criticoM = iFlags?.criticoM ?? 20;
+            const criticoX = iFlags?.criticoX ?? 2;
+            const naturalDie = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
+                ?.results?.[0]?.result ?? 0;
+            const isCrit      = naturalDie >= criticoM;
+            effectiveDamageTotal += getBonusDieMax(bonusDieStr) * (isCrit ? criticoX : 1);
+        }
+
         const attackerName  = message.speaker?.alias ?? "Atacante";
         const rollLabel     = message.flavor || "Ataque";
 
@@ -492,7 +512,7 @@ function setupCreateChatHook(): void {
                 rollLabel,
                 attackTotal,
                 targetDef,
-                damageTotal,
+                damageTotal:    effectiveDamageTotal,
                 attackFormula,
                 damageFormula,
                 damageMaximized,

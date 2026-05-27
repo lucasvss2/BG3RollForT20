@@ -134,3 +134,19 @@
     font-size: 9px;
     font-style: italic;
 }
+
+.gk-crit-tag {
+    color: #f5c842;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+.gk-maximized {
+    color: #6ecf7a;
+    flex-basis: 100%;
+    font-size: 9px;
+    font-style: italic;
+    margin-top: 3px;
+}
