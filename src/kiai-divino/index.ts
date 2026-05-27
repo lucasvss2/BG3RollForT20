@@ -5,38 +5,44 @@
  * pagar 3 PM. Se acertar o ataque, causa dano máximo, sem necessidade de
  * rolar dados."
  *
- * Estratégia escolhida (v1.20.3+): AE vive APENAS em `actor.effects`.
+ * Mecânica: AE em `actor.effects` com `flags.tormenta20.{onuse, attack, custo:"3"}`
+ * + change `{key:"dano", value:"max", mode:0 (CUSTOM)}`. T20 `applyRollChanges`
+ * detecta isso e seta `options.minmax="max"` → `damageRoll` → `roll.evaluate({maximize:true})`.
+ * 3 PM debitados via `consumeMana` do T20.
  *
- *   Histórico:
- *   - v1.20.0: AE só no item com transfer:true. Em Foundry v13, criar AE com
- *     transfer:true em item já owned NÃO clona automaticamente em actor.effects
- *     na hora — a propagação acontece em algum prepareData posterior. Resultado:
- *     dialog do T20 (que itera `item.actor.effects.filter(...)` linha 6193) não
- *     vê a AE e Kiai parece não fazer nada.
- *   - v1.20.2: AE em AMBOS item E actor (padrão T20 `_createEffect`). Mas o
- *     transfer:true acabou propagando depois → duas entradas "Kiai Divino" no
- *     AbilityUseDialog, e só a segunda (a manual) ligada ao id certo funcionava.
- *   - v1.20.3 (este arquivo): AE só no actor, com transfer:false explícito e
- *     `origin: poder.uuid` ligando ao item para cleanup. Migração apaga
- *     residuais no item E duplicatas no actor.
+ * ── Problema multi-source de AE ──────────────────────────────────────────────
  *
- *   Não precisa do AE no item: a única razão pra estar lá seria cleanup
- *   automático via cascata de delete — substituímos por hook `deleteItem`
- *   explícito.
+ * Em uma cena real, podem co-existir 3 fontes de AE "Kiai Divino" para o mesmo
+ * poder:
  *
- *   AE config:
- *     disabled: true   → checkbox desmarcado no dialog HBS
- *                        ({{#unless ap.disabled}}checked{{/unless}}).
- *                        T20 só consulta `disabled` em filtros passivos;
- *                        marcar no dialog injeta a AE em `onUseEffects` igual.
- *     transfer: false  → não propaga, evitando duplicação.
- *     flags.tormenta20: { onuse, attack, custo: "3", durationScene: false }
- *     changes: [{ key:"dano", value:"max", mode:0 (CUSTOM) }]
- *     origin: poder.uuid → vínculo com o item; usado pra cleanup.
+ *  (1) AE nativa no ITEM (vinda do compêndio do T20). Tem nome "Kiai Divino",
+ *      flags T20 corretas (onuse, attack, custo:3) MAS `changes: []` (vazia —
+ *      só placeholder pra aparecer no AbilityUseDialog). `transfer: true`.
  *
- *   T20 `applyRollChanges` detecta mode:0 + value:"max" em key matching /dano/
- *   → seta `options.minmax = "max"` → `damageRoll` → `roll.evaluate({maximize:true})`.
- *   3 PM debitados via `consumeMana` do T20 (fluxo nativo, sem intervenção).
+ *  (2) Cópia auto-transferida no ACTOR pela máquina `transfer:true` do Foundry
+ *      v13. Mesma data da (1), mas vive em `actor.effects` como documento
+ *      persistente com origin = poder.uuid.
+ *
+ *  (3) AE nossa criada por versões anteriores do módulo, também no ACTOR, com
+ *      changes corretas (maximize) + flag `aeris-bg3-rolls-t20.kiai`.
+ *
+ * O T20 AbilityUseDialog (linha 6193) itera `item.actor.effects.filter(...)`
+ * e vê (2) E (3) → DOIS "Kiai Divino" no dialog (observado pelo usuário em v1.20.2).
+ *
+ * ── Estratégia (v1.20.4+) ────────────────────────────────────────────────────
+ *
+ * `ensureKiaiAE`:
+ *   (a) Coleta todas AEs no actor com nome /kiai divino/i + origin = poder.uuid.
+ *   (b) Escolhe uma PRIMARY (prefere a que tem maximize change + nossa flag).
+ *   (c) Deleta as outras (duplicatas).
+ *   (d) Atualiza a primary garantindo maximize change + nossa flag + disabled:true.
+ *   (e) Se NENHUMA existe, cria uma na hora.
+ *   (f) Item-level AE nativa: força `transfer:false` pra impedir Foundry de
+ *       re-criar a cópia transferida em reloads/migrações. Não deletamos a AE
+ *       do item pra não bagunçar o estado nativo do compêndio T20.
+ *
+ * `cleanupKiaiAE` (deleteItem hook): remove qualquer AE residual no actor
+ * cuja origin aponte pro poder deletado.
  */
 
 import { MODULE_ID } from "@/constants";
@@ -47,6 +53,7 @@ import { log } from "@/utils/logging";
 
 const KIAI_FLAG = "kiai";
 const KIAI_PODER_NAME = "kiai divino";
+const KIAI_NAME_REGEX = /kiai\s*divino/i;
 
 // ── Helpers de tipos ──────────────────────────────────────────────────────────
 
@@ -57,7 +64,19 @@ interface WithCreateEmbedded {
 
 interface WithUuid { uuid: string; }
 interface WithId   { id: string; }
-interface WithOrigin { origin?: string; }
+
+interface AEUpdate {
+    update(data: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown>;
+}
+
+interface AEChange { key: string; value: unknown; mode: number; priority?: number }
+interface AELike {
+    id?: string;
+    name?: string;
+    origin?: string;
+    changes?: AEChange[];
+    flags?: Record<string, Record<string, unknown> | undefined>;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -66,9 +85,23 @@ function isKiaiDivinoPoder(item: FoundryItem): boolean {
     return normalizeCondName(item.name).includes(KIAI_PODER_NAME);
 }
 
-function isKiaiAE(ae: { flags?: unknown }): boolean {
-    const flags = ae.flags as Record<string, Record<string, unknown>> | undefined;
-    return Boolean(flags?.[MODULE_ID]?.[KIAI_FLAG]);
+function aeNameMatchesKiai(ae: AELike): boolean {
+    return Boolean(ae.name && KIAI_NAME_REGEX.test(ae.name));
+}
+
+function hasMaximizeChange(ae: AELike): boolean {
+    return (ae.changes ?? []).some(c =>
+        c.key === "dano" && c.value === "max" && c.mode === 0
+    );
+}
+
+function hasOurFlag(ae: AELike): boolean {
+    return Boolean(ae.flags?.[MODULE_ID]?.[KIAI_FLAG]);
+}
+
+/** Score: prefere AEs que já têm a flag E maximize. */
+function preferenceScore(ae: AELike): number {
+    return (hasOurFlag(ae) ? 2 : 0) + (hasMaximizeChange(ae) ? 1 : 0);
 }
 
 function buildKiaiAEData(itemUuid: string): Record<string, unknown> {
@@ -77,8 +110,6 @@ function buildKiaiAEData(itemUuid: string): Record<string, unknown> {
         icon: "systems/tormenta20/icons/svg/skills.svg",
         origin: itemUuid,
         disabled: true,
-        // transfer: false explícito — não queremos auto-propagação para o item.
-        // Vivemos somente em actor.effects pra evitar duplicação no dialog.
         transfer: false,
         changes: [
             { key: "dano", value: "max", mode: 0, priority: 20 },
@@ -97,7 +128,7 @@ function buildKiaiAEData(itemUuid: string): Record<string, unknown> {
     };
 }
 
-async function deleteIds(target: unknown, ids: string[], label: string): Promise<void> {
+async function deleteAEs(target: unknown, ids: string[], label: string): Promise<void> {
     if (!ids.length) return;
     try {
         await (target as WithCreateEmbedded)
@@ -108,9 +139,28 @@ async function deleteIds(target: unknown, ids: string[], label: string): Promise
 }
 
 /**
- * Garante exatamente UMA Kiai AE em `actor.effects` ligada ao poder via
- * `origin: poder.uuid`. Também limpa AEs legacy no item (de versões antigas)
- * e duplicatas no actor (caso transfer:true tenha propagado em algum momento).
+ * Força `transfer:false` na AE nativa do item (placeholder do compêndio T20).
+ * Sem isso, o Foundry pode re-criar a cópia transferida em `actor.effects` em
+ * reloads ou re-imports, voltando o estado duplicado.
+ */
+async function disableItemTransfer(item: FoundryItem): Promise<void> {
+    const nativeAEs = (item.effects?.contents ?? []).filter(ae => {
+        const aeAny = ae as unknown as { transfer?: boolean };
+        return aeNameMatchesKiai(ae as AELike) && aeAny.transfer === true;
+    });
+    for (const ae of nativeAEs) {
+        try {
+            await (ae as unknown as AEUpdate).update({ transfer: false }, { render: false });
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Kiai Divino: falha ao setar transfer:false na AE nativa do item:`, err);
+        }
+    }
+}
+
+/**
+ * Garante exatamente UMA Kiai AE em `actor.effects` ligada ao poder, com
+ * `changes: [{dano: max}]` e nossa flag. Deduplica AEs nativas transferidas e
+ * versões antigas.
  */
 async function ensureKiaiAE(item: FoundryItem): Promise<void> {
     const actor = (item as unknown as { actor?: FoundryActor }).actor;
@@ -118,42 +168,65 @@ async function ensureKiaiAE(item: FoundryItem): Promise<void> {
     const itemUuid = (item as unknown as WithUuid).uuid;
     if (!itemUuid) return;
 
-    // (1) Limpa AEs legacy no item (v1.20.0/v1.20.2 deixavam Kiai AE embedded).
-    const itemAEs = (item.effects?.contents ?? []).filter(isKiaiAE);
-    if (itemAEs.length) {
-        const ids = itemAEs.map(e => (e as unknown as WithId).id).filter(Boolean);
-        await deleteIds(item, ids, "AE legacy no item");
-    }
+    // (f) Primeiro: força transfer:false na AE nativa do item pra não regenerar
+    // cópia transferida no actor depois.
+    await disableItemTransfer(item);
 
-    // (2) Encontra todas as Kiai AEs no actor ligadas a este poder.
-    const actorAEs = (actor.effects?.contents ?? []).filter(e => {
-        const origin = (e as unknown as WithOrigin).origin;
-        return isKiaiAE(e) && origin === itemUuid;
-    });
+    // (a) Coleta todas Kiai AEs no actor ligadas a este poder.
+    const kiaiAEs = (actor.effects?.contents ?? [])
+        .filter(e => {
+            const ae = e as unknown as AELike;
+            return ae.origin === itemUuid && aeNameMatchesKiai(ae);
+        }) as unknown as AELike[];
 
-    // (3) Se há duplicatas no actor, mantém a primeira e deleta o resto.
-    if (actorAEs.length > 1) {
-        const extras = actorAEs.slice(1);
-        const ids = extras.map(e => (e as unknown as WithId).id).filter(Boolean);
-        await deleteIds(actor, ids, "AEs duplicadas no actor");
-    }
-
-    // (4) Se nenhuma AE existe no actor, cria.
-    if (actorAEs.length === 0) {
+    if (kiaiAEs.length === 0) {
+        // (e) Nenhuma — cria.
         try {
             const effectData = buildKiaiAEData(itemUuid);
             await (actor as unknown as WithCreateEmbedded)
                 .createEmbeddedDocuments("ActiveEffect", [effectData], { render: false });
-            log(`Kiai Divino: AE criada em ${actor.name} (poder "${item.name}").`);
+            log(`Kiai Divino: AE criada em "${actor.name}".`);
         } catch (err) {
-            console.warn(`[${MODULE_ID}] Kiai Divino: falha ao criar AE no ator:`, err);
+            console.warn(`[${MODULE_ID}] Kiai Divino: falha ao criar AE:`, err);
+        }
+        return;
+    }
+
+    // (b) Escolhe primary (maior score).
+    const sorted = [...kiaiAEs].sort((a, b) => preferenceScore(b) - preferenceScore(a));
+    const primary = sorted[0];
+    const extras  = sorted.slice(1);
+
+    // (c) Deleta duplicatas.
+    if (extras.length) {
+        const ids = extras.map(e => (e as WithId).id).filter((id): id is string => Boolean(id));
+        await deleteAEs(actor, ids, `${ids.length} AE(s) duplicada(s) no actor`);
+        log(`Kiai Divino: ${ids.length} AE(s) duplicada(s) removida(s) de "${actor.name}".`);
+    }
+
+    // (d) Atualiza primary garantindo maximize + flag.
+    if (primary && (!hasMaximizeChange(primary) || !hasOurFlag(primary))) {
+        const newChanges: AEChange[] = hasMaximizeChange(primary)
+            ? (primary.changes ?? [])
+            : [
+                ...(primary.changes ?? []),
+                { key: "dano", value: "max", mode: 0, priority: 20 },
+            ];
+        try {
+            await (primary as unknown as AEUpdate).update({
+                changes: newChanges,
+                disabled: true,
+                [`flags.${MODULE_ID}.${KIAI_FLAG}`]: true,
+            }, { render: false });
+            log(`Kiai Divino: AE primary atualizada em "${actor.name}".`);
+        } catch (err) {
+            console.warn(`[${MODULE_ID}] Kiai Divino: falha ao atualizar AE primary:`, err);
         }
     }
 }
 
 /**
- * Remove a Kiai AE do actor quando o poder correspondente é deletado.
- * Sem este hook, a AE no actor ficaria órfã (origin apontando pra uuid morto).
+ * Remove AEs residuais no actor quando o poder é deletado.
  */
 async function cleanupKiaiAE(item: FoundryItem): Promise<void> {
     const actor = (item as unknown as { actor?: FoundryActor; parent?: FoundryActor }).actor
@@ -163,13 +236,13 @@ async function cleanupKiaiAE(item: FoundryItem): Promise<void> {
     if (!itemUuid) return;
 
     const stale = (actor.effects?.contents ?? []).filter(e => {
-        const origin = (e as unknown as WithOrigin).origin;
-        return isKiaiAE(e) && origin === itemUuid;
+        const ae = e as unknown as AELike;
+        return ae.origin === itemUuid && aeNameMatchesKiai(ae);
     });
     if (!stale.length) return;
 
-    const ids = stale.map(e => (e as unknown as WithId).id).filter(Boolean);
-    await deleteIds(actor, ids, "AE residual no actor (poder deletado)");
+    const ids = stale.map(e => (e as unknown as WithId).id).filter((id): id is string => Boolean(id));
+    await deleteAEs(actor, ids, "AE residual no actor (poder deletado)");
 }
 
 // ── Entrada pública ───────────────────────────────────────────────────────────
@@ -194,8 +267,7 @@ export function setupKiaiDivino(): void {
         }
     });
 
-    // createItem: novo poder adicionado a um ator (drag&drop, importação).
-    // userId-gated: só quem disparou processa pra evitar duplicação por cliente.
+    // createItem: novo poder adicionado (drag&drop, importação).
     Hooks.on("createItem", (...args: unknown[]) => {
         const item   = args[0] as FoundryItem;
         const userId = args[2] as string | undefined;
@@ -207,7 +279,7 @@ export function setupKiaiDivino(): void {
         void ensureKiaiAE(item);
     });
 
-    // deleteItem: cleanup da AE residual no ator.
+    // deleteItem: cleanup.
     Hooks.on("deleteItem", (...args: unknown[]) => {
         const item   = args[0] as FoundryItem;
         const userId = args[2] as string | undefined;
