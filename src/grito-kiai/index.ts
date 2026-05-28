@@ -143,6 +143,59 @@ export function computeEffectiveCriticoX(
     return baseCriticoX + bonus;
 }
 
+/**
+ * Computes the effective criticoM threshold for crit detection.
+ * Starts from itemData.criticoM (includes permanent upgrades like "Precisa")
+ * then adds deltas from on-use AEs selected in this roll:
+ *   - Actor AEs: exact name match against onUseEffects descriptions
+ *   - Weapon AEs: " - AEName" substring match in descriptions (T20 format)
+ */
+export function computeEffectiveCriticoM(
+    message: ChatMessage,
+    actor: FoundryActor | null,
+    weaponItem: FoundryItem | null,
+): number {
+    type ItemDataM = { criticoM?: number };
+    const iFlags = message.getFlag("tormenta20", "itemData") as ItemDataM | null | undefined;
+    const baseM = typeof iFlags?.criticoM === "number" ? iFlags.criticoM : 20;
+
+    type OnUseEntry = { description?: string };
+    const t20 = (message.flags as Record<string, unknown>)?.tormenta20 as
+        | { onUseEffects?: unknown } | undefined;
+    const raw = t20?.onUseEffects;
+    if (!Array.isArray(raw)) return baseM;
+    const selected = (raw as OnUseEntry[]).map(ef => ef.description ?? "");
+
+    let delta = 0;
+
+    // Actor AEs — exact name match
+    for (const ae of actor?.effects?.contents ?? []) {
+        const aeName = (ae as unknown as { name?: string }).name ?? "";
+        if (!selected.includes(aeName)) continue;
+        const changes = (ae as unknown as {
+            changes?: Array<{ key: string; value: string; mode: number }>;
+        }).changes ?? [];
+        for (const ch of changes) {
+            if (ch.key === "criticoM" && ch.mode === 2) delta += parseInt(ch.value, 10) || 0;
+        }
+    }
+
+    // Weapon AEs — " - AEName" substring match in onUseEffects descriptions
+    type WithEffects = { effects?: { contents: unknown[] } };
+    for (const ae of (weaponItem as unknown as WithEffects | undefined)?.effects?.contents ?? []) {
+        const aeName = (ae as unknown as { name?: string }).name ?? "";
+        if (!aeName || !selected.some(d => d.includes(` - ${aeName}`))) continue;
+        const changes = (ae as unknown as {
+            changes?: Array<{ key: string; value: string; mode: number }>;
+        }).changes ?? [];
+        for (const ch of changes) {
+            if (ch.key === "criticoM" && ch.mode === 2) delta += parseInt(ch.value, 10) || 0;
+        }
+    }
+
+    return baseM + delta;
+}
+
 export function getBonusDie(level: number): string {
     if (level >= 17) return "1d12";
     if (level >= 13) return "1d10";
@@ -366,14 +419,16 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     const tokenLyr = (canvas as unknown as { tokens?: CanvasTokenLyr }).tokens;
     const actor = tokenLyr?.get(speakerTokenId)?.actor ?? game.actors?.get(speakerActorId) ?? null;
 
-    // criticoM: itemData stores the weapon's stored base value (includes permanent upgrades
-    // like Precisa). On-use actor AEs that reduce criticoM (e.g. "Ataque Preciso") are NOT
-    // in itemData — but for crit detection we only need "was the die at least criticoM?",
-    // and T20 already handles the actual roll critting, so itemData criticoM is sufficient.
-    type ItemDataFlags = { criticoM?: number; criticoX?: number };
-    const itemFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
-    const criticoM = typeof itemFlags?.criticoM === "number" ? itemFlags.criticoM : 20;
+    // Resolve weapon item for criticoM computation (weapon AEs like Medalhão reduce criticoM)
+    const msgItemId = (message.content as string | undefined)?.match(/data-item-id="([^"]+)"/)?.[1] ?? "";
+    const weaponItem = msgItemId && actor ? actor.items?.get(msgItemId) ?? null : null;
+
+    // criticoM: itemData base (includes permanent upgrades like Precisa) + onUseEffects deltas
+    // (e.g. "Ataque Preciso" −2, "Corte da Correnteza" −2, "Medalhão Afiado" −1)
+    const criticoM = computeEffectiveCriticoM(message, actor, weaponItem);
     // criticoX: base from itemData + delta from actor AEs in onUseEffects (e.g. "Ataque Preciso" +1)
+    type ItemDataFlags = { criticoX?: number };
+    const itemFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
     const criticoX = computeEffectiveCriticoX(
         message, actor, typeof itemFlags?.criticoX === "number" ? itemFlags.criticoX : 2
     );

@@ -5,7 +5,7 @@ import {
     markAuraInvencibilidadeUsed,
 } from "@/area-spells/aura-sagrada";
 import { getMsgAuthorId } from "@/spell-resistance/index";
-import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax, computeEffectiveCriticoX } from "@/grito-kiai/index";
+import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax, computeEffectiveCriticoX, computeEffectiveCriticoM } from "@/grito-kiai/index";
 import AUTO_DAMAGE_STYLES from "./auto-damage.css?inline";
 
 // ── socketlib handler names ──────────────────────────────────────────────────
@@ -150,6 +150,55 @@ function isRollMaximized(roll: Roll): boolean {
     return totalDice >= 2;
 }
 
+/**
+ * Derives the non-critted base weapon damage formula from a critted roll.
+ *
+ * T20 critical multiplier duplicates weapon dice (e.g. 2d6 × 3 → 6d6).
+ * For each Die term: if its count is divisible by criticoX it was a regular weapon
+ * die — divide back. Otherwise it's a crit-only bonus die (skip it entirely).
+ *
+ * Example: "12d6 + 5 + 1" with criticoX=3 → "4d6 + 5 + 1"
+ */
+function deriveBaseDamageFormula(dmgRoll: Roll, criticoX: number): string {
+    if (criticoX <= 1) {
+        return dmgRoll.terms.map(t => (t as { expression?: string }).expression ?? "").join(" ").trim();
+    }
+    type Term = { expression?: string; faces?: number; number?: number };
+    const terms = dmgRoll.terms as unknown as Term[];
+
+    // Identify indices of non-divisible dice (crit-only bonus dice) AND their preceding operator
+    const skipIndices = new Set<number>();
+    terms.forEach((t, i) => {
+        if (typeof t.faces === "number" && typeof t.number === "number") {
+            if (t.number % criticoX !== 0) {
+                skipIndices.add(i);
+                if (i > 0) skipIndices.add(i - 1); // operator before this die
+            }
+        }
+    });
+
+    const parts: string[] = [];
+    terms.forEach((t, i) => {
+        if (skipIndices.has(i)) return;
+        if (typeof t.faces === "number" && typeof t.number === "number") {
+            parts.push(`${t.number / criticoX}d${t.faces}`);
+        } else {
+            const expr = (t.expression ?? "").trim();
+            if (expr) parts.push(expr);
+        }
+    });
+    return parts.join(" ").trim();
+}
+
+/**
+ * Re-applies a critical multiplier to a base damage formula string.
+ * "4d6 + 5" with criticoX=3 → "12d6 + 5"
+ */
+function critifyFormula(baseFormula: string, criticoX: number): string {
+    if (criticoX <= 1) return baseFormula;
+    return baseFormula.replace(/(\d+)d(\d+)/g, (_, n, f) => `${parseInt(n, 10) * criticoX}d${f}`);
+}
+
 async function handleReroll(req: AttackRerollRequest): Promise<void> {
     const speaker = { alias: req.attackerName };
     const gritoActive   = req.gritoActive ?? false;
@@ -216,13 +265,17 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         return;
     }
 
-    // Still hits — compute damage formula (add Grito bonus die if active)
-    // Pass maximize through so Kiai Divino (e qualquer outro AE com value:"max")
-    // seja respeitado na rerolagem.
-    const isCritReroll = effectiveNatural >= critM;
+    // Still hits — rebuild damage formula correctly.
+    // baseDamageFormula is the non-critted weapon formula (set when original attack was a crit).
+    // If not present, damageFormula already is the base (original was not a crit).
+    // Then re-apply crit only if the NEW roll actually crits.
+    const isCritReroll   = effectiveNatural >= critM;
     const critMultReroll = isCritReroll ? critX : 1;
 
-    let rerollDmgFormula = req.damageFormula;
+    const baseDmgFormula   = req.baseDamageFormula ?? req.damageFormula;
+    const weaponDmgFormula = isCritReroll ? critifyFormula(baseDmgFormula, critX) : baseDmgFormula;
+
+    let rerollDmgFormula = weaponDmgFormula;
     if (gritoActive) {
         const bonusDieStr  = getBonusDie(samuraiLvl);
         const bonusFaces   = getBonusDieMax(bonusDieStr);
@@ -260,8 +313,9 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         targetDef:      req.targetDef,
         damageTotal:    damageRoll.total ?? 0,
         attackFormula:  req.attackFormula,
-        damageFormula:  rerollDmgFormula,
-        damageMaximized: req.damageMaximized,
+        damageFormula:     rerollDmgFormula,
+        damageMaximized:   req.damageMaximized,
+        baseDamageFormula: baseDmgFormula,
         gritoActive,
         samuraiLevel:       samuraiLvl,
         effectiveCriticoX:  critX,
@@ -413,7 +467,8 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 attackerName:   req.attackerName,
                 rollLabel:      req.rollLabel,
                 targetDef:      req.targetDef,
-                damageMaximized: req.damageMaximized,
+                damageMaximized:   req.damageMaximized,
+                baseDamageFormula: req.baseDamageFormula,
                 gritoActive:        req.gritoActive,
                 samuraiLevel:       req.samuraiLevel,
                 effectiveCriticoX:  req.effectiveCriticoX,
@@ -511,24 +566,32 @@ function setupCreateChatHook(): void {
         const tokenLyrAD = (canvas as unknown as { tokens?: CanvasTokenLyrAD }).tokens;
         const atkActor = tokenLyrAD?.get(spkTokenId)?.actor ?? game.actors?.get(spkActorId) ?? null;
 
-        type ItemDataFlagsAD = { criticoM?: number; criticoX?: number };
+        type ItemDataFlagsAD = { criticoX?: number };
         const iFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlagsAD | null | undefined;
-        const gritoActive   = isGritoOnUseActive(message);
-        const samuraiLvl    = gritoActive && atkActor ? getSamuraiLevel(atkActor) : 1;
-        const effCriticoM   = typeof iFlags?.criticoM === "number" ? iFlags.criticoM : 20;
-        const effCriticoX   = gritoActive
-            ? computeEffectiveCriticoX(message, atkActor, typeof iFlags?.criticoX === "number" ? iFlags.criticoX : 2)
-            : 2;
+        const gritoActive = isGritoOnUseActive(message);
+        const samuraiLvl  = gritoActive && atkActor ? getSamuraiLevel(atkActor) : 1;
+        // Resolve weapon item so computeEffectiveCriticoM can factor in weapon AEs (e.g. Medalhão)
+        const msgItemIdAD = (message.content as string | undefined)?.match(/data-item-id="([^"]+)"/)?.[1] ?? "";
+        const weaponItemAD = msgItemIdAD && atkActor ? atkActor.items?.get(msgItemIdAD) ?? null : null;
+        // Always compute both — effCriticoX is also needed for deriveBaseDamageFormula
+        const effCriticoX = computeEffectiveCriticoX(message, atkActor, typeof iFlags?.criticoX === "number" ? iFlags.criticoX : 2);
+        const effCriticoM = computeEffectiveCriticoM(message, atkActor, weaponItemAD);
+
+        // Natural die result for crit detection
+        const naturalDieVal = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
+            ?.results?.[0]?.result ?? 0;
+        const originalIsCrit = naturalDieVal >= effCriticoM;
 
         // Kiai Divino + Grito de Kiai simultâneos: o dado bônus do Grito é
         // maximizado e somado ao total. O Grito card mostra "incluído no dano auto".
         let effectiveDamageTotal = damageTotal;
         if (damageMaximized && gritoActive) {
-            const naturalDie = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
-                ?.results?.[0]?.result ?? 0;
-            const isCrit = naturalDie >= effCriticoM;
-            effectiveDamageTotal += getBonusDieMax(getBonusDie(samuraiLvl)) * (isCrit ? effCriticoX : 1);
+            effectiveDamageTotal += getBonusDieMax(getBonusDie(samuraiLvl)) * (originalIsCrit ? effCriticoX : 1);
         }
+
+        // Base weapon formula (before crit multiplication) — stored so reroll can
+        // re-evaluate with correct crit status instead of always rolling 12d6.
+        const baseDamageFormula = originalIsCrit ? deriveBaseDamageFormula(damageRoll, effCriticoX) : undefined;
 
         const attackerName  = message.speaker?.alias ?? "Atacante";
         const rollLabel     = message.flavor || "Ataque";
@@ -573,10 +636,11 @@ function setupCreateChatHook(): void {
                 rollLabel,
                 attackTotal,
                 targetDef,
-                damageTotal:    effectiveDamageTotal,
+                damageTotal:       effectiveDamageTotal,
                 attackFormula,
                 damageFormula,
                 damageMaximized,
+                baseDamageFormula,
                 gritoActive,
                 samuraiLevel:       samuraiLvl,
                 effectiveCriticoX:  effCriticoX,
