@@ -87,10 +87,11 @@ export function getSamuraiLevel(actor: FoundryActor): number {
     for (const item of actor.items?.contents ?? []) {
         if (item.type !== "classe") continue;
         if (!normalizeCondName(item.name).includes("samurai")) continue;
-        // T20 class items may store per-class level as a number or as {value}.
-        // Only return early if we find a valid (>0) level; otherwise fall through
-        // to actor.system.nivel.value which is reliable for single-class characters.
         const sys = item.system as Record<string, unknown>;
+        // T20 multiclass stores per-class level as system.niveis (plural, plain number)
+        const niveis = sys["niveis"];
+        if (typeof niveis === "number" && niveis > 0) return niveis;
+        // Fallback: system.nivel (older single-class format, number or {value})
         const nivel = sys["nivel"];
         const lvl = typeof nivel === "number"
             ? nivel
@@ -99,8 +100,47 @@ export function getSamuraiLevel(actor: FoundryActor): number {
                 : undefined;
         if (typeof lvl === "number" && lvl > 0) return lvl;
     }
-    // Fallback: actor's total level (correct for single-class Samurai)
+    // Last resort: actor total level
     return (actor.system as { nivel?: { value?: number } })?.nivel?.value ?? 1;
+}
+
+/**
+ * Computes effective criticoX for an attack by adding deltas from actor AEs that
+ * were selected in this roll (listed in message.flags.tormenta20.onUseEffects).
+ *
+ * Background: T20 saves itemData.criticoX as the weapon's stored base (e.g. 2).
+ * AEs like "Ataque Preciso" live on the actor with key "criticoX" + mode ADD, and
+ * appear in onUseEffects when the player selects them. We scan and sum them here.
+ */
+export function computeEffectiveCriticoX(
+    message: ChatMessage,
+    actor: FoundryActor | null,
+    baseCriticoX: number,
+): number {
+    type OnUseEntry = { description?: string };
+    const t20 = (message.flags as Record<string, unknown>)?.tormenta20 as
+        | { onUseEffects?: unknown } | undefined;
+    const raw = t20?.onUseEffects;
+    if (!Array.isArray(raw) || !actor) return baseCriticoX;
+
+    const selectedDescriptions = new Set(
+        (raw as OnUseEntry[]).map(ef => ef.description ?? "")
+    );
+
+    let bonus = 0;
+    for (const ae of actor.effects?.contents ?? []) {
+        const aeName = (ae as unknown as { name?: string }).name ?? "";
+        if (!selectedDescriptions.has(aeName)) continue;
+        const changes = (ae as unknown as {
+            changes?: Array<{ key: string; value: string; mode: number }>;
+        }).changes ?? [];
+        for (const ch of changes) {
+            if (ch.key === "criticoX" && ch.mode === 2) {
+                bonus += parseInt(ch.value, 10) || 0;
+            }
+        }
+    }
+    return baseCriticoX + bonus;
 }
 
 export function getBonusDie(level: number): string {
@@ -319,18 +359,24 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
         .join(" ")
         .trim() || attackRoll.formula || "1d20";
 
-    // Lê limites de crítico: tenta roll.options (T20 armazena lá durante rollAttack)
-    // depois itemData (this.system pós-applyOnUseEffects). Nunca usa só itemData pois
-    // upgrades como Letal (+1 ao multiplicador) podem não propagar para itemData.criticoX.
-    const attackOpts = attackRoll.options as Record<string, unknown>;
+    // Resolve actor now (needed for criticoX and level)
+    const speakerTokenId = (message.speaker as { token?: string })?.token ?? "";
+    const speakerActorId = (message.speaker as { actor?: string })?.actor ?? "";
+    type CanvasTokenLyr = { get(id: string): { actor: FoundryActor | null } | undefined };
+    const tokenLyr = (canvas as unknown as { tokens?: CanvasTokenLyr }).tokens;
+    const actor = tokenLyr?.get(speakerTokenId)?.actor ?? game.actors?.get(speakerActorId) ?? null;
+
+    // criticoM: itemData stores the weapon's stored base value (includes permanent upgrades
+    // like Precisa). On-use actor AEs that reduce criticoM (e.g. "Ataque Preciso") are NOT
+    // in itemData — but for crit detection we only need "was the die at least criticoM?",
+    // and T20 already handles the actual roll critting, so itemData criticoM is sufficient.
     type ItemDataFlags = { criticoM?: number; criticoX?: number };
     const itemFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
-    const criticoM = typeof attackOpts["criticoM"] === "number"
-        ? attackOpts["criticoM"] as number
-        : typeof itemFlags?.criticoM === "number" ? itemFlags.criticoM : 20;
-    const criticoX = typeof attackOpts["criticoX"] === "number" && (attackOpts["criticoX"] as number) > 1
-        ? attackOpts["criticoX"] as number
-        : typeof itemFlags?.criticoX === "number" && itemFlags.criticoX > 1 ? itemFlags.criticoX : 2;
+    const criticoM = typeof itemFlags?.criticoM === "number" ? itemFlags.criticoM : 20;
+    // criticoX: base from itemData + delta from actor AEs in onUseEffects (e.g. "Ataque Preciso" +1)
+    const criticoX = computeEffectiveCriticoX(
+        message, actor, typeof itemFlags?.criticoX === "number" ? itemFlags.criticoX : 2
+    );
 
     // Segundo rolo — mesma fórmula, nova aleatoriedade
     const secondRoll = new Roll(attackFormula);
@@ -348,13 +394,7 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     const isCritUsed = useSecond ? isCrit2 : isCrit1;
     const critMult   = isCritUsed ? criticoX : 1;
 
-    // Dado bônus baseado no nível de Samurai — usa canvas token (synthetic actor
-    // para NPCs unlinked) em vez de game.actors.get() que retorna o world actor.
-    const speakerTokenId = (message.speaker as { token?: string })?.token ?? "";
-    const speakerActorId = (message.speaker as { actor?: string })?.actor ?? "";
-    type CanvasTokenLyr = { get(id: string): { actor: FoundryActor | null } | undefined };
-    const tokenLyr = (canvas as unknown as { tokens?: CanvasTokenLyr }).tokens;
-    const actor = tokenLyr?.get(speakerTokenId)?.actor ?? game.actors?.get(speakerActorId) ?? null;
+    // Dado bônus baseado no nível de Samurai (actor já resolvido acima)
     const level = actor ? getSamuraiLevel(actor) : 1;
     const bonusDie = getBonusDie(level);
 

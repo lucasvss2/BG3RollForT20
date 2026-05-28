@@ -18,6 +18,14 @@ export interface AutoDamageRequest {
     /** Was the original damage roll maximized (e.g. via Kiai Divino)?
      *  Reroll must apply the same maximize flag to evaluate. */
     damageMaximized: boolean;
+    /** Grito de Kiai was active — reroll should use advantage (2d20, best). */
+    gritoActive?: boolean;
+    /** Samurai level for Grito bonus die table. */
+    samuraiLevel?: number;
+    /** Effective criticoX (base + actor AE deltas from onUseEffects). */
+    effectiveCriticoX?: number;
+    /** Effective criticoM (base from itemData, already includes weapon upgrades). */
+    effectiveCriticoM?: number;
 }
 
 export interface AttackRerollRequest {
@@ -33,6 +41,10 @@ export interface AttackRerollRequest {
     rollLabel: string;
     targetDef: number;
     damageMaximized: boolean;
+    gritoActive?: boolean;
+    samuraiLevel?: number;
+    effectiveCriticoX?: number;
+    effectiveCriticoM?: number;
 }
 
 export interface AttackMissNotify {

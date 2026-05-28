@@ -5,7 +5,7 @@ import {
     markAuraInvencibilidadeUsed,
 } from "@/area-spells/aura-sagrada";
 import { getMsgAuthorId } from "@/spell-resistance/index";
-import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax } from "@/grito-kiai/index";
+import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax, computeEffectiveCriticoX } from "@/grito-kiai/index";
 import AUTO_DAMAGE_STYLES from "./auto-damage.css?inline";
 
 // ── socketlib handler names ──────────────────────────────────────────────────
@@ -152,19 +152,47 @@ function isRollMaximized(roll: Roll): boolean {
 
 async function handleReroll(req: AttackRerollRequest): Promise<void> {
     const speaker = { alias: req.attackerName };
+    const gritoActive   = req.gritoActive ?? false;
+    const samuraiLvl    = req.samuraiLevel ?? 1;
+    const critX         = req.effectiveCriticoX ?? 2;
+    const critM         = req.effectiveCriticoM ?? 20;
 
+    // Primary attack roll
     const attackRoll = new Roll(req.attackFormula);
     await attackRoll.evaluate({ async: true });
-    const newAttackTotal = attackRoll.total ?? 0;
 
-    // Missed on reroll — post attack roll to chat, notify both sides
+    // Grito: roll second d20, take the better (advantage)
+    let grito2Roll: Roll | null = null;
+    let effectiveNatural = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
+        ?.results?.[0]?.result ?? 0;
+    let newAttackTotal = attackRoll.total ?? 0;
+
+    if (gritoActive) {
+        grito2Roll = new Roll(req.attackFormula);
+        await grito2Roll.evaluate({ async: true });
+        const t2 = grito2Roll.total ?? 0;
+        if (t2 > newAttackTotal) {
+            newAttackTotal   = t2;
+            effectiveNatural = (grito2Roll.dice?.[0] as { results?: Array<{ result: number }> })
+                ?.results?.[0]?.result ?? 0;
+        }
+    }
+
+    // Missed on reroll — post attack rolls to chat, notify both sides
     if (newAttackTotal < req.targetDef) {
+        const rollsForMiss: object[] = [attackRoll.toJSON()];
+        if (grito2Roll) rollsForMiss.push(grito2Roll.toJSON());
+        const atkHtml  = await attackRoll.render({ flavor: "Ataque" });
+        const g2Html   = grito2Roll
+            ? await grito2Roll.render({ flavor: "Grito de Kiai — Segundo Dado" })
+            : "";
         await ChatMessage.create({
-            content: await buildRerollContent(req.rollLabel, attackRoll),
-            rolls:   [attackRoll.toJSON()],
+            content: await buildRerollContent(req.rollLabel, attackRoll) + g2Html,
+            rolls:   rollsForMiss,
             type:    5,
             speaker,
         });
+        void atkHtml; // suppress unused warning — buildRerollContent renders it
 
         const missPayload: AttackMissNotify = {
             type:         "attack-miss-notify",
@@ -188,16 +216,33 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         return;
     }
 
-    // Still hits — reroll damage, post both rolls to chat, send new prompt.
+    // Still hits — compute damage formula (add Grito bonus die if active)
     // Pass maximize through so Kiai Divino (e qualquer outro AE com value:"max")
-    // seja respeitado na rerolagem. Sem isto, "20d6+10 maximizado" viraria
-    // "20d6+10 rolado normal" no reroll, perdendo o efeito do aprimoramento.
-    const damageRoll = new Roll(req.damageFormula);
+    // seja respeitado na rerolagem.
+    const isCritReroll = effectiveNatural >= critM;
+    const critMultReroll = isCritReroll ? critX : 1;
+
+    let rerollDmgFormula = req.damageFormula;
+    if (gritoActive) {
+        const bonusDieStr  = getBonusDie(samuraiLvl);
+        const bonusFaces   = getBonusDieMax(bonusDieStr);
+        const bonusExpr    = critMultReroll > 1 ? `${critMultReroll}d${bonusFaces}` : bonusDieStr;
+        rerollDmgFormula   = `${rerollDmgFormula} + ${bonusExpr}`;
+    }
+
+    const damageRoll = new Roll(rerollDmgFormula);
     await damageRoll.evaluate({ maximize: req.damageMaximized });
 
+    const rerollRolls: object[] = [attackRoll.toJSON()];
+    if (grito2Roll) rerollRolls.push(grito2Roll.toJSON());
+    rerollRolls.push(damageRoll.toJSON());
+
+    const g2HtmlHit = grito2Roll
+        ? await grito2Roll.render({ flavor: "Grito de Kiai — Segundo Dado" })
+        : "";
     await ChatMessage.create({
-        content: await buildRerollContent(req.rollLabel, attackRoll, damageRoll),
-        rolls:   [attackRoll.toJSON(), damageRoll.toJSON()],
+        content: await buildRerollContent(req.rollLabel, attackRoll, damageRoll) + g2HtmlHit,
+        rolls:   rerollRolls,
         type:    5,
         speaker,
     });
@@ -215,8 +260,12 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         targetDef:      req.targetDef,
         damageTotal:    damageRoll.total ?? 0,
         attackFormula:  req.attackFormula,
-        damageFormula:  req.damageFormula,
+        damageFormula:  rerollDmgFormula,
         damageMaximized: req.damageMaximized,
+        gritoActive,
+        samuraiLevel:       samuraiLvl,
+        effectiveCriticoX:  critX,
+        effectiveCriticoM:  critM,
     };
 
     if (req.targetUserId === game.user?.id) {
@@ -365,6 +414,10 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 rollLabel:      req.rollLabel,
                 targetDef:      req.targetDef,
                 damageMaximized: req.damageMaximized,
+                gritoActive:        req.gritoActive,
+                samuraiLevel:       req.samuraiLevel,
+                effectiveCriticoX:  req.effectiveCriticoX,
+                effectiveCriticoM:  req.effectiveCriticoM,
             };
 
             if (req.attackerUserId === game.user?.id) {
@@ -451,30 +504,30 @@ function setupCreateChatHook(): void {
         // máxima). Reroll precisa preservar essa semântica.
         const damageMaximized = isRollMaximized(damageRoll);
 
+        // Resolve attacker actor once for Grito-related computations
+        const spkTokenId = (message.speaker as Record<string, unknown>)?.token as string | undefined ?? "";
+        const spkActorId = (message.speaker as Record<string, unknown>)?.actor as string | undefined ?? "";
+        type CanvasTokenLyrAD = { get(id: string): { actor: FoundryActor | null } | undefined };
+        const tokenLyrAD = (canvas as unknown as { tokens?: CanvasTokenLyrAD }).tokens;
+        const atkActor = tokenLyrAD?.get(spkTokenId)?.actor ?? game.actors?.get(spkActorId) ?? null;
+
+        type ItemDataFlagsAD = { criticoM?: number; criticoX?: number };
+        const iFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlagsAD | null | undefined;
+        const gritoActive   = isGritoOnUseActive(message);
+        const samuraiLvl    = gritoActive && atkActor ? getSamuraiLevel(atkActor) : 1;
+        const effCriticoM   = typeof iFlags?.criticoM === "number" ? iFlags.criticoM : 20;
+        const effCriticoX   = gritoActive
+            ? computeEffectiveCriticoX(message, atkActor, typeof iFlags?.criticoX === "number" ? iFlags.criticoX : 2)
+            : 2;
+
         // Kiai Divino + Grito de Kiai simultâneos: o dado bônus do Grito é
         // maximizado e somado ao total. O Grito card mostra "incluído no dano auto".
         let effectiveDamageTotal = damageTotal;
-        if (damageMaximized && isGritoOnUseActive(message)) {
-            const spkTokenId = (message.speaker as Record<string, unknown>)?.token as string | undefined ?? "";
-            const spkActorId = (message.speaker as Record<string, unknown>)?.actor as string | undefined ?? "";
-            type CanvasTokenLyr2 = { get(id: string): { actor: FoundryActor | null } | undefined };
-            const tokenLyr2 = (canvas as unknown as { tokens?: CanvasTokenLyr2 }).tokens;
-            const msgActor  = tokenLyr2?.get(spkTokenId)?.actor ?? game.actors?.get(spkActorId) ?? null;
-            const samuraiLvl  = msgActor ? getSamuraiLevel(msgActor) : 1;
-            const bonusDieStr = getBonusDie(samuraiLvl);
-            type ItemDataFlags = { criticoM?: number; criticoX?: number };
-            const iFlags   = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
-            const atkOpts2 = attackRoll.options as Record<string, unknown>;
-            const criticoM = typeof atkOpts2["criticoM"] === "number"
-                ? atkOpts2["criticoM"] as number
-                : typeof iFlags?.criticoM === "number" ? iFlags.criticoM : 20;
-            const criticoX = typeof atkOpts2["criticoX"] === "number" && (atkOpts2["criticoX"] as number) > 1
-                ? atkOpts2["criticoX"] as number
-                : typeof iFlags?.criticoX === "number" && iFlags.criticoX > 1 ? iFlags.criticoX : 2;
+        if (damageMaximized && gritoActive) {
             const naturalDie = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
                 ?.results?.[0]?.result ?? 0;
-            const isCrit = naturalDie >= criticoM;
-            effectiveDamageTotal += getBonusDieMax(bonusDieStr) * (isCrit ? criticoX : 1);
+            const isCrit = naturalDie >= effCriticoM;
+            effectiveDamageTotal += getBonusDieMax(getBonusDie(samuraiLvl)) * (isCrit ? effCriticoX : 1);
         }
 
         const attackerName  = message.speaker?.alias ?? "Atacante";
@@ -524,6 +577,10 @@ function setupCreateChatHook(): void {
                 attackFormula,
                 damageFormula,
                 damageMaximized,
+                gritoActive,
+                samuraiLevel:       samuraiLvl,
+                effectiveCriticoX:  effCriticoX,
+                effectiveCriticoM:  effCriticoM,
             };
 
             if (targetUserId === game.user?.id) {
