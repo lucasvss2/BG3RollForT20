@@ -27,6 +27,7 @@
 import { MODULE_ID } from "@/constants";
 import { extractSpellName, normalizeCondName, getMsgAuthorId } from "@/spell-resistance/index";
 import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
+import { setupChaDynamicAura } from "./_cha-dynamic";
 
 const SPELL_NAME_NORMALIZED = "egide sagrada";   // normalizeCondName remove acentos
 const SPELL_KEY        = "egide-sagrada";        // identificador interno
@@ -830,5 +831,16 @@ export function setupEgideSagrada(): void {
         const templates = getEgideTemplates();
         if (templates.length === 0) return;
         void resyncAllTokens();
+    });
+
+    // 8. CHA dinâmico — recomputa o bônus de Defesa da Égide quando o Carisma do
+    //    caster muda (item/habilidade via Active Effect ou edição manual da ficha).
+    setupChaDynamicAura({
+        moduleId:      MODULE_ID,
+        flagSpell:     FLAG_SPELL,
+        spellKey:      SPELL_KEY,
+        flagOrigin:    FLAG_ORIGIN,
+        flagCasterAid: FLAG_CASTER_AID,
+        label:         "Égide Sagrada",
     });
 }

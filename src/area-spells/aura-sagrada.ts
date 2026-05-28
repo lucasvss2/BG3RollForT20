@@ -27,6 +27,7 @@
 import { MODULE_ID } from "@/constants";
 import { extractSpellName, normalizeCondName, getMsgAuthorId } from "@/spell-resistance/index";
 import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
+import { setupChaDynamicAura } from "./_cha-dynamic";
 import AURA_STYLES from "./aura-sagrada.css?inline";
 
 // Valor RETORNADO por normalizeCondName("Aura Sagrada") — esse helper só
@@ -1795,5 +1796,16 @@ export function setupAuraSagrada(): void {
         // com múltiplos tokens unlinked do mesmo NPC base.
         const tokenId = cmb?.tokenId ?? cmb?.token?.id ?? "";
         void onCombatTurnStart(actor, tokenId);
+    });
+
+    // 9. CHA dinâmico — recomputa bônus/cura/dano da aura quando o Carisma do
+    //    caster muda (item/habilidade via Active Effect ou edição manual da ficha).
+    setupChaDynamicAura({
+        moduleId:      MODULE_ID,
+        flagSpell:     FLAG_SPELL,
+        spellKey:      SPELL_KEY,
+        flagOrigin:    FLAG_ORIGIN,
+        flagCasterAid: FLAG_CASTER_AID,
+        label:         "Aura Sagrada",
     });
 }
