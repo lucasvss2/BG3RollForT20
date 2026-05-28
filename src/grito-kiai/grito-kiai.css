@@ -150,3 +150,17 @@
     font-style: italic;
     margin-top: 3px;
 }
+
+/* Correction row: shown when Grito second roll critted but original didn't */
+.gk-correction-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px;
+}
+
+.gk-correction-total {
+    color: #f5c842;
+    font-size: 17px;
+    font-weight: bold;
+}

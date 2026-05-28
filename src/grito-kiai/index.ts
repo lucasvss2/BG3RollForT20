@@ -87,9 +87,19 @@ export function getSamuraiLevel(actor: FoundryActor): number {
     for (const item of actor.items?.contents ?? []) {
         if (item.type !== "classe") continue;
         if (!normalizeCondName(item.name).includes("samurai")) continue;
-        const sys = item.system as { nivel?: { value?: number }; level?: number };
-        return sys.nivel?.value ?? sys.level ?? 1;
+        // T20 class items may store per-class level as a number or as {value}.
+        // Only return early if we find a valid (>0) level; otherwise fall through
+        // to actor.system.nivel.value which is reliable for single-class characters.
+        const sys = item.system as Record<string, unknown>;
+        const nivel = sys["nivel"];
+        const lvl = typeof nivel === "number"
+            ? nivel
+            : typeof nivel === "object" && nivel !== null
+                ? ((nivel as Record<string, unknown>)["value"] as number | undefined)
+                : undefined;
+        if (typeof lvl === "number" && lvl > 0) return lvl;
     }
+    // Fallback: actor's total level (correct for single-class Samurai)
     return (actor.system as { nivel?: { value?: number } })?.nivel?.value ?? 1;
 }
 
@@ -358,6 +368,29 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
 
     const attackerName = (message.speaker as { alias?: string })?.alias ?? "Atacante";
 
+    // Quando o segundo rolo É crítico mas o original NÃO foi, o auto-damage já abriu
+    // o prompt com dano não-critado (T20 não multiplicou as dice porque o original não
+    // acertou crit). Calculamos o dano correto aqui para exibir no card como referência.
+    let correctedDmg: number | null = null;
+    if (kiaiDivinoActive && useSecond && isCrit2 && !isCrit1) {
+        const dmgRoll = (message.rolls ?? []).find(
+            r => (r.options as Record<string, unknown>)?.["type"] === "damage"
+        );
+        if (dmgRoll) {
+            let c = 0;
+            for (const term of dmgRoll.terms) {
+                const t = term as unknown as { faces?: number; number?: number; total?: number };
+                if (typeof t.faces === "number" && typeof t.number === "number") {
+                    c += t.number * criticoX * t.faces; // dice maximizados × critMult
+                } else if (typeof t.total === "number") {
+                    c += t.total; // modificadores fixos
+                }
+            }
+            c += bonusDieFaces * critMult; // dado bônus também critado e maximizado
+            correctedDmg = c;
+        }
+    }
+
     // ── Card HTML ──────────────────────────────────────────────────────────────
     const roll1Class = !useSecond ? "gk-roll-used" : "gk-roll-discarded";
     const roll2Class =  useSecond ? "gk-roll-used" : "gk-roll-discarded";
@@ -406,6 +439,12 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
                 <span class="gk-bonus-note">${bonusNote}</span>
                 ${bonusMaxNote}
             </div>
+            ${correctedDmg !== null ? `
+            <div class="gk-divider"></div>
+            <div class="gk-correction-row">
+                <span class="gk-label">⚠️ DANO CORRETO (prompt sem crítico)</span>
+                <span class="gk-correction-total">${correctedDmg}</span>
+            </div>` : ""}
         </div>
     `;
 
