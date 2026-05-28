@@ -63,14 +63,29 @@ function collectCandidateEffects(item: ItemLike): AELike[] {
     return out;
 }
 
-/** Bônus de dano de face estrangeira (M != face base) entre os onUseEffects aplicados. */
-function collectForeignBonuses(
+/** Bônus de dano `NdM(+K)` de um efeito on-use aplicado (count/flat já × qty). */
+export interface OnUseDanoBonus {
+    count: number;       // N × qty
+    faces: number;       // M
+    flat: number;        // K × qty (0 se ausente)
+    dmgType: string;     // tipo do dano (de "dano:tipo"), "" se não especificado
+    description: string; // descrição do onUseEffect (pra filtrar imp1 etc.)
+}
+
+/**
+ * Coleta TODOS os bônus de dano `NdM(+K)` (mode CUSTOM, key "dano"/"dano:tipo")
+ * dos efeitos on-use APLICADOS, casando cada entry (por descrição) com a AE
+ * correspondente entre `candidates` (effects do ator e/ou do item).
+ *
+ * O chamador filtra conforme o caso (face estrangeira no cast; exclusão do
+ * aprimoramento próprio da magia na esfera/pedra; etc.).
+ */
+export function collectOnUseDanoBonuses(
     onUseEffects: unknown,
     candidates: AELike[],
-    baseFace: number,
-): ForeignBonus[] {
+): OnUseDanoBonus[] {
     if (!Array.isArray(onUseEffects)) return [];
-    const result: ForeignBonus[] = [];
+    const result: OnUseDanoBonus[] = [];
     for (const entry of onUseEffects as OnUseEntry[]) {
         const desc = entry.description ?? "";
         const qty  = Number.isFinite(entry.qty) && (entry.qty ?? 0) > 0 ? (entry.qty as number) : 1;
@@ -84,13 +99,60 @@ function collectForeignBonuses(
             const m = String(ch.value ?? "").match(STR_VALUE_RE);
             if (!m) continue;
             const faces = parseInt(m[2], 10);
-            if (faces === baseFace || faces < 2) continue;     // face igual → T20 já acertou
+            if (faces < 2) continue;
             const count = parseInt(m[1], 10) * qty;
             if (count < 1) continue;
-            result.push({ count, faces, dmgType: key.includes(":") ? key.split(":")[1] : "" });
+            const flat = (m[3] ? parseInt(m[3], 10) : 0) * qty;
+            result.push({ count, faces, flat, dmgType: key.includes(":") ? key.split(":")[1] : "", description: desc });
         }
     }
     return result;
+}
+
+/** Bônus de dano de face estrangeira (M != face base) — usado na correção do cast. */
+function collectForeignBonuses(
+    onUseEffects: unknown,
+    candidates: AELike[],
+    baseFace: number,
+): ForeignBonus[] {
+    return collectOnUseDanoBonuses(onUseEffects, candidates)
+        .filter(b => b.faces !== baseFace)
+        .map(b => ({ count: b.count, faces: b.faces, dmgType: b.dmgType }));
+}
+
+/** Fórmula de um bônus de dano (valor COMPLETO, ex.: "2d8+2"). Para fórmulas montadas do zero. */
+export function danoBonusToFormula(b: OnUseDanoBonus): string {
+    const flatStr = b.flat ? (b.flat > 0 ? `+${b.flat}` : `${b.flat}`) : "";
+    return `${b.count}d${b.faces}${flatStr}${b.dmgType ? `[${b.dmgType}]` : ""}`;
+}
+
+/**
+ * Corrige uma fórmula-string já mangleada pelo T20 (ex.: "8d6 + 2"): reduz a
+ * contagem do PRIMEIRO dado da face base em Σcount e anexa os dados de face
+ * correta. O fixo (+K) permanece (T20 já o aplicou via addNum). Retorna null
+ * se não conseguir reduzir com segurança (→ no-op).
+ *
+ * Ex.: ("8d6 + 2", base 6, [{count:2,faces:8}]) → "6d6 + 2 + 2d8".
+ */
+export function correctMangledDanoFormula(
+    formula: string,
+    baseFace: number,
+    foreign: ForeignBonus[],
+): string | null {
+    const totalReduce = foreign.reduce((s, f) => s + f.count, 0);
+    if (totalReduce < 1) return null;
+    let reduced = false;
+    const baseRe = new RegExp(`(\\d+)d${baseFace}\\b`);
+    const reducedFormula = formula.replace(baseRe, (whole, nStr: string) => {
+        if (reduced) return whole;
+        const newN = parseInt(nStr, 10) - totalReduce;
+        if (newN < 1) return whole;
+        reduced = true;
+        return `${newN}d${baseFace}`;
+    });
+    if (!reduced) return null;
+    const extra = foreign.map(f => ` + ${f.count}d${f.faces}${f.dmgType ? `[${f.dmgType}]` : ""}`).join("");
+    return reducedFormula + extra;
 }
 
 type DieTermLike = { faces?: number; number?: number; operator?: string; expression?: string; options?: { flavor?: string } };

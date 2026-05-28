@@ -51,6 +51,39 @@ import {
 } from "@/spell-resistance/index";
 import { registerSkillAction, refreshSkillsMenu } from "@/ui/skills-menu";
 import type { SpellResistPreRollRequest } from "@/spell-resistance/types";
+import {
+    collectOnUseDanoBonuses,
+    danoBonusToFormula,
+    correctMangledDanoFormula,
+    type OnUseDanoBonus,
+} from "@/t20-fixes/onuse-foreign-die-dano";
+
+// Aprimoramento próprio da magia (+2d6) — já contabilizado na fórmula base da
+// esfera/pedra. Excluído dos bônus externos pra não duplicar.
+const IMP1_DESC_RE = /aumenta\s+o?\s*dano\s+em\s+\+?2d6/i;
+
+interface AEChangeLike { name?: string; changes?: Array<{ key?: string; value?: string; mode?: number }> }
+
+/** Resolve o ator que lançou (token sintético de NPC unlinked tem prioridade). */
+function resolveCasterActor(message: ChatMessage): FoundryActor | null {
+    const spk = message.speaker as { token?: string; actor?: string } | undefined;
+    type CanvasTokenLyr = { get(id: string): { actor: FoundryActor | null } | undefined };
+    const lyr = (canvas as unknown as { tokens?: CanvasTokenLyr }).tokens;
+    return lyr?.get(spk?.token ?? "")?.actor ?? game.actors?.get(spk?.actor ?? "") ?? null;
+}
+
+/**
+ * Bônus de dano on-use EXTERNOS (ex.: "Tomo do Rancor: +2d8+2") aplicados ao
+ * cast — excluindo o aprimoramento próprio da magia (+2d6), que já está na
+ * fórmula base da esfera/pedra. Casa onUseEffects com effects do ator.
+ */
+function externalDanoBonuses(message: ChatMessage): OnUseDanoBonus[] {
+    const actor = resolveCasterActor(message);
+    const candidates = (actor?.effects?.contents ?? []) as unknown as AEChangeLike[];
+    const entries = (message.flags as Record<string, unknown> | undefined)?.["tormenta20"];
+    const onUse = (entries as { onUseEffects?: unknown } | undefined)?.onUseEffects;
+    return collectOnUseDanoBonuses(onUse, candidates).filter(b => !IMP1_DESC_RE.test(b.description));
+}
 
 const SPELL_KEY = "bola de fogo";
 const ESFERA_KEY = "bola-de-fogo-esfera";
@@ -802,7 +835,16 @@ interface AbilityUseDialogLike {
 // rodou dentro do callback do dialog). Esse CD é o "real" — inclui bônus de
 // items via Active Effects + bônus de aprimoramentos como Fortalecimento Arcano.
 // Lido pelo createItem hook quando T20 cria a granada do brew.
-type PedraPendingCD = { cd: number; resistTxt: string; ts: number };
+type PedraPendingCD = {
+    cd: number;
+    resistTxt: string;
+    ts: number;
+    /** Bônus de dano de face estrangeira (ex.: Tomo +2d8) capturados no cast, pra
+     *  corrigir a fórmula mangleada que o T20 baka na pedra (createItem). */
+    foreignBonuses?: Array<{ count: number; faces: number; dmgType: string }>;
+    /** Face base do dado de dano da magia (ex.: 6 pra Bola de Fogo). */
+    baseFace?: number;
+};
 const _pendingPedraCDs = new Map<string, PedraPendingCD>();
 
 function patchAbilityUseDialog(): void {
@@ -893,10 +935,30 @@ function patchAbilityUseDialog(): void {
                 formula  = `fallback: itemSys.resistencia.cd = ${cdAtCast}`;
             }
 
+            // ── Captura de bônus de dano de FACE ESTRANGEIRA (ex.: Tomo +2d8) ──
+            // O brew do T20 baka na pedra a fórmula JÁ mangleada (2d8 vira 2d6 na
+            // contagem do dado base). Guardamos os bônus de face errada + a face
+            // base aqui pra corrigir a fórmula da pedra no createItem.
+            type CloneEffectsRolls = {
+                system?: { rolls?: Array<{ type?: string; parts?: Array<[string, string?, string?]> }> };
+            };
+            const clone = item as CloneEffectsRolls;
+            const baseExpr = clone.system?.rolls?.find(r => r.type === "dano")?.parts?.[0]?.[0];
+            const baseFaceMatch = typeof baseExpr === "string" ? baseExpr.match(/\d*d(\d+)/) : null;
+            const baseFace = baseFaceMatch ? parseInt(baseFaceMatch[1], 10) : 0;
+            // Tomo do Rancor & cia. são effects do ATOR (não do item) — usar actor.effects.
+            const actorEffects = (actor as unknown as { effects?: { contents: unknown[] } })?.effects?.contents ?? [];
+            const candidates = actorEffects as unknown as AEChangeLike[];
+            const foreignBonuses = baseFace >= 2
+                ? collectOnUseDanoBonuses(onUseEffects, candidates)
+                    .filter(b => b.faces !== baseFace)
+                    .map(b => ({ count: b.count, faces: b.faces, dmgType: b.dmgType }))
+                : [];
+
             const castActorId = actor?.id ?? "";
             if (castActorId && cdAtCast > 0) {
-                _pendingPedraCDs.set(castActorId, { cd: cdAtCast, resistTxt, ts: Date.now() });
-                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 — CD capturado: ${cdAtCast} = ${formula} (resist: "${resistTxt}").`);
+                _pendingPedraCDs.set(castActorId, { cd: cdAtCast, resistTxt, ts: Date.now(), foreignBonuses, baseFace });
+                console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 — CD capturado: ${cdAtCast} = ${formula} (resist: "${resistTxt}"). Bônus face estrangeira: ${foreignBonuses.length}`);
             } else {
                 console.warn(`[t20-theme-overhaul] Bola de Fogo Ap3 detectado mas CD do cast indisponível. Fallback será usado.`);
             }
@@ -1038,10 +1100,39 @@ export function setupBolaDeFogo(): void {
         if (!isGranadaBolaDeFogo) return;
 
         // Extrai fórmula de dano dos rolls (pra mostrar no nome do item)
-        type RollDef = { type?: string; parts?: Array<Array<string>> };
+        type RollDef = { type?: string; key?: string; name?: string; parts?: Array<Array<string>> };
         const rolls   = (item.system?.["rolls"] as RollDef[] | undefined) ?? [];
         const danoDef = rolls.find(r => r?.type === "dano");
-        const dado    = String(danoDef?.parts?.[0]?.[0] ?? "6d6");
+        let   dado    = String(danoDef?.parts?.[0]?.[0] ?? "6d6");
+
+        // ── Correção de bônus de dano de face estrangeira (ex.: Tomo +2d8) ──
+        // O brew do T20 baka a fórmula JÁ mangleada (2d8 contado como 2d6 no dado
+        // base). Usando os bônus capturados no cast, reconstruímos a fórmula
+        // correta e atualizamos TANTO o nome QUANTO os rolls da pedra (o dano é
+        // rolado desses rolls quando a pedra é usada).
+        let correctedRolls: RollDef[] | null = null;
+        {
+            const pedraActorId = item.parent?.id ?? "";
+            const pend = pedraActorId ? _pendingPedraCDs.get(pedraActorId) : undefined;
+            const pendFresh = !!pend && Date.now() - pend.ts < 60_000;
+            const fBonuses = pendFresh ? (pend?.foreignBonuses ?? []) : [];
+            const fBaseFace = pend?.baseFace ?? 0;
+            if (fBonuses.length && fBaseFace >= 2) {
+                const fixed = correctMangledDanoFormula(dado, fBaseFace, fBonuses);
+                if (fixed) {
+                    dado = fixed;
+                    correctedRolls = rolls.map(r => ({
+                        ...r,
+                        parts: r.parts ? r.parts.map(p => [...p]) : r.parts,
+                    }));
+                    const danoIdx = correctedRolls.findIndex(r => r?.type === "dano");
+                    if (danoIdx >= 0 && correctedRolls[danoIdx].parts?.[0]) {
+                        correctedRolls[danoIdx].parts![0][0] = fixed;
+                    }
+                    console.warn(`[t20-theme-overhaul] Pedra Flamejante: fórmula de dano corrigida (face estrangeira) → ${fixed}`);
+                }
+            }
+        }
 
         // Procura a magia "Bola de Fogo" no inventário do mesmo actor — vamos
         // copiar flags de automated-animations / sequencer pra que a animação
@@ -1128,6 +1219,7 @@ export function setupBolaDeFogo(): void {
         void item.update({
             name: `Pedra Flamejante (${dado} fogo)`,
             img:  ESFERA_TEXTURE,
+            ...(correctedRolls ? { "system.rolls": correctedRolls } : {}),
             "system.resistencia.atributo": conjuracao,
             "system.resistencia.cd":       effectiveCD,
             [`flags.${MODULE_ID}.${FLAG_SPELL}`]: PEDRA_KEY,
@@ -1269,7 +1361,17 @@ export function setupBolaDeFogo(): void {
             sweepRecentUnflaggedTemplates(uid);
             const imp1Qty = detectImp1Qty(entries);
             const dice    = 3 + imp1Qty * 2;
-            const damageFormula = `${dice}d6[fogo]`;
+            // Bônus de dano on-use externos (ex.: Tomo do Rancor +2d8+2) — o T20
+            // não toca na fórmula da esfera (ela é nossa), então anexamos o valor
+            // COMPLETO com a face correta. Fica no flag → todas as passagens
+            // (placed/moved/turn-start) usam a mesma fórmula (corrige a perda nas
+            // passagens seguintes).
+            const extBonuses = externalDanoBonuses(message);
+            const extSuffix  = extBonuses.map(b => ` + ${danoBonusToFormula(b)}`).join("");
+            const damageFormula = `${dice}d6[fogo]${extSuffix}`;
+            if (extSuffix) {
+                console.log(`[${MODULE_ID}] Esfera Flamejante: bônus on-use externos anexados → ${damageFormula}`);
+            }
             const cd            = extractCD(message);
             const resistTxt     = ((itemData["resistencia"] as { txt?: string } | undefined)?.txt ?? "").trim()
                                   || "Reflexos reduz à metade";
