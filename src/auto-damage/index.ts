@@ -455,17 +455,25 @@ function setupCreateChatHook(): void {
         // maximizado e somado ao total. O Grito card mostra "incluído no dano auto".
         let effectiveDamageTotal = damageTotal;
         if (damageMaximized && isGritoOnUseActive(message)) {
-            const msgActorId  = (message.speaker as Record<string, unknown>)?.actor as string | undefined ?? "";
-            const msgActor    = game.actors?.get(msgActorId);
+            const spkTokenId = (message.speaker as Record<string, unknown>)?.token as string | undefined ?? "";
+            const spkActorId = (message.speaker as Record<string, unknown>)?.actor as string | undefined ?? "";
+            type CanvasTokenLyr2 = { get(id: string): { actor: FoundryActor | null } | undefined };
+            const tokenLyr2 = (canvas as unknown as { tokens?: CanvasTokenLyr2 }).tokens;
+            const msgActor  = tokenLyr2?.get(spkTokenId)?.actor ?? game.actors?.get(spkActorId) ?? null;
             const samuraiLvl  = msgActor ? getSamuraiLevel(msgActor) : 1;
             const bonusDieStr = getBonusDie(samuraiLvl);
             type ItemDataFlags = { criticoM?: number; criticoX?: number };
-            const iFlags  = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
-            const criticoM = iFlags?.criticoM ?? 20;
-            const criticoX = iFlags?.criticoX ?? 2;
+            const iFlags   = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
+            const atkOpts2 = attackRoll.options as Record<string, unknown>;
+            const criticoM = typeof atkOpts2["criticoM"] === "number"
+                ? atkOpts2["criticoM"] as number
+                : typeof iFlags?.criticoM === "number" ? iFlags.criticoM : 20;
+            const criticoX = typeof atkOpts2["criticoX"] === "number" && (atkOpts2["criticoX"] as number) > 1
+                ? atkOpts2["criticoX"] as number
+                : typeof iFlags?.criticoX === "number" && iFlags.criticoX > 1 ? iFlags.criticoX : 2;
             const naturalDie = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
                 ?.results?.[0]?.result ?? 0;
-            const isCrit      = naturalDie >= criticoM;
+            const isCrit = naturalDie >= criticoM;
             effectiveDamageTotal += getBonusDieMax(bonusDieStr) * (isCrit ? criticoX : 1);
         }
 

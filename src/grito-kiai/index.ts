@@ -319,11 +319,18 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
         .join(" ")
         .trim() || attackRoll.formula || "1d20";
 
-    // Lê limites de crítico do item (itemData = this.system pós-applyOnUseEffects)
+    // Lê limites de crítico: tenta roll.options (T20 armazena lá durante rollAttack)
+    // depois itemData (this.system pós-applyOnUseEffects). Nunca usa só itemData pois
+    // upgrades como Letal (+1 ao multiplicador) podem não propagar para itemData.criticoX.
+    const attackOpts = attackRoll.options as Record<string, unknown>;
     type ItemDataFlags = { criticoM?: number; criticoX?: number };
     const itemFlags = message.getFlag("tormenta20", "itemData") as ItemDataFlags | null | undefined;
-    const criticoM  = itemFlags?.criticoM ?? 20;
-    const criticoX  = itemFlags?.criticoX ?? 2;
+    const criticoM = typeof attackOpts["criticoM"] === "number"
+        ? attackOpts["criticoM"] as number
+        : typeof itemFlags?.criticoM === "number" ? itemFlags.criticoM : 20;
+    const criticoX = typeof attackOpts["criticoX"] === "number" && (attackOpts["criticoX"] as number) > 1
+        ? attackOpts["criticoX"] as number
+        : typeof itemFlags?.criticoX === "number" && itemFlags.criticoX > 1 ? itemFlags.criticoX : 2;
 
     // Segundo rolo — mesma fórmula, nova aleatoriedade
     const secondRoll = new Roll(attackFormula);
@@ -341,10 +348,14 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     const isCritUsed = useSecond ? isCrit2 : isCrit1;
     const critMult   = isCritUsed ? criticoX : 1;
 
-    // Dado bônus baseado no nível de Samurai
-    const actorId  = (message.speaker as { actor?: string })?.actor ?? "";
-    const actor    = game.actors?.get(actorId);
-    const level    = actor ? getSamuraiLevel(actor) : 1;
+    // Dado bônus baseado no nível de Samurai — usa canvas token (synthetic actor
+    // para NPCs unlinked) em vez de game.actors.get() que retorna o world actor.
+    const speakerTokenId = (message.speaker as { token?: string })?.token ?? "";
+    const speakerActorId = (message.speaker as { actor?: string })?.actor ?? "";
+    type CanvasTokenLyr = { get(id: string): { actor: FoundryActor | null } | undefined };
+    const tokenLyr = (canvas as unknown as { tokens?: CanvasTokenLyr }).tokens;
+    const actor = tokenLyr?.get(speakerTokenId)?.actor ?? game.actors?.get(speakerActorId) ?? null;
+    const level = actor ? getSamuraiLevel(actor) : 1;
     const bonusDie = getBonusDie(level);
 
     // Kiai Divino também ativo? Se sim, maximizamos o dado em vez de rolar.
@@ -367,6 +378,15 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     }
 
     const attackerName = (message.speaker as { alias?: string })?.alias ?? "Atacante";
+
+    // Fórmula completa de dano: termos da arma + dado bônus do Grito
+    const dmgRollRef = (message.rolls ?? []).find(
+        r => (r.options as Record<string, unknown>)?.["type"] === "damage"
+    );
+    const weaponTermsStr = dmgRollRef
+        ? dmgRollRef.terms.map(t => (t as { expression?: string }).expression ?? "").join(" ").trim()
+        : "";
+    const fullDmgFormula = weaponTermsStr ? `${weaponTermsStr} + ${bonusExpr}` : bonusExpr;
 
     // Quando o segundo rolo É crítico mas o original NÃO foi, o auto-damage já abriu
     // o prompt com dano não-critado (T20 não multiplicou as dice porque o original não
@@ -438,6 +458,10 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
                 <span class="gk-bonus-total">+${bonusTotal}</span>
                 <span class="gk-bonus-note">${bonusNote}</span>
                 ${bonusMaxNote}
+            </div>
+            <div class="gk-formula-row">
+                <span class="gk-label">FÓRMULA TOTAL</span>
+                <span class="gk-formula-val">${esc(fullDmgFormula)}</span>
             </div>
             ${correctedDmg !== null ? `
             <div class="gk-divider"></div>
