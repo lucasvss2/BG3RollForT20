@@ -18,10 +18,14 @@ export interface AutoDamageRequest {
     /** Was the original damage roll maximized (e.g. via Kiai Divino)?
      *  Reroll must apply the same maximize flag to evaluate. */
     damageMaximized: boolean;
-    /** Non-critted base weapon damage formula (dice divided back by criticoX).
+    /** Non-critted base weapon damage formula (divisible dice ÷ criticoX + flat mods).
      *  Set only when the original attack was a critical hit. Lets reroll
      *  re-apply crit (or not) correctly instead of always using the critted formula. */
     baseDamageFormula?: string;
+    /** Crit-only bonus dice stripped from the original formula (e.g. Cruel's 1d6[danoCritico],
+     *  reverberante post-crit dice). These have count NOT divisible by criticoX because T20
+     *  adds them AFTER crit multiplication. Re-added to reroll formula only when reroll also crits. */
+    critOnlyDmgFormula?: string;
     /** Grito de Kiai was active — reroll should use advantage (2d20, best). */
     gritoActive?: boolean;
     /** Samurai level for Grito bonus die table. */
@@ -47,6 +51,8 @@ export interface AttackRerollRequest {
     damageMaximized: boolean;
     /** Non-critted base weapon formula — same semantics as in AutoDamageRequest. */
     baseDamageFormula?: string;
+    /** Crit-only bonus dice — same semantics as in AutoDamageRequest. */
+    critOnlyDmgFormula?: string;
     gritoActive?: boolean;
     samuraiLevel?: number;
     effectiveCriticoX?: number;

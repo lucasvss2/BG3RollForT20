@@ -151,43 +151,60 @@ function isRollMaximized(roll: Roll): boolean {
 }
 
 /**
- * Derives the non-critted base weapon damage formula from a critted roll.
+ * Decomposes a critted damage formula into two parts:
  *
- * T20 critical multiplier duplicates weapon dice (e.g. 2d6 × 3 → 6d6).
- * For each Die term: if its count is divisible by criticoX it was a regular weapon
- * die — divide back. Otherwise it's a crit-only bonus die (skip it entirely).
+ *  base      — weapon dice (each ÷ criticoX) + flat modifiers.
+ *              To re-crit: apply critifyFormula(base, criticoX).
  *
- * Example: "12d6 + 5 + 1" with criticoX=3 → "4d6 + 5 + 1"
+ *  critOnly  — crit-only bonus dice whose count is NOT divisible by criticoX.
+ *              T20 adds these AFTER its crit multiplication (e.g. Cruel's
+ *              1d6[danoCritico], reverberante post-crit dice). They must be
+ *              re-added as-is when the reroll also crits, and omitted otherwise.
+ *
+ * Example: "12d6 + 5 + 1 + 1d6 + 2" with criticoX=3
+ *   → base "4d6 + 5 + 1 + 2", critOnly "1d6"
  */
-function deriveBaseDamageFormula(dmgRoll: Roll, criticoX: number): string {
-    if (criticoX <= 1) {
-        return dmgRoll.terms.map(t => (t as { expression?: string }).expression ?? "").join(" ").trim();
-    }
+function deriveBaseDamageFormula(dmgRoll: Roll, criticoX: number): { base: string; critOnly: string } {
+    const allExpr = dmgRoll.terms.map(t => (t as { expression?: string }).expression ?? "").join(" ").trim();
+    if (criticoX <= 1) return { base: allExpr, critOnly: "" };
+
     type Term = { expression?: string; faces?: number; number?: number };
     const terms = dmgRoll.terms as unknown as Term[];
 
-    // Identify indices of non-divisible dice (crit-only bonus dice) AND their preceding operator
-    const skipIndices = new Set<number>();
+    // Indices of non-divisible dice (crit-only) AND their preceding operator
+    const skipForBase = new Set<number>();
+    const critOnlyDiceIndices = new Set<number>();
     terms.forEach((t, i) => {
         if (typeof t.faces === "number" && typeof t.number === "number") {
             if (t.number % criticoX !== 0) {
-                skipIndices.add(i);
-                if (i > 0) skipIndices.add(i - 1); // operator before this die
+                critOnlyDiceIndices.add(i);
+                skipForBase.add(i);
+                if (i > 0) skipForBase.add(i - 1); // operator before this die
             }
         }
     });
 
-    const parts: string[] = [];
+    const baseParts: string[] = [];
+    const critOnlyParts: string[] = [];
+
     terms.forEach((t, i) => {
-        if (skipIndices.has(i)) return;
         if (typeof t.faces === "number" && typeof t.number === "number") {
-            parts.push(`${t.number / criticoX}d${t.faces}`);
-        } else {
+            if (critOnlyDiceIndices.has(i)) {
+                // Collect just the dice expression (operator stripped — joined with " + " below)
+                critOnlyParts.push(t.expression ?? `${t.number}d${t.faces}`);
+            } else if (!skipForBase.has(i)) {
+                baseParts.push(`${t.number / criticoX}d${t.faces}`);
+            }
+        } else if (!skipForBase.has(i)) {
             const expr = (t.expression ?? "").trim();
-            if (expr) parts.push(expr);
+            if (expr) baseParts.push(expr);
         }
     });
-    return parts.join(" ").trim();
+
+    return {
+        base:     baseParts.join(" ").trim(),
+        critOnly: critOnlyParts.join(" + ").trim(),
+    };
 }
 
 /**
@@ -273,7 +290,11 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     const critMultReroll = isCritReroll ? critX : 1;
 
     const baseDmgFormula   = req.baseDamageFormula ?? req.damageFormula;
-    const weaponDmgFormula = isCritReroll ? critifyFormula(baseDmgFormula, critX) : baseDmgFormula;
+    // Re-apply crit to weapon dice; then re-append crit-only bonus dice (Cruel, reverberante, etc.)
+    // that T20 injects AFTER its own crit multiplier — they appear only when a crit actually lands.
+    const crittedWeapon    = isCritReroll ? critifyFormula(baseDmgFormula, critX) : baseDmgFormula;
+    const critOnly         = req.critOnlyDmgFormula ?? "";
+    const weaponDmgFormula = (isCritReroll && critOnly) ? `${crittedWeapon} + ${critOnly}` : crittedWeapon;
 
     let rerollDmgFormula = weaponDmgFormula;
     if (gritoActive) {
@@ -313,9 +334,10 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
         targetDef:      req.targetDef,
         damageTotal:    damageRoll.total ?? 0,
         attackFormula:  req.attackFormula,
-        damageFormula:     rerollDmgFormula,
-        damageMaximized:   req.damageMaximized,
-        baseDamageFormula: baseDmgFormula,
+        damageFormula:      rerollDmgFormula,
+        damageMaximized:    req.damageMaximized,
+        baseDamageFormula:  baseDmgFormula,
+        critOnlyDmgFormula: critOnly || undefined,
         gritoActive,
         samuraiLevel:       samuraiLvl,
         effectiveCriticoX:  critX,
@@ -467,8 +489,9 @@ function openDamagePrompt(req: AutoDamageRequest): void {
                 attackerName:   req.attackerName,
                 rollLabel:      req.rollLabel,
                 targetDef:      req.targetDef,
-                damageMaximized:   req.damageMaximized,
-                baseDamageFormula: req.baseDamageFormula,
+                damageMaximized:    req.damageMaximized,
+                baseDamageFormula:  req.baseDamageFormula,
+                critOnlyDmgFormula: req.critOnlyDmgFormula,
                 gritoActive:        req.gritoActive,
                 samuraiLevel:       req.samuraiLevel,
                 effectiveCriticoX:  req.effectiveCriticoX,
@@ -589,9 +612,11 @@ function setupCreateChatHook(): void {
             effectiveDamageTotal += getBonusDieMax(getBonusDie(samuraiLvl)) * (originalIsCrit ? effCriticoX : 1);
         }
 
-        // Base weapon formula (before crit multiplication) — stored so reroll can
-        // re-evaluate with correct crit status instead of always rolling 12d6.
-        const baseDamageFormula = originalIsCrit ? deriveBaseDamageFormula(damageRoll, effCriticoX) : undefined;
+        // Decompose critted formula: weapon base (÷ criticoX) + crit-only bonus dice.
+        // Stored so reroll can re-evaluate with correct crit status.
+        const derived = originalIsCrit ? deriveBaseDamageFormula(damageRoll, effCriticoX) : undefined;
+        const baseDamageFormula  = derived?.base;
+        const critOnlyDmgFormula = derived?.critOnly || undefined;
 
         const attackerName  = message.speaker?.alias ?? "Atacante";
         const rollLabel     = message.flavor || "Ataque";
@@ -641,6 +666,7 @@ function setupCreateChatHook(): void {
                 damageFormula,
                 damageMaximized,
                 baseDamageFormula,
+                critOnlyDmgFormula,
                 gritoActive,
                 samuraiLevel:       samuraiLvl,
                 effectiveCriticoX:  effCriticoX,
