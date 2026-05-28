@@ -210,6 +210,28 @@ export function getBonusDieMax(die: string): number {
     return m ? parseInt(m[1], 10) : 4;
 }
 
+type D20Result = { result: number; active?: boolean; discarded?: boolean };
+
+/** Lê os resultados do dado d20 de um Roll (suporta 2d20kh/kl da vantagem nativa do T20). */
+function getD20Results(roll: Roll): D20Result[] {
+    const d20 = (roll.dice ?? []).find(
+        d => (d as { faces?: number }).faces === 20,
+    ) as { results?: D20Result[] } | undefined;
+    return d20?.results ?? [];
+}
+
+/**
+ * Retorna o resultado natural do d20 MANTIDO (o melhor, em rolagens de vantagem 2d20kh).
+ * Para 1d20 normal retorna o único resultado. Essencial para detecção de crítico em
+ * rolagens de vantagem nativas — `results[0]` pode ser o dado DESCARTADO.
+ */
+export function getKeptD20Natural(roll: Roll): number {
+    const results = getD20Results(roll);
+    if (!results.length) return 0;
+    const kept = results.find(r => r.active !== false && !r.discarded);
+    return (kept ?? results[0]).result;
+}
+
 // ── Poder detection ───────────────────────────────────────────────────────────
 
 function isGritoKiaiPoder(item: FoundryItem): boolean {
@@ -402,9 +424,7 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     );
     if (!attackRoll) return;
 
-    const originalTotal = attackRoll.total ?? 0;
-    const naturalDie    = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
-        ?.results?.[0]?.result ?? 0;
+    const attackTotal = attackRoll.total ?? 0;
 
     // Reconstrói a fórmula de ataque via terms (preserva crítico e todos os bônus)
     const attackFormula = attackRoll.terms
@@ -433,20 +453,41 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
         message, actor, typeof itemFlags?.criticoX === "number" ? itemFlags.criticoX : 2
     );
 
-    // Segundo rolo — mesma fórmula, nova aleatoriedade
-    const secondRoll = new Roll(attackFormula);
-    await secondRoll.evaluate({ async: true });
-    const secondTotal   = secondRoll.total ?? 0;
-    const secondNatural = (secondRoll.dice?.[0] as { results?: Array<{ result: number }> })
-        ?.results?.[0]?.result ?? 0;
+    // ── Determina os dois resultados de d20 ──────────────────────────────────────
+    // Preferido: vantagem NATIVA do T20 (rollKeep=khd20 → 2d20kh). T20 já calculou o
+    // dano com base no dado MANTIDO (o melhor), então não há descompasso de crítico.
+    // Fallback (legado): se o ataque não for vantagem nativa, rolamos um 2º d20.
+    const d20Results = getD20Results(attackRoll);
+    let nat1: number, nat2: number, total1: number, total2: number;
+    let usedIndex: 0 | 1;
+    let legacySecondRoll: Roll | null = null;
 
-    const useSecond      = secondTotal > originalTotal;
-    const effectiveTotal = Math.max(originalTotal, secondTotal);
+    if (d20Results.length >= 2) {
+        // Vantagem nativa: ambos os d20 estão no mesmo rolo. flatBonus é igual para os dois.
+        const keptResult = d20Results.find(r => r.active !== false && !r.discarded) ?? d20Results[0];
+        const flatBonus  = attackTotal - keptResult.result;
+        nat1 = d20Results[0].result;
+        nat2 = d20Results[1].result;
+        total1 = nat1 + flatBonus;
+        total2 = nat2 + flatBonus;
+        usedIndex = (d20Results[0] === keptResult) ? 0 : 1;
+    } else {
+        // Legado: rola um 2º d20 com a mesma fórmula
+        nat1   = getKeptD20Natural(attackRoll);
+        total1 = attackTotal;
+        legacySecondRoll = new Roll(attackFormula);
+        await legacySecondRoll.evaluate({ async: true });
+        total2 = legacySecondRoll.total ?? 0;
+        nat2   = getKeptD20Natural(legacySecondRoll);
+        usedIndex = total2 > total1 ? 1 : 0;
+    }
+
+    const effectiveTotal = usedIndex === 0 ? total1 : total2;
 
     // Detecta crítico em cada rolo
-    const isCrit1    = naturalDie    >= criticoM;
-    const isCrit2    = secondNatural >= criticoM;
-    const isCritUsed = useSecond ? isCrit2 : isCrit1;
+    const isCrit1    = nat1 >= criticoM;
+    const isCrit2    = nat2 >= criticoM;
+    const isCritUsed = usedIndex === 0 ? isCrit1 : isCrit2;
     const critMult   = isCritUsed ? criticoX : 1;
 
     // Dado bônus baseado no nível de Samurai (actor já resolvido acima)
@@ -483,11 +524,10 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
         : "";
     const fullDmgFormula = weaponTermsStr ? `${weaponTermsStr} + ${bonusExpr}` : bonusExpr;
 
-    // Quando o segundo rolo É crítico mas o original NÃO foi, o auto-damage já abriu
-    // o prompt com dano não-critado (T20 não multiplicou as dice porque o original não
-    // acertou crit). Calculamos o dano correto aqui para exibir no card como referência.
+    // Correção de dano: SÓ no caminho legado (2º d20 rolado por nós). Com vantagem
+    // nativa o T20 já critou o dano com base no dado mantido, então não há descompasso.
     let correctedDmg: number | null = null;
-    if (kiaiDivinoActive && useSecond && isCrit2 && !isCrit1) {
+    if (legacySecondRoll && kiaiDivinoActive && usedIndex === 1 && isCrit2 && !isCrit1) {
         const dmgRoll = (message.rolls ?? []).find(
             r => (r.options as Record<string, unknown>)?.["type"] === "damage"
         );
@@ -507,8 +547,8 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     }
 
     // ── Card HTML ──────────────────────────────────────────────────────────────
-    const roll1Class = !useSecond ? "gk-roll-used" : "gk-roll-discarded";
-    const roll2Class =  useSecond ? "gk-roll-used" : "gk-roll-discarded";
+    const roll1Class = usedIndex === 0 ? "gk-roll-used" : "gk-roll-discarded";
+    const roll2Class = usedIndex === 1 ? "gk-roll-used" : "gk-roll-discarded";
 
     const critBadge1 = isCrit1 ? '<div class="gk-crit-tag">⚡ CRÍTICO!</div>' : "";
     const critBadge2 = isCrit2 ? '<div class="gk-crit-tag">⚡ CRÍTICO!</div>' : "";
@@ -528,17 +568,17 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
             <div class="gk-rolls-row">
                 <div class="gk-roll-block ${roll1Class}">
                     <div class="gk-roll-label">ROLO 1</div>
-                    <div class="gk-roll-total">${originalTotal}</div>
-                    <div class="gk-roll-natural">(natural ${naturalDie})</div>
-                    ${!useSecond ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
+                    <div class="gk-roll-total">${total1}</div>
+                    <div class="gk-roll-natural">(natural ${nat1})</div>
+                    ${usedIndex === 0 ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
                     ${critBadge1}
                 </div>
                 <div class="gk-vs-label">VS</div>
                 <div class="gk-roll-block ${roll2Class}">
                     <div class="gk-roll-label">ROLO 2</div>
-                    <div class="gk-roll-total">${secondTotal}</div>
-                    <div class="gk-roll-natural">(natural ${secondNatural})</div>
-                    ${useSecond ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
+                    <div class="gk-roll-total">${total2}</div>
+                    <div class="gk-roll-natural">(natural ${nat2})</div>
+                    ${usedIndex === 1 ? '<div class="gk-used-tag">✓ USADO</div>' : ""}
                     ${critBadge2}
                 </div>
             </div>
@@ -568,27 +608,33 @@ async function processGritoKiaiAttack(message: ChatMessage): Promise<void> {
     `;
 
     // ── Chat message ───────────────────────────────────────────────────────────
-    const rollsForMsg: object[] = [secondRoll.toJSON()];
-    const secondRollHtml = await secondRoll.render({
-        flavor: `${GRITO_AE_NAME} — Segundo Ataque (${esc(attackerName)})`,
-    });
+    // Vantagem nativa: ambos os d20 já estão no rolo de ataque do T20 (sem 2º rolo).
+    // Legado: anexa o 2º d20 que rolamos.
+    const rollsForMsg: object[] = [];
+    let extraHtml = "";
 
-    let bonusRollHtml = "";
+    if (legacySecondRoll) {
+        rollsForMsg.push(legacySecondRoll.toJSON());
+        extraHtml += await legacySecondRoll.render({
+            flavor: `${GRITO_AE_NAME} — Segundo Ataque (${esc(attackerName)})`,
+        });
+    }
+
     if (bonusRollInstance) {
         rollsForMsg.push(bonusRollInstance.toJSON());
-        bonusRollHtml = await bonusRollInstance.render({
+        extraHtml += await bonusRollInstance.render({
             flavor: `${GRITO_AE_NAME} — Dano Bônus (${bonusExpr})`,
         });
     }
 
     await ChatMessage.create({
-        content: cardHtml + secondRollHtml + bonusRollHtml,
+        content: cardHtml + extraHtml,
         rolls:   rollsForMsg,
         type:    5,
         speaker: { alias: attackerName },
     });
 
-    log(`Grito de Kiai: rolo1=${originalTotal}${isCrit1?"(crit)":""}, rolo2=${secondTotal}${isCrit2?"(crit)":""}, efetivo=${effectiveTotal}, bônus=+${bonusTotal} (${bonusExpr})${kiaiDivinoActive?" [KD max]":""}`);
+    log(`Grito de Kiai: rolo1=${total1}${isCrit1?"(crit)":""}, rolo2=${total2}${isCrit2?"(crit)":""}, usado=ROLO${usedIndex+1}, efetivo=${effectiveTotal}, bônus=+${bonusTotal} (${bonusExpr})${legacySecondRoll?" [legado 2º d20]":" [vantagem nativa]"}${kiaiDivinoActive?" [KD max]":""}`);
 }
 
 // ── Entrada pública ───────────────────────────────────────────────────────────
@@ -625,6 +671,53 @@ export function setupGritoKiai(): void {
         if (!userId || userId !== game.user?.id) return;
         if (!isGritoKiaiPoder(item)) return;
         void cleanupGritoAE(item);
+    });
+
+    // Quando o usuário marca o Grito de Kiai no AbilityUseDialog do T20, força o
+    // select "Melhor/Pior de 2d20" para "Melhor de 2d20" (khd20) → vantagem NATIVA.
+    // Assim o T20 rola 2d20kh e calcula o dano com base no dado mantido (crítico
+    // detectado corretamente, sem descompasso). Ao desmarcar, reverte (se fomos nós
+    // que forçamos e o valor ainda é khd20).
+    Hooks.on("renderAbilityUseDialog", (...args: unknown[]): void => {
+        const app = args[0] as { item?: { actor?: FoundryActor } };
+        const htmlArg = args[1];
+        let el: HTMLElement | null = null;
+        if (htmlArg instanceof HTMLElement) el = htmlArg;
+        else if (htmlArg && typeof htmlArg === "object") el = (htmlArg as Record<string, unknown>)[0] as HTMLElement | null;
+        if (!el) return;
+
+        const actor = app.item?.actor;
+        if (!actor) return;
+
+        // Localiza a AE do Grito de Kiai no actor → o checkbox é aprs.<aeId>.aplica
+        const gritoAE = (actor.effects?.contents ?? []).find(
+            e => GRITO_NAME_REGEX.test((e as unknown as { name?: string }).name ?? ""),
+        ) as unknown as { id?: string } | undefined;
+        if (!gritoAE?.id) return;
+
+        const cb       = el.querySelector<HTMLInputElement>(`input[name="aprs.${gritoAE.id}.aplica"]`);
+        const rollKeep = el.querySelector<HTMLSelectElement>('select[name="rollKeep"]');
+        if (!cb || !rollKeep) return;
+
+        const syncAdvantage = (): void => {
+            if (cb.checked) {
+                if (rollKeep.value !== "khd20") {
+                    rollKeep.value = "khd20";
+                    rollKeep.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+                rollKeep.dataset["gritoForced"] = "1";
+            } else if (rollKeep.dataset["gritoForced"] === "1") {
+                if (rollKeep.value === "khd20") {
+                    rollKeep.value = "";
+                    rollKeep.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+                delete rollKeep.dataset["gritoForced"];
+            }
+        };
+
+        // Aplica imediatamente (cobre estado pré-marcado em re-render) + ao alternar
+        syncAdvantage();
+        cb.addEventListener("change", syncAdvantage);
     });
 
     Hooks.on("createChatMessage", (...args: unknown[]): void => {

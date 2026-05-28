@@ -5,7 +5,7 @@ import {
     markAuraInvencibilidadeUsed,
 } from "@/area-spells/aura-sagrada";
 import { getMsgAuthorId } from "@/spell-resistance/index";
-import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax, computeEffectiveCriticoX, computeEffectiveCriticoM } from "@/grito-kiai/index";
+import { isGritoOnUseActive, getSamuraiLevel, getBonusDie, getBonusDieMax, computeEffectiveCriticoX, computeEffectiveCriticoM, getKeptD20Natural } from "@/grito-kiai/index";
 import AUTO_DAMAGE_STYLES from "./auto-damage.css?inline";
 
 // ── socketlib handler names ──────────────────────────────────────────────────
@@ -223,24 +223,24 @@ async function handleReroll(req: AttackRerollRequest): Promise<void> {
     const critX         = req.effectiveCriticoX ?? 2;
     const critM         = req.effectiveCriticoM ?? 20;
 
-    // Primary attack roll
+    // Primary attack roll. If the formula already carries native advantage (2d20kh),
+    // the single roll IS the advantage roll — read the kept d20, no separate 2nd die.
     const attackRoll = new Roll(req.attackFormula);
     await attackRoll.evaluate({ async: true });
 
-    // Grito: roll second d20, take the better (advantage)
+    const isNativeAdvantage = /kh/i.test(req.attackFormula);
     let grito2Roll: Roll | null = null;
-    let effectiveNatural = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
-        ?.results?.[0]?.result ?? 0;
+    let effectiveNatural = getKeptD20Natural(attackRoll);
     let newAttackTotal = attackRoll.total ?? 0;
 
-    if (gritoActive) {
+    if (gritoActive && !isNativeAdvantage) {
+        // Legacy fallback: roll a separate second d20 and take the better
         grito2Roll = new Roll(req.attackFormula);
         await grito2Roll.evaluate({ async: true });
         const t2 = grito2Roll.total ?? 0;
         if (t2 > newAttackTotal) {
             newAttackTotal   = t2;
-            effectiveNatural = (grito2Roll.dice?.[0] as { results?: Array<{ result: number }> })
-                ?.results?.[0]?.result ?? 0;
+            effectiveNatural = getKeptD20Natural(grito2Roll);
         }
     }
 
@@ -600,9 +600,9 @@ function setupCreateChatHook(): void {
         const effCriticoX = computeEffectiveCriticoX(message, atkActor, typeof iFlags?.criticoX === "number" ? iFlags.criticoX : 2);
         const effCriticoM = computeEffectiveCriticoM(message, atkActor, weaponItemAD);
 
-        // Natural die result for crit detection
-        const naturalDieVal = (attackRoll.dice?.[0] as { results?: Array<{ result: number }> })
-            ?.results?.[0]?.result ?? 0;
+        // Natural die result for crit detection — read the KEPT d20 (advantage rolls
+        // are 2d20kh; results[0] may be the discarded die).
+        const naturalDieVal = getKeptD20Natural(attackRoll);
         const originalIsCrit = naturalDieVal >= effCriticoM;
 
         // Kiai Divino + Grito de Kiai simultâneos: o dado bônus do Grito é
