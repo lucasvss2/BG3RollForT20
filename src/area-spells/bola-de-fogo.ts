@@ -180,12 +180,23 @@ function isTokenInEsferaBounds(
     const cv       = canvas as unknown as CanvasLike;
     const gridSize = cv.scene?.grid?.size ?? 100;
     const pos      = getTokenPosPx(token);
-    const tcx      = pos.x + pos.widthSq  * gridSize / 2;
-    const tcy      = pos.y + pos.heightSq * gridSize / 2;
-    return tcx >= esferaPx.x
-        && tcx <  esferaPx.x + esferaPx.width
-        && tcy >= esferaPx.y
-        && tcy <  esferaPx.y + esferaPx.height;
+
+    // Caixa (AABB) da criatura em pixels — cobre TODOS os quadrados ocupados.
+    const cx = pos.x;
+    const cy = pos.y;
+    const cw = pos.widthSq  * gridSize;
+    const ch = pos.heightSq * gridSize;
+
+    // A esfera (1 quadrado) acerta se sua caixa INTERSECTA a caixa da criatura,
+    // não apenas se o centro da criatura cai dentro da esfera. Isso faz a esfera
+    // acertar criaturas Grandes/Enormes/Colossais em QUALQUER quadrado ocupado.
+    // EPS evita falso-positivo em adjacência exata (bordas que só se tocam) e
+    // grazing durante o movimento.
+    const eps = gridSize * 0.1;
+    return cx           < esferaPx.x + esferaPx.width  - eps
+        && cx + cw      > esferaPx.x                   + eps
+        && cy           < esferaPx.y + esferaPx.height - eps
+        && cy + ch      > esferaPx.y                   + eps;
 }
 
 /**
